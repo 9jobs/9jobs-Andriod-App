@@ -1,0 +1,12 @@
+{
+  "name": "9jobs-app-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npm run start --prefix mobile",
+    "android": "npm run android --prefix mobile",
+    "android:app": "npm run android:app --prefix mobile",
+    "ios": "npm run ios --prefix mobile",
+    "web": "npm run web --prefix mobile"
+  }
+}

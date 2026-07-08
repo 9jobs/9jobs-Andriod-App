@@ -1,0 +1,190 @@
+﻿Diagnose log at 2026-07-08T10:16:33Z
+
+AppPath: D:\Program Files\Git\mingw64\bin\git-credential-manager.exe
+InstallDir: D:\Program Files\Git\mingw64\bin\
+Version: 2.7.3+5fa7116896c82164996a609accd1c5ad90fe730a
+
+------------
+Diagnostic: Environment
+Skipped: False
+Success: True
+Exception: None
+Log:
+OSType: Windows
+OSVersion: 10.0 (build 19045)
+Reading environment variables... OK
+ Variables:
+OneDriveConsumer=C:\Users\USER\OneDrive
+ProgramFiles(x86)=C:\Program Files (x86)
+MSYSTEM=MINGW64
+ProgramW6432=C:\Program Files
+PAGER=cat
+ChocolateyInstall=C:\ProgramData\chocolatey
+PROCESSOR_IDENTIFIER=Intel64 Family 6 Model 151 Stepping 5, GenuineIntel
+TMP=C:\Users\USER\AppData\Local\Temp
+CODEX_INTERNAL_ORIGINATOR_OVERRIDE=Codex Desktop
+Path=D:/Program Files/Git/mingw64/libexec/git-core;D:\Program Files\Git\mingw64\bin;D:\Program Files\Git\usr\bin;C:\Users\USER\bin;C:\Users\USER\.codex\tmp\arg0\codex-arg0VTKwa9;C:\Python314\Scripts\;C:\Python314\;C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;C:\Windows\System32\OpenSSH\;C:\ProgramData\chocolatey\bin;D:\Program Files\Git\cmd;D:\Program Files\Git\cmd;C:\Program Files\dotnet\;C:\Users\USER\.local\bin;C:\Users\USER\AppData\Local\nvm;C:\nvm4w\nodejs;C:\Program Files\NVIDIA Corporation\NVIDIA App\NvDLISR;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Users\USER\AppData\Local\Programs\Python\Python311\Scripts\;C:\Users\USER\AppData\Local\Programs\Python\Python311\;C:\Users\USER\AppData\Local\Microsoft\WindowsApps;D:\Users\USER\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\USER\AppData\Local\Programs\Ollama;C:\Users\USER\AppData\Local\Programs\MiKTeX\miktex\bin\x64\;D:\Users\USER\AppData\Local\Programs\Antigravity\bin;D:\Users\USER\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\USER\AppData\Roaming\npm;C:\Users\USER\AppData\Local\nvm;C:\nvm4w\nodejs;C:\Users\USER\.fly\bin;C:\Users\USER\AppData\Local\Programs\Microsoft\jdk-17.0.19+10\bin C:\Users\USER\AppData\Local\Android\Sdk\platform-tools C:\Users\USER\AppData\Local\Android\Sdk\emulator C:\Users\USER\AppData\Local\Android\Sdk\cmdline-tools\latest\bin;C:\Users\USER\AppData\Local\OpenAI\Codex\bin\ada252862d154cdd;C:\Program Files\WindowsApps\OpenAI.Codex_26.623.19656.0_x64__2p2nqsd0c76g0\app\resources
+RUST_LOG=warn
+NVM_SYMLINK=C:\nvm4w\nodejs
+PROCESSOR_REVISION=9705
+TMPDIR=C:\Users\USER\AppData\Local\Temp
+ChocolateyLastPathUpdate=134195748652366060
+USERPROFILE=C:\Users\USER
+CommonProgramFiles(x86)=C:\Program Files (x86)\Common Files
+LOGONSERVER=\\DESKTOP-MEDFN8V
+TEMP=C:\Users\USER\AppData\Local\Temp
+NO_COLOR=1
+SHELL=C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+ZSH_TMUX_AUTOSTARTED=true
+CODEX_THREAD_ID=019f3fdd-c2f0-7211-b0d4-0c2eca1f5e60
+PLINK_PROTOCOL=ssh
+GH_PAGER=cat
+OneDrive=C:\Users\USER\OneDrive
+PROCESSOR_ARCHITECTURE=AMD64
+CommonProgramFiles=C:\Program Files\Common Files
+windir=C:\Windows
+SystemRoot=C:\Windows
+PROCESSOR_LEVEL=6
+CODEX_SHELL=1
+ProgramData=C:\ProgramData
+LC_CTYPE=C.UTF-8
+ZSH_TMUX_AUTOSTART=false
+HOMEPATH=\Users\USER
+ALLUSERSPROFILE=C:\ProgramData
+CommonProgramW6432=C:\Program Files\Common Files
+USERNAME=USER
+TERM=dumb
+GIT_EXEC_PATH=D:/Program Files/Git/mingw64/libexec/git-core
+ANDROID_SDK_ROOT=C:\Users\USER\AppData\Local\Android\Sdk
+NVM_HOME=C:\Users\USER\AppData\Local\nvm
+DriverData=C:\Windows\System32\Drivers\DriverData
+HOMEDRIVE=C:
+DISABLE_AUTO_UPDATE=true
+GIT_TRACE2_PARENT_SID=4e1adbda-94bb-40b2-af05-f3224537e568
+SystemDrive=C:
+NUMBER_OF_PROCESSORS=12
+OS=Windows_NT
+LANG=C.UTF-8
+ComSpec=C:\Windows\system32\cmd.exe
+USERDOMAIN_ROAMINGPROFILE=DESKTOP-MEDFN8V
+PATHEXT=.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.PY;.PYW;.CPL
+HOME=C:\Users\USER
+PSModulePath=C:\Users\USER\Documents\WindowsPowerShell\Modules;C:\Program Files\WindowsPowerShell\Modules;C:\Windows\system32\WindowsPowerShell\v1.0\Modules
+JAVA_HOME=C:\Users\USER\AppData\Local\Programs\Microsoft\jdk-17.0.19+10
+ProgramFiles=C:\Program Files
+CODEX_CI=1
+LC_ALL=C.UTF-8
+APPDATA=C:\Users\USER\AppData\Roaming
+USERDOMAIN=DESKTOP-MEDFN8V
+COMPUTERNAME=DESKTOP-MEDFN8V
+LOCALAPPDATA=C:\Users\USER\AppData\Local
+GIT_PAGER=cat
+COLORTERM=
+PUBLIC=C:\Users\Public
+LOG_FORMAT=json
+ANDROID_HOME=C:\Users\USER\AppData\Local\Android\Sdk
+
+
+------------
+Diagnostic: File system
+Skipped: False
+Success: True
+Exception: None
+Log:
+Temporary directory is 'C:\Users\USER\AppData\Local\Temp\'...
+Checking basic file I/O...
+Writing to temporary file 'C:\Users\USER\AppData\Local\Temp\bed74fce89a0664f9ad99084'... OK
+Reading from temporary file 'C:\Users\USER\AppData\Local\Temp\bed74fce89a0664f9ad99084'... OK
+Deleting temporary file 'C:\Users\USER\AppData\Local\Temp\bed74fce89a0664f9ad99084'... OK
+Testing IFileSystem instance...
+UserHomePath: C:\Users\USER
+UserDataDirectoryPath: C:\Users\USER\.gcm
+GetCurrentDirectory(): D:\9jobs-App
+
+------------
+Diagnostic: Networking
+Skipped: False
+Success: True
+Exception: None
+Log:
+Checking networking and HTTP stack...
+Creating HTTP client... OK
+IsNetworkAvailable: True
+Sending HEAD request to http://example.com...Sending HEAD request to https://example.com... OK
+ OK
+Acquiring free TCP port... OK
+Testing local HTTP loopback connections...
+Creating new HTTP listener for http://localhost:49582/... OK
+Waiting for loopback connection... OK
+Writing response... OK
+Waiting for response data... OK
+Loopback connection data OK
+
+------------
+Diagnostic: Git
+Skipped: False
+Success: True
+Exception: None
+Log:
+Getting Git version... OK
+Git version is '2.53.0.windows.2'
+Locating current repository...Not inside a Git repository.
+ OK
+Listing all Git configuration... OK
+Git configuration:
+file:D:/Program Files/Git/etc/gitconfig	diff.astextplain.textconv=astextplain
+file:D:/Program Files/Git/etc/gitconfig	filter.lfs.clean=git-lfs clean -- %f
+file:D:/Program Files/Git/etc/gitconfig	filter.lfs.smudge=git-lfs smudge -- %f
+file:D:/Program Files/Git/etc/gitconfig	filter.lfs.process=git-lfs filter-process
+file:D:/Program Files/Git/etc/gitconfig	filter.lfs.required=true
+file:D:/Program Files/Git/etc/gitconfig	http.sslbackend=schannel
+file:D:/Program Files/Git/etc/gitconfig	core.autocrlf=true
+file:D:/Program Files/Git/etc/gitconfig	core.fscache=true
+file:D:/Program Files/Git/etc/gitconfig	core.symlinks=false
+file:D:/Program Files/Git/etc/gitconfig	pull.rebase=false
+file:D:/Program Files/Git/etc/gitconfig	credential.helper=manager
+file:D:/Program Files/Git/etc/gitconfig	credential.https://dev.azure.com.usehttppath=true
+file:D:/Program Files/Git/etc/gitconfig	init.defaultbranch=master
+file:C:/Users/USER/.gitconfig	safe.directory=D:/Automation- Project
+file:C:/Users/USER/.gitconfig	safe.directory=D:/SeekBot-master/SeekBot-master
+file:C:/Users/USER/.gitconfig	user.name=Mayank Sodhi
+file:C:/Users/USER/.gitconfig	user.email=mayanksodhi11@gmail.com
+file:C:/Users/USER/.gitconfig	credential.helper=manager
+file:C:/Users/USER/.gitconfig	credential.https://huggingface.co.provider=generic
+
+
+------------
+Diagnostic: Credential storage
+Skipped: False
+Success: True
+Exception: None
+Log:
+ICredentialStore instance is of type: CredentialStore
+Writing test credential... OK
+Reading test credential... OK
+Deleting test credential... OK
+
+------------
+Diagnostic: Microsoft authentication (AAD/MSA)
+Skipped: False
+Success: True
+Exception: None
+Log:
+Broker is not enabled.
+Flow type is: Auto
+Gathering MSAL token cache data... OK
+CacheDirectory: C:\Users\USER\AppData\Local\.IdentityService
+CacheFileName: msal.cache
+CacheFilePath: C:\Users\USER\AppData\Local\.IdentityService\msal.cache
+Creating cache helper... OK
+Verifying MSAL token cache persistence... OK
+
+------------
+Diagnostic: GitHub API
+Skipped: False
+Success: True
+Exception: None
+Log:
+Using 'https://github.com/' as API target.
+Querying '/meta' endpoint... OK
+
