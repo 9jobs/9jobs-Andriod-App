@@ -31,7 +31,7 @@ export const demoJobs: Job[] = [
       "Build outreach loops, refine messaging, and grow premium applicant funnels across technical and operations roles.",
     isSaved: false,
     isApplied: true,
-    status: "interview",
+    status: "interviewing",
   },
   {
     id: "job_interview_coach",

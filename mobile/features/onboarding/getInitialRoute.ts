@@ -12,7 +12,7 @@ export function getInitialRoute({
   }
 
   if (!hasSession) {
-    return "/(public)/auth" as const;
+    return "/(public)/auth/sign-up" as const;
   }
 
   return "/(app)" as const;

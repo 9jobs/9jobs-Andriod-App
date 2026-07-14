@@ -9,6 +9,12 @@ export const isSupabaseConfigured = Boolean(
   supabaseUrl && supabasePublishableKey,
 );
 
+console.log("SUPABASE CONFIG STATUS:", {
+  url: supabaseUrl || "UNDEFINED",
+  key: supabasePublishableKey ? "CONFIGURED" : "MISSING",
+  isConfigured: isSupabaseConfigured
+});
+
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl!, supabasePublishableKey!, {
       auth: {

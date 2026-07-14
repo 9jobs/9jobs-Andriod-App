@@ -9,6 +9,11 @@ export type SignInPayload = {
   password: string;
 };
 
-export type SignUpPayload = SignInPayload & {
-  fullName: string;
+export type SignUpPayload = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  password: string;
+  confirmPassword: string;
 };

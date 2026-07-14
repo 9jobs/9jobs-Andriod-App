@@ -130,3 +130,31 @@ export const typography = {
     letterSpacing: 0.2,
   },
 };
+
+export function setTheme(isDark: boolean) {
+  if (isDark) {
+    colors.background = "#090A08";
+    colors.surface = "#11120F";
+    colors.surfaceMuted = "#171816";
+    colors.surfaceRaised = "#1F201C";
+    colors.text = "#FFFEFA";
+    colors.mutedText = "#A1A595";
+    colors.subtleText = "#6F7268";
+    colors.border = "#2A2B27";
+    colors.borderStrong = "#3A3B36";
+    colors.tabBackground = "rgba(17, 18, 15, 0.96)";
+    colors.panel = "#171816";
+  } else {
+    colors.background = "#F4F1E8";
+    colors.surface = "#FFFFFF";
+    colors.surfaceMuted = "#FCFBF7";
+    colors.surfaceRaised = "#FFFEFA";
+    colors.text = "#0A0A08";
+    colors.mutedText = "#6F7268";
+    colors.subtleText = "#8B8F82";
+    colors.border = "#E8E5DB";
+    colors.borderStrong = "#DAD6C8";
+    colors.tabBackground = "rgba(252, 252, 248, 0.96)";
+    colors.panel = "#F9F7F0";
+  }
+}

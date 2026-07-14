@@ -17,7 +17,7 @@ export function Screen({ children, scroll = true, style, contentStyle }: ScreenP
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, style]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
       {scroll ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -26,7 +26,7 @@ export function Screen({ children, scroll = true, style, contentStyle }: ScreenP
           nestedScrollEnabled
           decelerationRate="normal"
           scrollEventThrottle={16}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
           contentContainerStyle={styles.scrollInner}
         >
           {body}

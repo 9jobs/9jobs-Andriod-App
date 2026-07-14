@@ -7,5 +7,6 @@ export const demoProfile: CandidateProfile = {
   email: "candidate@9jobs.app",
   darkMode: false,
   biometric: true,
+  pushNotifications: true,
   weeklyGoal: "Apply to 12 premium roles",
 };

@@ -16,7 +16,7 @@ describe("getInitialRoute", () => {
         hasCompletedOnboarding: true,
         hasSession: false,
       }),
-    ).toBe("/(public)/auth");
+    ).toBe("/(public)/auth/sign-up");
   });
 
   test("returns the app when both onboarding and session are ready", () => {

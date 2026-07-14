@@ -1,4 +1,4 @@
-export type ApplicationStatus = "draft" | "applied" | "interview" | "offer";
+export type ApplicationStatus = "draft" | "saved" | "applied" | "contacted" | "shortlisted" | "interviewing" | "interview_completed" | "offer" | "hired" | "rejected";
 
 export type JobCategory =
   | "Career Growth"

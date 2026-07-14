@@ -45,7 +45,7 @@ function ClerkAuthCard() {
   }, [verificationMode]);
 
   async function submit() {
-    if (!isReady) {
+    if (!isReady || !signIn || !signUp) {
       return;
     }
 
@@ -61,24 +61,45 @@ function ClerkAuthCard() {
 
     try {
       if (mode === "signin") {
-        await signIn.password({
+        console.log("Signing in with Clerk for:", email.trim());
+        const signInRes = await signIn.password({
           emailAddress: email.trim(),
           password,
         });
 
+        if (signInRes.error) {
+          console.error("signIn.password failed:", signInRes.error);
+          setError(getClerkErrorMessage(signInRes.error));
+          setPending(false);
+          return;
+        }
+
+        console.log("signIn.password succeeded. Status:", signIn.status);
+
         if (signIn.status === "complete") {
-          await signIn.finalize({
+          console.log("Finalizing sign-in...");
+          const finalizeRes = await signIn.finalize({
             navigate: () => {
               router.replace("/(app)");
             },
           });
+          if (finalizeRes.error) {
+            console.error("finalize failed:", finalizeRes.error);
+            setError(getClerkErrorMessage(finalizeRes.error));
+          }
           setPending(false);
           return;
         }
 
         if (signIn.status === "needs_client_trust") {
-          await signIn.mfa.sendEmailCode();
-          setVerificationMode("signin");
+          console.log("needs_client_trust. Sending email code...");
+          const mfaRes = await signIn.mfa.sendEmailCode();
+          if (mfaRes.error) {
+            console.error("mfa.sendEmailCode failed:", mfaRes.error);
+            setError(getClerkErrorMessage(mfaRes.error));
+          } else {
+            setVerificationMode("signin");
+          }
           setPending(false);
           return;
         }
@@ -88,13 +109,34 @@ function ClerkAuthCard() {
         return;
       }
 
-      await signUp.password({
+      const generatedUsername = email.trim().split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") + Math.floor(1000 + Math.random() * 9000);
+      console.log("Creating Clerk signup for:", email.trim(), "with username:", generatedUsername);
+      const signUpRes = await signUp.password({
         emailAddress: email.trim(),
         password,
+        username: generatedUsername,
       });
-      await signUp.verifications.sendEmailCode();
+
+      if (signUpRes.error) {
+        console.error("signUp.password failed:", signUpRes.error);
+        setError(getClerkErrorMessage(signUpRes.error));
+        setPending(false);
+        return;
+      }
+
+      console.log("Sending email code...");
+      const sendRes = await signUp.verifications.sendEmailCode();
+      if (sendRes.error) {
+        console.error("sendEmailCode failed:", sendRes.error);
+        setError(getClerkErrorMessage(sendRes.error));
+        setPending(false);
+        return;
+      }
+
+      console.log("Signup password and email code sent successfully.");
       setVerificationMode("signup");
     } catch (authError) {
+      console.error("Auth action failed with exception:", authError);
       setError(getClerkErrorMessage(authError));
     }
 
@@ -102,36 +144,58 @@ function ClerkAuthCard() {
   }
 
   async function verifyCode() {
-    if (!isReady) {
+    if (!isReady || !signIn || !signUp) {
       return;
     }
 
     setPending(true);
     setError(null);
+    console.log("Verifying code:", verificationCode.trim());
 
     try {
       if (verificationMode === "signin") {
-        await signIn.mfa.verifyEmailCode({ code: verificationCode.trim() });
+        const verifyRes = await signIn.mfa.verifyEmailCode({ code: verificationCode.trim() });
+        if (verifyRes.error) {
+          console.error("signIn.mfa.verifyEmailCode failed:", verifyRes.error);
+          setError(getClerkErrorMessage(verifyRes.error));
+          setPending(false);
+          return;
+        }
 
         if (signIn.status === "complete") {
-          await signIn.finalize({
+          const finalizeRes = await signIn.finalize({
             navigate: () => {
               router.replace("/(app)");
             },
           });
+          if (finalizeRes.error) {
+            console.error("finalize failed:", finalizeRes.error);
+            setError(getClerkErrorMessage(finalizeRes.error));
+          }
         }
       } else {
-        await signUp.verifications.verifyEmailCode({ code: verificationCode.trim() });
+        const verifyRes = await signUp.verifications.verifyEmailCode({ code: verificationCode.trim() });
+        if (verifyRes.error) {
+          console.error("signUp.verifications.verifyEmailCode failed:", verifyRes.error);
+          setError(getClerkErrorMessage(verifyRes.error));
+          setPending(false);
+          return;
+        }
 
         if (signUp.status === "complete") {
-          await signUp.finalize({
+          const finalizeRes = await signUp.finalize({
             navigate: () => {
               router.replace("/(app)");
             },
           });
+          if (finalizeRes.error) {
+            console.error("finalize failed:", finalizeRes.error);
+            setError(getClerkErrorMessage(finalizeRes.error));
+          }
         }
       }
     } catch (verificationError) {
+      console.error("Verification failed with exception:", verificationError);
       setError(getClerkErrorMessage(verificationError));
     }
 

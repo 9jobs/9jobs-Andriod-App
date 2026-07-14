@@ -1,5 +1,15 @@
-import { StyleSheet, Text, TextInput, View } from "react-native";
-import { colors, radii, spacing, typography } from "@/theme";
+import { useState } from "react";
+import {
+  KeyboardTypeOptions,
+  StyleSheet,
+  Text,
+  TextInput,
+  TextInputProps,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { colors, spacing, typography } from "@/theme";
+import { AppIcon } from "./AppIcon";
 
 type TextFieldProps = {
   label: string;
@@ -8,6 +18,10 @@ type TextFieldProps = {
   placeholder?: string;
   secureTextEntry?: boolean;
   error?: string;
+  keyboardType?: KeyboardTypeOptions;
+  autoCapitalize?: TextInputProps["autoCapitalize"];
+  autoComplete?: TextInputProps["autoComplete"];
+  textContentType?: TextInputProps["textContentType"];
 };
 
 export function TextField({
@@ -17,18 +31,48 @@ export function TextField({
   placeholder,
   secureTextEntry,
   error,
+  keyboardType,
+  autoCapitalize = "none",
+  autoComplete,
+  textContentType,
 }: TextFieldProps) {
+  const [isSecure, setIsSecure] = useState(secureTextEntry);
+
   return (
     <View style={styles.wrapper}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={colors.mutedText}
-        secureTextEntry={secureTextEntry}
-        style={[styles.input, error && styles.inputError]}
-      />
+      <View style={[styles.inputContainer, error && styles.inputError]}>
+        <TextInput
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={colors.mutedText}
+          secureTextEntry={isSecure}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
+          textContentType={textContentType}
+          cursorColor={colors.text}
+          selectionColor={colors.accentDark}
+          underlineColorAndroid="transparent"
+          autoCorrect={false}
+          spellCheck={false}
+          style={styles.input}
+        />
+        {secureTextEntry ? (
+          <TouchableOpacity
+            onPress={() => setIsSecure(!isSecure)}
+            style={styles.iconButton}
+            activeOpacity={0.7}
+          >
+            <AppIcon
+              name={isSecure ? "eye-off" : "eye"}
+              color={colors.mutedText}
+              size={20}
+            />
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -42,15 +86,28 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.text,
   },
-  input: {
-    minHeight: 56,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.md,
+  inputContainer: {
+    minHeight: 54,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: spacing.md,
+  },
+  input: {
+    flex: 1,
+    minHeight: 54,
+    paddingHorizontal: spacing.md,
     color: colors.text,
-    ...typography.body,
+    fontSize: typography.body.fontSize,
+    fontWeight: typography.body.fontWeight,
+  },
+  iconButton: {
+    padding: spacing.xs,
+    justifyContent: "center",
+    alignItems: "center",
   },
   inputError: {
     borderColor: "#EF4444",

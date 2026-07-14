@@ -6,38 +6,8 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { Screen } from "@/components/ui/Screen";
 import { colors, radii, spacing } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
-import { useAllJobsQuery } from "@/features/jobs/hooks";
-
-// Custom RECOMMENDED_JOBS matching the mockup exactly
-const RECOMMENDED_JOBS = [
-  {
-    id: "job_resume_lead",
-    title: "Sr. Frontend Engineer",
-    company: "Stripe",
-    location: "Remote",
-    salary: "$165k/yr",
-    matchScore: 98,
-    initial: "S",
-  },
-  {
-    id: "job_growth_specialist",
-    title: "Product Designer",
-    company: "Figma",
-    location: "SF",
-    salary: "$145k/yr",
-    matchScore: 94,
-    initial: "F",
-  },
-  {
-    id: "job_interview_coach",
-    title: "DX Engineer",
-    company: "Vercel",
-    location: "Remote",
-    salary: "$155k/yr",
-    matchScore: 91,
-    initial: "V",
-  },
-];
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { useApplyMutation } from "@/features/jobs/hooks";
 
 // Twinkling Spark component for background stars animation
 function TwinklingSpark({ style }: { style: any }) {
@@ -67,8 +37,11 @@ function TwinklingSpark({ style }: { style: any }) {
 
 export default function HomeScreen() {
   const { user } = useSession();
-  // Keep the query active so that cache continues to fetch correctly in background
-  useAllJobsQuery();
+  const { data: snapshot } = usePreviewSyncQuery();
+  const profile = snapshot?.profile;
+  const metrics = snapshot?.homeMetrics;
+  const recommendedJobs = snapshot?.jobs.slice(0, 3) ?? [];
+  const applyMutation = useApplyMutation();
 
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
@@ -76,7 +49,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.greetingText}>Good morning 👋</Text>
-          <Text style={styles.userNameText}>{user?.fullName ?? "Alex Johnson"}</Text>
+          <Text style={styles.userNameText}>{profile?.fullName ?? user?.fullName ?? "Test User"}</Text>
         </View>
         <View style={styles.headerRight}>
           <Pressable
@@ -88,7 +61,7 @@ export default function HomeScreen() {
           </Pressable>
           <Image
             source={{
-              uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80",
+              uri: profile?.avatarUrl ?? "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80",
             }}
             style={styles.avatarImage}
           />
@@ -120,24 +93,24 @@ export default function HomeScreen() {
       {/* 3. Stat Cards Row */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>24</Text>
+          <Text style={styles.statValue}>{String(metrics?.totalApplications ?? 0)}</Text>
           <Text style={styles.statLabel}>Applications</Text>
-          <Text style={styles.statDelta}>+3</Text>
+          <Text style={styles.statDelta}>+{metrics?.todayApplied ?? 0}</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>7</Text>
+          <Text style={styles.statValue}>{String(metrics?.interviewing ?? 0)}</Text>
           <Text style={styles.statLabel}>Interviews</Text>
-          <Text style={styles.statDelta}>+2</Text>
+          <Text style={styles.statDelta}>Live</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>2</Text>
+          <Text style={styles.statValue}>{String(metrics?.offers ?? 0)}</Text>
           <Text style={styles.statLabel}>Offers</Text>
-          <Text style={styles.statDelta}>+1</Text>
+          <Text style={styles.statDelta}>Live</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>97</Text>
+          <Text style={styles.statValue}>{String(metrics?.resumeScore ?? 0)}</Text>
           <Text style={styles.statLabel}>Resume Score</Text>
-          <Text style={[styles.statDelta, { color: "#22C55E" }]}>↑4</Text>
+          <Text style={[styles.statDelta, { color: "#22C55E" }]}>Live</Text>
         </View>
       </View>
 
@@ -219,11 +192,11 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.jobStack}>
-        {RECOMMENDED_JOBS.map((job) => (
+        {recommendedJobs.map((job) => (
           <View key={job.id} style={styles.recommendedCard}>
             <View style={styles.cardTopRow}>
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarLetter}>{job.initial}</Text>
+                <Text style={styles.avatarLetter}>{job.company.charAt(0).toUpperCase()}</Text>
               </View>
               <View style={styles.cardCopy}>
                 <Text style={styles.jobTitle}>{job.title}</Text>
@@ -242,10 +215,17 @@ export default function HomeScreen() {
                 <Text style={styles.salaryPeriod}>/yr</Text>
               </Text>
               <Pressable
-                style={styles.applyButton}
-                onPress={() => router.push(`/(app)/jobs/${job.id}` as never)}
+                style={[styles.applyButton, job.isApplied && styles.appliedButton]}
+                onPress={() => {
+                  if (!job.isApplied) {
+                    applyMutation.mutate(job.id);
+                  }
+                }}
+                disabled={job.isApplied || applyMutation.isPending}
               >
-                <Text style={styles.applyButtonText}>Apply →</Text>
+                <Text style={[styles.applyButtonText, job.isApplied && styles.appliedButtonText]}>
+                  {job.isApplied ? "Applied" : "Apply →"}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -533,10 +513,21 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     paddingHorizontal: 20,
     paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   applyButtonText: {
     color: colors.accent,
     fontSize: 13,
     fontWeight: "800",
+  },
+  appliedButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+  },
+  appliedButtonText: {
+    color: colors.mutedText,
   },
 });

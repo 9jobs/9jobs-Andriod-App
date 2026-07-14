@@ -5,6 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/branding/9jobs-logo.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#090A08"
+    },
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -31,7 +36,8 @@
       "expo-router",
       "expo-font",
       "expo-secure-store",
-      "@clerk/expo"
+      "@clerk/expo",
+      "expo-web-browser"
     ]
   }
 }

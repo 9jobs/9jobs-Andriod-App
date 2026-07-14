@@ -1,10 +1,13 @@
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
+import { useState } from "react";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { useSession } from "@/providers/SessionProvider";
-import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { useUpdateProfileMutation } from "@/features/jobs/hooks";
+import { colors, shadows, spacing, typography } from "@/theme";
 
 const profileItems = [
   {
@@ -53,85 +56,223 @@ const profileItems = [
 
 export default function ProfileScreen() {
   const { signOut } = useSession();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null);
+  const { data: snapshot } = usePreviewSyncQuery();
+  const profile = snapshot?.profile;
+  const activePlanLabel =
+    snapshot?.pricingContent.sections[0]?.items?.find((item) => item.badge === "Active")?.title ?? null;
+  const { mutate: updateProfile } = useUpdateProfileMutation();
+
+  async function handleAvatarPress() {
+    let ImagePickerModule: any;
+    try {
+      ImagePickerModule = require("expo-image-picker");
+    } catch (e) {
+      console.warn("expo-image-picker package not found:", e);
+    }
+
+    Alert.alert(
+      "Profile Picture",
+      "Choose an option to update your profile photo.",
+      [
+        {
+          text: "Upload Image from Device",
+          onPress: async () => {
+            if (!ImagePickerModule || !ImagePickerModule.requestMediaLibraryPermissionsAsync) {
+              Alert.alert(
+                "Native Picker Unavailable",
+                "The native image picker is not compiled in this build yet. Please wait a few moments for the build to finish."
+              );
+              return;
+            }
+
+            try {
+              const { status } = await ImagePickerModule.requestMediaLibraryPermissionsAsync();
+              if (status !== "granted") {
+                Alert.alert("Permission Denied", "Please grant photo library access to change your profile picture.");
+                return;
+              }
+
+              const result = await ImagePickerModule.launchImageLibraryAsync({
+                mediaTypes: ImagePickerModule.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
+              });
+
+              if (!result.canceled && result.assets && result.assets.length > 0) {
+                const selectedUri = result.assets[0].uri;
+                setPendingAvatarUrl(selectedUri);
+              }
+            } catch (err) {
+              console.error("Image pick error:", err);
+              Alert.alert("Error", "Failed to select an image from your device.");
+            }
+          },
+        },
+        {
+          text: "Remove Photo",
+          style: "destructive",
+          onPress: () => {
+            const defaultPlaceholder = "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y";
+            setPendingAvatarUrl(defaultPlaceholder);
+          },
+        },
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ]
+    );
+  }
+
+  async function handleSignOut() {
+    if (isSigningOut) {
+      return;
+    }
+
+    setIsSigningOut(true);
+
+    try {
+      await signOut();
+      router.dismissAll();
+      router.replace("/");
+    } catch (error) {
+      Alert.alert("Sign out failed", error instanceof Error ? error.message : "Please try again.");
+    } finally {
+      setIsSigningOut(false);
+    }
+  }
+
+  const isDark = colors.background === "#090A08";
 
   return (
-    <Screen contentStyle={styles.screenContent}>
-      <View style={styles.hero}>
-        <View style={styles.heroHeader}>
-          <Text style={styles.title}>Profile</Text>
-          <Pressable
-            style={styles.settingsButton}
-            onPress={() => router.push("/(app)/settings")}
-          >
-            <AppIcon name="settings" size={18} color={colors.surface} />
-          </Pressable>
-        </View>
-
-        <View style={styles.sparkOne} />
-        <View style={styles.sparkTwo} />
-        <View style={styles.sparkThree} />
-        <View style={styles.sparkFour} />
-        <View style={styles.sparkFive} />
-        <View style={styles.sparkSix} />
-
-        <View style={styles.avatarWrap}>
-          <View style={styles.avatarRing}>
-            <Image
-              source={{
-                uri: "https://randomuser.me/api/portraits/men/32.jpg",
-              }}
-              style={styles.avatarImage}
-              resizeMode="cover"
-            />
-          </View>
-          <View style={styles.cameraBadge}>
-            <CameraBadgeIcon />
-          </View>
-        </View>
-
-        <View style={styles.socialRow}>
-          <SocialButton kind="linkedin" />
-          <SocialButton kind="facebook" />
-          <SocialButton kind="instagram" />
-          <SocialButton kind="twitter" />
-        </View>
-      </View>
-
-      <View style={styles.menuWrap}>
-        {profileItems.map((item, index) => (
-          <View key={item.id}>
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <Screen contentStyle={styles.screenContent}>
+        <View style={[styles.hero, { backgroundColor: "#090A08" }]}>
+          <View style={styles.heroHeader}>
+            <Text style={styles.title}>Profile</Text>
             <Pressable
-              style={styles.menuRow}
-              onPress={() => router.push(item.onPress() as never)}
+              style={styles.settingsButton}
+              onPress={() => router.push("/(app)/settings")}
             >
-              <View style={styles.menuLeft}>
-                <View style={styles.menuIconBubble}>
-                  <AppIcon name={item.icon} size={18} color={colors.text} />
-                </View>
-                <Text style={styles.menuLabel}>{item.label}</Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
+              <AppIcon name="settings" size={18} color={colors.surface} />
             </Pressable>
-            {index < profileItems.length - 1 ? <View style={styles.divider} /> : null}
           </View>
-        ))}
-      </View>
 
-      <Pressable style={styles.signOutButton} onPress={signOut}>
-        <Text style={styles.signOutIcon}>↪</Text>
-        <Text style={styles.signOutText}>Sign Out</Text>
-      </Pressable>
-    </Screen>
+          <View style={styles.sparkOne} />
+          <View style={styles.sparkTwo} />
+          <View style={styles.sparkThree} />
+          <View style={styles.sparkFour} />
+          <View style={styles.sparkFive} />
+          <View style={styles.sparkSix} />
+
+          <Pressable style={styles.avatarWrap} onPress={handleAvatarPress}>
+            <View style={styles.avatarRing}>
+              <Image
+                source={{
+                  uri: pendingAvatarUrl ?? profile?.avatarUrl ?? "https://randomuser.me/api/portraits/men/32.jpg",
+                }}
+                style={styles.avatarImage}
+                resizeMode="cover"
+              />
+            </View>
+            <View style={styles.cameraBadge}>
+              <CameraBadgeIcon />
+            </View>
+          </Pressable>
+
+          <View style={styles.socialRow}>
+            <SocialButton kind="linkedin" url={profile?.linkedinUrl} />
+            <SocialButton kind="facebook" url={profile?.facebookUrl} />
+            <SocialButton kind="instagram" url={profile?.instagramUrl} />
+            <SocialButton kind="twitter" url={profile?.twitterUrl} />
+          </View>
+        </View>
+
+        <View style={[styles.menuWrap, { backgroundColor: colors.surface }]}>
+          {profileItems.map((item, index) => (
+            <View key={item.id}>
+              <Pressable
+                style={styles.menuRow}
+                onPress={() => router.push(item.onPress() as never)}
+              >
+                <View style={styles.menuLeft}>
+                  <View style={[styles.menuIconBubble, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(10, 10, 8, 0.04)" }]}>
+                    <AppIcon name={item.icon} size={18} color={colors.text} />
+                  </View>
+                  <Text style={[styles.menuLabel, { color: colors.text }]}>
+                    {item.id === "pricing" && activePlanLabel
+                      ? `Subscription Plan (${activePlanLabel})`
+                      : item.label}
+                  </Text>
+                </View>
+                <Text style={[styles.chevron, { color: colors.subtleText }]}>›</Text>
+              </Pressable>
+              {index < profileItems.length - 1 ? <View style={[styles.divider, { backgroundColor: colors.border }]} /> : null}
+            </View>
+          ))}
+        </View>
+      </Screen>
+
+      <View style={styles.signOutDock}>
+        {pendingAvatarUrl ? (
+          <View style={styles.saveCancelRow}>
+            <Pressable
+              style={[styles.actionButton, styles.cancelButton]}
+              onPress={() => setPendingAvatarUrl(null)}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.actionButton, styles.saveButton]}
+              onPress={() => {
+                updateProfile({ avatarUrl: pendingAvatarUrl } as any);
+                setPendingAvatarUrl(null);
+              }}
+            >
+              <Text style={styles.saveButtonText}>Save</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            style={styles.signOutButton}
+            disabled={isSigningOut}
+            onPress={() => {
+              void handleSignOut();
+            }}
+          >
+            {isSigningOut ? (
+              <ActivityIndicator color="#FF4D4F" />
+            ) : (
+              <View style={styles.signOutContent}>
+                <Text style={styles.signOutIcon}>↪</Text>
+                <Text style={styles.signOutText}>Sign Out</Text>
+              </View>
+            )}
+          </Pressable>
+        )}
+      </View>
+    </View>
   );
 }
 
 function SocialButton({
   kind,
+  url,
 }: {
   kind: "linkedin" | "facebook" | "instagram" | "twitter";
+  url?: string;
 }) {
   return (
-    <Pressable style={styles.socialButton}>
+    <Pressable
+      style={[styles.socialButton, !url && styles.socialButtonDisabled]}
+      onPress={() => {
+        if (!url) return;
+        void Linking.openURL(url);
+      }}
+    >
       <SocialIcon kind={kind} />
     </Pressable>
   );
@@ -192,6 +333,10 @@ function CameraBadgeIcon() {
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
   screenContent: {
     paddingHorizontal: 0,
     paddingTop: 0,
@@ -334,10 +479,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  socialButtonDisabled: {
+    opacity: 0.5,
+  },
   menuWrap: {
     backgroundColor: colors.background,
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.lg,
+    paddingBottom: 216,
   },
   menuRow: {
     minHeight: 66,
@@ -371,13 +520,21 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.border,
   },
+  signOutDock: {
+    position: "absolute",
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: 104,
+  },
   signOutButton: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-    marginBottom: 108,
-    minHeight: 42,
+    minHeight: 66,
     borderRadius: 16,
     backgroundColor: "#FFE3E3",
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadows.card,
+  },
+  signOutContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -392,5 +549,37 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: "#FF4D4F",
     fontSize: 16,
+  },
+  saveCancelRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    width: "100%",
+  },
+  actionButton: {
+    flex: 1,
+    minHeight: 66,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadows.card,
+  },
+  cancelButton: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  saveButton: {
+    backgroundColor: colors.accent,
+  },
+  cancelButtonText: {
+    ...typography.title,
+    color: colors.text,
+    fontSize: 16,
+  },
+  saveButtonText: {
+    ...typography.title,
+    color: colors.dark,
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

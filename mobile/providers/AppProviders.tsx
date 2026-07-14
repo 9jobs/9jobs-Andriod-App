@@ -1,7 +1,7 @@
 import { PropsWithChildren, useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ClerkProvider } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LogBox } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { clerkPublishableKey, isClerkConfigured } from "@/lib/clerk/config";

@@ -1,19 +1,37 @@
-import { Redirect, Tabs } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import type { ColorValue } from "react-native";
+import { Redirect, Tabs } from "expo-router";
 import { AppIcon } from "@/components/ui/AppIcon";
-import { colors, radii, spacing, typography } from "@/theme";
+import { colors, radii, setTheme, spacing, typography } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import React, { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
 
 export default function AppLayout() {
   const { user, hasCompletedOnboarding } = useSession();
+  const { data: snapshot } = usePreviewSyncQuery();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (user) {
+      initializeSocket(user.id, queryClient);
+    } else {
+      disconnectSocket();
+    }
+  }, [user]);
+
+  const isDarkMode = (snapshot?.profile.darkMode ?? false) && !(snapshot?.systemSettings.darkModeOverride ?? false);
+  setTheme(isDarkMode);
+
 
   if (!hasCompletedOnboarding) {
     return <Redirect href="/(public)" />;
   }
 
   if (!user) {
-    return <Redirect href="/(public)/auth" />;
+    return <Redirect href="/(public)/auth/sign-up" />;
   }
 
   return (
@@ -97,6 +115,7 @@ export default function AppLayout() {
       <Tabs.Screen name="jobs/search" options={{ href: null }} />
       <Tabs.Screen name="saved" options={{ href: null }} />
       <Tabs.Screen name="jobs/[id]" options={{ href: null }} />
+      <Tabs.Screen name="chat/[threadId]" options={{ href: null }} />
       <Tabs.Screen name="resume" options={{ href: null }} />
       <Tabs.Screen name="outreach" options={{ href: null }} />
       <Tabs.Screen name="interview" options={{ href: null }} />
@@ -107,6 +126,8 @@ export default function AppLayout() {
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="about" options={{ href: null }} />
       <Tabs.Screen name="contact" options={{ href: null }} />
+      <Tabs.Screen name="security" options={{ href: null }} />
+      <Tabs.Screen name="tracker-details" options={{ href: null }} />
     </Tabs>
   );
 }

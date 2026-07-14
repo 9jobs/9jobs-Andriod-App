@@ -21,7 +21,7 @@ export default function OnboardingScreen() {
   async function handleAdvance() {
     if (activeIndex === onboardingSlides.length - 1) {
       await setOnboardingComplete();
-      router.replace("/(public)/auth");
+      router.replace("/(public)/auth/sign-up");
       return;
     }
 
@@ -85,7 +85,7 @@ export default function OnboardingScreen() {
           label="Skip for now"
           onPress={async () => {
             await setOnboardingComplete();
-            router.replace("/(public)/auth");
+            router.replace("/(public)/auth/sign-up");
           }}
           variant="ghost"
           style={styles.ghostButton}

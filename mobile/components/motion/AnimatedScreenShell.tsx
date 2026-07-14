@@ -1,14 +1,20 @@
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, useEffect, useRef } from "react";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 export function AnimatedScreenShell({ children }: PropsWithChildren) {
-  return enteringWrapper(children);
-}
+  const isFirstRender = useRef(true);
 
-function enteringWrapper(children: React.ReactNode) {
-  return (
-    <Animated.View entering={FadeInUp.springify().damping(16).stiffness(180)}>
-      {children}
-    </Animated.View>
-  );
+  useEffect(() => {
+    isFirstRender.current = false;
+  }, []);
+
+  if (isFirstRender.current) {
+    return (
+      <Animated.View entering={FadeInUp.springify().damping(16).stiffness(180)}>
+        {children}
+      </Animated.View>
+    );
+  }
+
+  return <Animated.View>{children}</Animated.View>;
 }

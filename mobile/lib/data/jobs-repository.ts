@@ -1,46 +1,31 @@
-import { demoJobs } from "@/lib/data/demo-jobs";
-import { wait } from "@/lib/utils/time";
+import { applyToJob as applyLiveToJob, fetchMobileSyncSnapshot, toggleSavedJob as toggleLiveSavedJob, updateProfile as updateLiveProfile } from "@/lib/data/mobile-sync-repository";
 import type { CandidateProfile } from "@/types/profile";
-import { demoProfile } from "@/lib/data/demo-profile";
-
-let jobsDb = [...demoJobs];
-let profileDb: CandidateProfile = { ...demoProfile };
 
 export async function listJobs() {
-  await wait(140);
-  return [...jobsDb];
+  const snapshot = await fetchMobileSyncSnapshot();
+  return snapshot.jobs;
 }
 
 export async function getJobById(id: string) {
-  await wait(120);
-  return jobsDb.find((job) => job.id === id) ?? null;
+  const snapshot = await fetchMobileSyncSnapshot();
+  return snapshot.jobs.find((job) => job.id === id) ?? null;
 }
 
 export async function toggleSavedJob(id: string) {
-  await wait(90);
-  jobsDb = jobsDb.map((job) =>
-    job.id === id ? { ...job, isSaved: !job.isSaved } : job,
-  );
-  return jobsDb.find((job) => job.id === id) ?? null;
+  return toggleLiveSavedJob(id);
 }
 
 export async function applyToJob(id: string) {
-  await wait(140);
-  jobsDb = jobsDb.map((job) =>
-    job.id === id ? { ...job, isApplied: true, status: "applied" } : job,
-  );
-  return jobsDb.find((job) => job.id === id) ?? null;
+  return applyLiveToJob(id);
 }
 
 export async function getProfile() {
-  await wait(120);
-  return { ...profileDb };
+  const snapshot = await fetchMobileSyncSnapshot();
+  return snapshot.profile;
 }
 
 export async function updateProfile(
-  patch: Partial<Pick<CandidateProfile, "darkMode" | "biometric">>,
+  patch: Partial<CandidateProfile & { avatarUrl?: string }>,
 ) {
-  await wait(100);
-  profileDb = { ...profileDb, ...patch };
-  return { ...profileDb };
+  return updateLiveProfile(patch);
 }

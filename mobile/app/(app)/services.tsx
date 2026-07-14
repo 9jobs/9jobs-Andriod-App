@@ -4,10 +4,20 @@ import { router } from "expo-router";
 import Svg, { Path, Circle } from "react-native-svg";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { Screen } from "@/components/ui/Screen";
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing } from "@/theme";
 
 // Services list data matching mockup exactly
 const SERVICES_DATA = [
+  {
+    id: "tracker",
+    title: "Job Application Service",
+    subtitle: "Apply, track applications, deadlines, an...",
+    icon: "tracker",
+    route: "/(app)/tracker",
+    badge: null,
+    isIconDark: false,
+  },
   {
     id: "resume",
     title: "Resume Intelligence",
@@ -24,7 +34,7 @@ const SERVICES_DATA = [
     icon: "mail",
     route: "/(app)/outreach",
     badge: "PRO",
-    isIconDark: false, // Light green background, black icon
+    isIconDark: true,
   },
   {
     id: "interview",
@@ -34,15 +44,6 @@ const SERVICES_DATA = [
     route: "/(app)/interview",
     badge: "AI",
     isIconDark: true,
-  },
-  {
-    id: "tracker",
-    title: "Job Tracker",
-    subtitle: "Kanban pipeline, deadline alerts, offer c...",
-    icon: "tracker",
-    route: "/(app)/tracker",
-    badge: null,
-    isIconDark: false,
   },
   {
     id: "stories",
@@ -91,6 +92,29 @@ function TwinklingSpark({ style }: { style: any }) {
 }
 
 export default function ServicesScreen() {
+  const { data: snapshot } = usePreviewSyncQuery();
+  const serviceOrder = ["job-tracker", "tracker", "resume-intelligence", "resume", "hiring-manager-outreach", "outreach", "interview-prep", "interview", "success-stories", "stories", "pricing"];
+  const services = [...(snapshot?.services ?? SERVICES_DATA)]
+    .map((service) => {
+      if (service.id === "job-tracker" || service.id === "tracker" || service.title === "Job Tracker") {
+        return {
+          ...service,
+          title: "Job Application Service",
+          route: "/(app)/tracker",
+          isIconDark: true,
+        };
+      }
+
+      return service;
+    })
+    .sort((left, right) => {
+      const leftIndex = serviceOrder.indexOf(left.id);
+      const rightIndex = serviceOrder.indexOf(right.id);
+      const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+      const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+      return normalizedLeft - normalizedRight;
+    });
+
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
       {/* 1. Header Section */}
@@ -172,7 +196,15 @@ export default function ServicesScreen() {
 
       {/* 3. Services List Section */}
       <View style={styles.servicesList}>
-        {SERVICES_DATA.map((service) => (
+        {services.map((service) => (
+          (() => {
+            const useDarkIconBackground =
+              service.isIconDark ||
+              service.id === "hiring-manager-outreach" ||
+              service.id === "outreach" ||
+              service.icon === "mail";
+
+            return (
           <Pressable
             key={service.id}
             style={styles.serviceCard}
@@ -182,7 +214,7 @@ export default function ServicesScreen() {
             <View
               style={[
                 styles.iconContainer,
-                service.isIconDark
+                useDarkIconBackground
                   ? { backgroundColor: colors.dark }
                   : { backgroundColor: "rgba(163, 230, 53, 0.12)" },
               ]}
@@ -191,7 +223,7 @@ export default function ServicesScreen() {
                 <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                   <Path
                     d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
-                    stroke={service.isIconDark ? colors.accent : colors.text}
+                    stroke={useDarkIconBackground ? colors.accent : colors.text}
                     strokeWidth={2.2}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -216,7 +248,7 @@ export default function ServicesScreen() {
               ) : (
                 <AppIcon
                   name={service.icon as any}
-                  color={service.isIconDark ? colors.accent : colors.text}
+                  color={useDarkIconBackground ? colors.accent : colors.text}
                   size={20}
                   strokeWidth={2.2}
                 />
@@ -253,6 +285,8 @@ export default function ServicesScreen() {
               />
             </Svg>
           </Pressable>
+            );
+          })()
         ))}
       </View>
     </Screen>

@@ -493,7 +493,7 @@ export function getQuickActionRoutes() {
 export function getTrackerSummary(jobs: Job[]) {
   return {
     applied: jobs.filter((job) => job.isApplied).length,
-    interviewing: jobs.filter((job) => job.status === "interview").length,
+    interviewing: jobs.filter((job) => job.status === "interviewing").length,
     offers: jobs.filter((job) => job.status === "offer").length,
     saved: jobs.filter((job) => job.isSaved).length,
   };

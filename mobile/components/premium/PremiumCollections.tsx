@@ -6,18 +6,32 @@ import type { PremiumListItem } from "@/lib/data/premium-content";
 
 export function PremiumStatGrid({
   items,
+  activeLabel,
+  onPress,
 }: {
   items: Array<{ label: string; value: string; delta?: string }>;
+  activeLabel?: string;
+  onPress?: (label: string) => void;
 }) {
   return (
     <View style={styles.grid}>
-      {items.map((item) => (
-        <View key={item.label} style={styles.statCard}>
-          <Text style={styles.statDelta}>{item.delta ?? "Live"}</Text>
-          <Text style={styles.statValue}>{item.value}</Text>
-          <Text style={styles.statLabel}>{item.label}</Text>
-        </View>
-      ))}
+      {items.map((item) => {
+        const isActive = activeLabel === item.label;
+        return (
+          <Pressable
+            key={item.label}
+            onPress={() => onPress?.(item.label)}
+            style={[
+              styles.statCard,
+              isActive && { borderColor: colors.accent, borderWidth: 1.5 },
+            ]}
+          >
+            <Text style={styles.statDelta}>{item.delta ?? "Live"}</Text>
+            <Text style={styles.statValue}>{item.value}</Text>
+            <Text style={styles.statLabel}>{item.label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

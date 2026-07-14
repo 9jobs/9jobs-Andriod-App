@@ -1,78 +1,125 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  applyToJob,
-  getJobById,
-  getProfile,
-  listJobs,
-  toggleSavedJob,
-  updateProfile,
-} from "@/lib/data/jobs-repository";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { applyToJob, toggleSavedJob, updateApplicationStatus, updateProfile, updateResumeScore, markMessagesAsSeen, markMessagesAsDelivered } from "@/lib/data/mobile-sync-repository";
 import { queryKeys } from "@/lib/queries";
 import { filterJobs } from "@/features/jobs/filterJobs";
 import { useJobFilters } from "@/features/jobs/useJobFilters";
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { useSession } from "@/providers/SessionProvider";
 
 export function useJobsQuery() {
   const filters = useJobFilters();
-
-  return useQuery({
-    queryKey: [...queryKeys.jobs, filters],
-    queryFn: async () => {
-      const jobs = await listJobs();
-      return filterJobs(jobs, filters);
-    },
-  });
+  const query = usePreviewSyncQuery(false);
+  return {
+    ...query,
+    data: filterJobs(query.data?.jobs ?? [], filters),
+  };
 }
 
 export function useAllJobsQuery() {
-  return useQuery({
-    queryKey: queryKeys.jobs,
-    queryFn: listJobs,
-  });
+  const query = usePreviewSyncQuery(false);
+  return {
+    ...query,
+    data: query.data?.jobs ?? [],
+  };
 }
 
 export function useJobDetailQuery(id: string) {
-  return useQuery({
-    queryKey: [...queryKeys.jobs, id],
-    queryFn: () => getJobById(id),
-  });
+  const query = usePreviewSyncQuery(false);
+  return {
+    ...query,
+    data: query.data?.jobs.find((job) => job.id === id) ?? null,
+  };
 }
 
 export function useToggleSaveMutation() {
   const queryClient = useQueryClient();
+  const { user } = useSession();
 
   return useMutation({
-    mutationFn: toggleSavedJob,
+    mutationFn: (jobId: string) => toggleSavedJob(jobId, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },
   });
 }
 
 export function useApplyMutation() {
   const queryClient = useQueryClient();
+  const { user } = useSession();
 
   return useMutation({
-    mutationFn: applyToJob,
+    mutationFn: (jobId: string) => applyToJob(jobId, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useUpdateApplicationStatusMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: ({ jobId, status }: { jobId: string; status: string }) =>
+      updateApplicationStatus(jobId, status, user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },
   });
 }
 
 export function useProfileQuery() {
-  return useQuery({
-    queryKey: queryKeys.profile,
-    queryFn: getProfile,
-  });
+  const query = usePreviewSyncQuery(false);
+  return {
+    ...query,
+    data: query.data?.profile ?? null,
+  };
 }
 
 export function useUpdateProfileMutation() {
   const queryClient = useQueryClient();
+  const { user } = useSession();
 
   return useMutation({
-    mutationFn: updateProfile,
+    mutationFn: (patch: Parameters<typeof updateProfile>[0]) => updateProfile(patch, user),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.profile });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useUpdateResumeScoreMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: (score: number) => updateResumeScore(score, user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useMarkMessagesAsSeenMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: () => markMessagesAsSeen(user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useMarkMessagesAsDeliveredMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: () => markMessagesAsDelivered(user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },
   });
 }

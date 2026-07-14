@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { Redirect, useLocalSearchParams } from "expo-router";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { getInitialRoute } from "@/features/onboarding/getInitialRoute";
 import { useSession } from "@/providers/SessionProvider";
@@ -8,23 +8,39 @@ import { colors, spacing, typography } from "@/theme";
 
 export default function IndexScreen() {
   const { isBooting, hasCompletedOnboarding, user } = useSession();
+  const { fromAuth } = useLocalSearchParams<{ fromAuth?: string }>();
+  const shouldHoldSplashRef = useRef(fromAuth === "1");
+  const [isReadyToRoute, setIsReadyToRoute] = useState(false);
+
+  if (fromAuth === "1") {
+    shouldHoldSplashRef.current = true;
+  }
 
   useEffect(() => {
     if (isBooting) {
+      setIsReadyToRoute(false);
       return;
     }
 
-    const target = getInitialRoute({
-      hasCompletedOnboarding,
-      hasSession: Boolean(user),
-    });
+    if (shouldHoldSplashRef.current) {
+      return;
+    }
 
     const timeout = setTimeout(() => {
-      router.replace(target);
+      setIsReadyToRoute(true);
     }, 1100);
 
     return () => clearTimeout(timeout);
   }, [hasCompletedOnboarding, isBooting, user]);
+
+  const target = getInitialRoute({
+    hasCompletedOnboarding,
+    hasSession: Boolean(user),
+  });
+
+  if (!isBooting && !shouldHoldSplashRef.current && isReadyToRoute) {
+    return <Redirect href={target} />;
+  }
 
   return (
     <View style={styles.container}>

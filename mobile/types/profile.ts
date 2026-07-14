@@ -5,5 +5,6 @@ export type CandidateProfile = {
   email: string;
   darkMode: boolean;
   biometric: boolean;
+  pushNotifications: boolean;
   weeklyGoal: string;
 };
