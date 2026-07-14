@@ -5,6 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import authRoutes from "./routes/auth";
 import chatRoutes from "./routes/chat";
+import interviewPrepRoutes from "./routes/interviewPrep";
 import trackerRoutes from "./routes/tracker";
 import { socketAuthMiddleware } from "./middleware/auth";
 import { sendMessage, setMessageServiceIo } from "./services/messageService";
@@ -29,6 +30,7 @@ app.use(express.json());
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api", chatRoutes);
+app.use("/api", interviewPrepRoutes);
 app.use("/api", trackerRoutes);
 
 // Health check

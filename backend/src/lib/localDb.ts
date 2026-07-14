@@ -38,20 +38,86 @@ export interface LocalConversation {
   updated_at: string;
 }
 
+export interface LocalRecruiterContact {
+  id: number;
+  client_id: string;
+  application_id: number | null;
+  recruiter_name: string;
+  company_name: string;
+  email: string;
+  phone?: string;
+  linkedin_url: string;
+  contact_method: string;
+  contact_date: string;
+  response_status: string;
+  response_date?: string | null;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LocalInterviewPrepSession {
+  id: number;
+  client_id: string;
+  interviewer_name: string;
+  interviewer_role: string;
+  interviewer_company: string;
+  interviewer_avatar_url: string;
+  current_question_index: number;
+  question_total: number;
+  status: "ready" | "in_progress" | "completed";
+  last_question: string;
+  last_question_tags: string[];
+  last_transcript: string;
+  last_ai_answer: string;
+  last_feedback: string;
+  last_clarity_score: number;
+  last_impact_score: number;
+  last_structure_score: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LocalInterviewPrepResponse {
+  id: number;
+  session_id: number;
+  client_id: string;
+  question_index: number;
+  question_text: string;
+  question_tags: string[];
+  transcript: string;
+  ai_answer: string;
+  feedback: string;
+  clarity_score: number;
+  impact_score: number;
+  structure_score: number;
+  created_at: string;
+}
+
 interface LocalDbSchema {
   messages: LocalMessage[];
   conversations: LocalConversation[];
+  recruiter_contacts: LocalRecruiterContact[];
+  interview_prep_sessions: LocalInterviewPrepSession[];
+  interview_prep_responses: LocalInterviewPrepResponse[];
 }
 
 function readDb(): LocalDbSchema {
   try {
     if (!fs.existsSync(DB_FILE)) {
-      return { messages: [], conversations: [] };
+      return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [] };
     }
     const data = fs.readFileSync(DB_FILE, "utf8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    return {
+      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+      conversations: Array.isArray(parsed.conversations) ? parsed.conversations : [],
+      recruiter_contacts: Array.isArray(parsed.recruiter_contacts) ? parsed.recruiter_contacts : [],
+      interview_prep_sessions: Array.isArray(parsed.interview_prep_sessions) ? parsed.interview_prep_sessions : [],
+      interview_prep_responses: Array.isArray(parsed.interview_prep_responses) ? parsed.interview_prep_responses : [],
+    };
   } catch (err) {
-    return { messages: [], conversations: [] };
+    return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [] };
   }
 }
 
@@ -173,4 +239,216 @@ export async function clearLocalConversation(conversationId: string): Promise<bo
 
   writeDb(db);
   return true;
+}
+
+export async function getLocalRecruiterContacts(clientId?: string): Promise<LocalRecruiterContact[]> {
+  const db = readDb();
+  const rows = clientId
+    ? db.recruiter_contacts.filter((contact) => contact.client_id === clientId)
+    : db.recruiter_contacts;
+
+  return [...rows].sort((a, b) => {
+    const aTime = new Date(a.contact_date || a.created_at).getTime();
+    const bTime = new Date(b.contact_date || b.created_at).getTime();
+    return bTime - aTime;
+  });
+}
+
+export async function upsertLocalRecruiterContact(
+  contact: Partial<LocalRecruiterContact> & {
+    client_id: string;
+    recruiter_name?: string;
+    company_name?: string;
+    email?: string;
+    linkedin_url?: string;
+  },
+): Promise<LocalRecruiterContact> {
+  const db = readDb();
+  const now = new Date().toISOString();
+  const existingIndex = typeof contact.id === "number"
+    ? db.recruiter_contacts.findIndex((item) => item.id === contact.id)
+    : -1;
+
+  if (existingIndex >= 0) {
+    const existing = db.recruiter_contacts[existingIndex];
+    const updated: LocalRecruiterContact = {
+      ...existing,
+      ...contact,
+      application_id: typeof contact.application_id === "number" ? contact.application_id : existing.application_id ?? null,
+      recruiter_name: contact.recruiter_name ?? existing.recruiter_name ?? "",
+      company_name: contact.company_name ?? existing.company_name ?? "",
+      email: contact.email ?? existing.email ?? "",
+      linkedin_url: contact.linkedin_url ?? existing.linkedin_url ?? "",
+      contact_method: contact.contact_method ?? existing.contact_method ?? "other",
+      contact_date: contact.contact_date ?? existing.contact_date ?? now,
+      response_status: contact.response_status ?? existing.response_status ?? "no_response",
+      notes: contact.notes ?? existing.notes ?? "",
+      updated_at: now,
+    };
+    db.recruiter_contacts[existingIndex] = updated;
+    writeDb(db);
+    return updated;
+  }
+
+  const newId =
+    db.recruiter_contacts.length > 0
+      ? Math.max(...db.recruiter_contacts.map((item) => item.id)) + 1
+      : 1;
+
+  const created: LocalRecruiterContact = {
+    id: newId,
+    client_id: contact.client_id,
+    application_id: typeof contact.application_id === "number" ? contact.application_id : null,
+    recruiter_name: contact.recruiter_name ?? "",
+    company_name: contact.company_name ?? "",
+    email: contact.email ?? "",
+    phone: contact.phone ?? "",
+    linkedin_url: contact.linkedin_url ?? "",
+    contact_method: contact.contact_method ?? "other",
+    contact_date: contact.contact_date ?? now,
+    response_status: contact.response_status ?? "no_response",
+    response_date: contact.response_date ?? null,
+    notes: contact.notes ?? "",
+    created_at: now,
+    updated_at: now,
+  };
+
+  db.recruiter_contacts.push(created);
+  writeDb(db);
+  return created;
+}
+
+export async function deleteLocalRecruiterContact(id: number): Promise<boolean> {
+  const db = readDb();
+  const originalLength = db.recruiter_contacts.length;
+  db.recruiter_contacts = db.recruiter_contacts.filter((item) => item.id !== id);
+
+  if (db.recruiter_contacts.length === originalLength) {
+    return false;
+  }
+
+  writeDb(db);
+  return true;
+}
+
+export async function getLocalInterviewPrepSessions(clientId?: string): Promise<LocalInterviewPrepSession[]> {
+  const db = readDb();
+  const rows = clientId
+    ? db.interview_prep_sessions.filter((session) => session.client_id === clientId)
+    : db.interview_prep_sessions;
+
+  return [...rows].sort((a, b) => {
+    const aTime = new Date(a.updated_at || a.created_at).getTime();
+    const bTime = new Date(b.updated_at || b.created_at).getTime();
+    return bTime - aTime;
+  });
+}
+
+export async function getLocalInterviewPrepSession(clientId: string): Promise<LocalInterviewPrepSession | undefined> {
+  const sessions = await getLocalInterviewPrepSessions(clientId);
+  return sessions[0];
+}
+
+export async function upsertLocalInterviewPrepSession(
+  session: Partial<LocalInterviewPrepSession> & {
+    client_id: string;
+    interviewer_name: string;
+    interviewer_role: string;
+    interviewer_company: string;
+    interviewer_avatar_url: string;
+    question_total: number;
+  },
+): Promise<LocalInterviewPrepSession> {
+  const db = readDb();
+  const now = new Date().toISOString();
+  const existingIndex = typeof session.id === "number"
+    ? db.interview_prep_sessions.findIndex((item) => item.id === session.id)
+    : db.interview_prep_sessions.findIndex((item) => item.client_id === session.client_id);
+
+  if (existingIndex >= 0) {
+    const existing = db.interview_prep_sessions[existingIndex];
+    const updated: LocalInterviewPrepSession = {
+      ...existing,
+      ...session,
+      current_question_index: typeof session.current_question_index === "number" ? session.current_question_index : existing.current_question_index,
+      question_total: typeof session.question_total === "number" ? session.question_total : existing.question_total,
+      status: session.status ?? existing.status,
+      last_question: session.last_question ?? existing.last_question,
+      last_question_tags: Array.isArray(session.last_question_tags) ? session.last_question_tags : existing.last_question_tags,
+      last_transcript: session.last_transcript ?? existing.last_transcript,
+      last_ai_answer: session.last_ai_answer ?? existing.last_ai_answer,
+      last_feedback: session.last_feedback ?? existing.last_feedback,
+      last_clarity_score: typeof session.last_clarity_score === "number" ? session.last_clarity_score : existing.last_clarity_score,
+      last_impact_score: typeof session.last_impact_score === "number" ? session.last_impact_score : existing.last_impact_score,
+      last_structure_score: typeof session.last_structure_score === "number" ? session.last_structure_score : existing.last_structure_score,
+      updated_at: now,
+    };
+    db.interview_prep_sessions[existingIndex] = updated;
+    writeDb(db);
+    return updated;
+  }
+
+  const newId =
+    db.interview_prep_sessions.length > 0
+      ? Math.max(...db.interview_prep_sessions.map((item) => item.id)) + 1
+      : 1;
+
+  const created: LocalInterviewPrepSession = {
+    id: newId,
+    client_id: session.client_id,
+    interviewer_name: session.interviewer_name,
+    interviewer_role: session.interviewer_role,
+    interviewer_company: session.interviewer_company,
+    interviewer_avatar_url: session.interviewer_avatar_url,
+    current_question_index: typeof session.current_question_index === "number" ? session.current_question_index : 0,
+    question_total: session.question_total,
+    status: session.status ?? "ready",
+    last_question: session.last_question ?? "",
+    last_question_tags: Array.isArray(session.last_question_tags) ? session.last_question_tags : [],
+    last_transcript: session.last_transcript ?? "",
+    last_ai_answer: session.last_ai_answer ?? "",
+    last_feedback: session.last_feedback ?? "",
+    last_clarity_score: typeof session.last_clarity_score === "number" ? session.last_clarity_score : 0,
+    last_impact_score: typeof session.last_impact_score === "number" ? session.last_impact_score : 0,
+    last_structure_score: typeof session.last_structure_score === "number" ? session.last_structure_score : 0,
+    created_at: now,
+    updated_at: now,
+  };
+
+  db.interview_prep_sessions.push(created);
+  writeDb(db);
+  return created;
+}
+
+export async function getLocalInterviewPrepResponses(clientId?: string): Promise<LocalInterviewPrepResponse[]> {
+  const db = readDb();
+  const rows = clientId
+    ? db.interview_prep_responses.filter((response) => response.client_id === clientId)
+    : db.interview_prep_responses;
+
+  return [...rows].sort((a, b) => {
+    const aTime = new Date(a.created_at).getTime();
+    const bTime = new Date(b.created_at).getTime();
+    return bTime - aTime;
+  });
+}
+
+export async function createLocalInterviewPrepResponse(
+  response: Omit<LocalInterviewPrepResponse, "id" | "created_at">,
+): Promise<LocalInterviewPrepResponse> {
+  const db = readDb();
+  const newId =
+    db.interview_prep_responses.length > 0
+      ? Math.max(...db.interview_prep_responses.map((item) => item.id)) + 1
+      : 1;
+
+  const created: LocalInterviewPrepResponse = {
+    ...response,
+    id: newId,
+    created_at: new Date().toISOString(),
+  };
+
+  db.interview_prep_responses.push(created);
+  writeDb(db);
+  return created;
 }

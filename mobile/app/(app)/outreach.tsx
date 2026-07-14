@@ -1,16 +1,14 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
-const contacts = [
-  { name: "Sarah Chen", role: "Engineering Manager @ Google", initials: "S" },
-  { name: "Marcus Webb", role: "Recruiter @ Stripe", initials: "M" },
-  { name: "Priya Nair", role: "Head of Talent @ Figma", initials: "P" },
-];
-
 export default function OutreachScreen() {
+  const { data: snapshot } = usePreviewSyncQuery();
+  const contacts = snapshot?.outreachContacts ?? [];
+
   return (
     <Screen>
       <BackHeader />
@@ -38,28 +36,42 @@ export default function OutreachScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Found Contacts</Text>
         <View style={styles.sectionBadge}>
-          <Text style={styles.sectionBadgeText}>12 new</Text>
+          <Text style={styles.sectionBadgeText}>{contacts.length} new</Text>
         </View>
       </View>
 
       <View style={styles.contactStack}>
         {contacts.map((contact) => (
-          <View key={contact.name} style={styles.contactCard}>
+          <View key={contact.id} style={styles.contactCard}>
             <View style={styles.contactTop}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{contact.initials}</Text>
+                <Text style={styles.avatarText}>{contact.name.trim().charAt(0).toUpperCase() || "H"}</Text>
               </View>
               <View style={styles.contactCopy}>
                 <Text style={styles.contactName}>{contact.name}</Text>
-                <Text style={styles.contactRole}>{contact.role}</Text>
+                <Text style={styles.contactRole}>{contact.position || contact.email || "Hiring Manager"}</Text>
               </View>
               <View style={styles.onlineDot} />
             </View>
             <View style={styles.buttonRow}>
-              <Pressable style={styles.blackButton}>
-                <Text style={styles.blackButtonText}>AI Draft</Text>
+              <Pressable
+                style={styles.blackButton}
+                onPress={() => {
+                  if (contact.profileLink) {
+                    void Linking.openURL(contact.profileLink);
+                  }
+                }}
+              >
+                <Text style={styles.blackButtonText}>Connect</Text>
               </Pressable>
-              <Pressable style={styles.whiteButton}>
+              <Pressable
+                style={styles.whiteButton}
+                onPress={() => {
+                  if (contact.profileLink) {
+                    void Linking.openURL(contact.profileLink);
+                  }
+                }}
+              >
                 <Text style={styles.whiteButtonText}>View Profile</Text>
               </Pressable>
             </View>

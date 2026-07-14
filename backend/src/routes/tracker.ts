@@ -1,6 +1,11 @@
 import { Router, Response } from "express";
 import { Pool } from "pg";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
+import {
+  deleteLocalRecruiterContact,
+  getLocalRecruiterContacts,
+  upsertLocalRecruiterContact,
+} from "../lib/localDb";
 import { supabase } from "../lib/supabase";
 
 const router = Router();
@@ -39,11 +44,47 @@ function hasUsableDatabaseUrl() {
   return Boolean(databaseUrl) && !databaseUrl.includes("[YOUR_DB_PASSWORD]");
 }
 
+function isMissingRelationError(error: unknown) {
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: string }).message).toLowerCase()
+      : "";
+
+  return (
+    message.includes("schema cache") ||
+    message.includes("could not find the table") ||
+    message.includes("relation") ||
+    message.includes("404")
+  );
+}
+
 function createPool() {
   return new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
   });
+}
+
+async function ensureRecruiterContactsTable(client: any) {
+  await client.query(`
+    create table if not exists recruiter_contacts (
+      id bigint generated always as identity primary key,
+      client_id text not null,
+      application_id bigint null,
+      recruiter_name text default '',
+      company_name text default '',
+      email text default '',
+      phone text default '',
+      linkedin_url text default '',
+      contact_method text not null default 'other',
+      contact_date timestamptz default now(),
+      response_status text not null default 'no_response',
+      response_date timestamptz,
+      notes text default '',
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    )
+  `);
 }
 
 function buildProfilePayload(application: any) {
@@ -275,6 +316,149 @@ async function updateApplicationWithPostgres(applicationId: number, application:
   }
 }
 
+async function createRecruiterContactWithPostgres(contact: any) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureRecruiterContactsTable(client);
+    const result = await client.query(
+      `
+      insert into recruiter_contacts (
+        client_id,
+        application_id,
+        recruiter_name,
+        company_name,
+        email,
+        linkedin_url,
+        contact_method,
+        contact_date,
+        response_status,
+        notes
+      ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+      )
+      returning *
+      `,
+      [
+        contact.client_id,
+        contact.application_id,
+        contact.recruiter_name || "",
+        contact.company_name || "",
+        contact.email || "",
+        contact.linkedin_url || "",
+        contact.contact_method || "other",
+        contact.contact_date || new Date().toISOString(),
+        contact.response_status || "no_response",
+        contact.notes || "",
+      ],
+    );
+
+    return result.rows[0];
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function updateRecruiterContactWithPostgres(contactId: number, contact: any) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureRecruiterContactsTable(client);
+    const result = await client.query(
+      `
+      update recruiter_contacts set
+        client_id = $2,
+        application_id = $3,
+        recruiter_name = $4,
+        company_name = $5,
+        email = $6,
+        linkedin_url = $7,
+        contact_method = $8,
+        contact_date = $9,
+        response_status = $10,
+        notes = $11,
+        updated_at = now()
+      where id = $1
+      returning *
+      `,
+      [
+        contactId,
+        contact.client_id,
+        contact.application_id,
+        contact.recruiter_name || "",
+        contact.company_name || "",
+        contact.email || "",
+        contact.linkedin_url || "",
+        contact.contact_method || "other",
+        contact.contact_date || new Date().toISOString(),
+        contact.response_status || "no_response",
+        contact.notes || "",
+      ],
+    );
+
+    return result.rows[0];
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function getRecruiterContactsWithPostgres(clientId?: string) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureRecruiterContactsTable(client);
+    const values: unknown[] = [];
+    let whereClause = "";
+
+    if (clientId) {
+      values.push(clientId);
+      whereClause = `where client_id = $1`;
+    }
+
+    const result = await client.query(
+      `
+      select *
+      from recruiter_contacts
+      ${whereClause}
+      order by contact_date desc nulls last, created_at desc nulls last
+      `,
+      values,
+    );
+
+    return result.rows;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function deleteRecruiterContactWithPostgres(contactId: number) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureRecruiterContactsTable(client);
+    const result = await client.query(
+      `
+      delete from recruiter_contacts
+      where id = $1
+      returning id
+      `,
+      [contactId],
+    );
+
+    return (result.rowCount ?? 0) > 0;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
 router.post("/admin/tracker/applications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdminRole(req, res)) {
     return;
@@ -332,6 +516,144 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
   }
 });
 
+router.post("/admin/tracker/contacts", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const { contact, contacts } = req.body || {};
+  const batchContacts = Array.isArray(contacts) ? contacts : [];
+  const singleContact = contact && !Array.isArray(contact) ? contact : null;
+
+  if (!singleContact && batchContacts.length === 0) {
+    return res.status(400).json({ error: "Missing hiring manager payload" });
+  }
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      if (singleContact) {
+        const saved = singleContact.id
+          ? await updateRecruiterContactWithPostgres(Number(singleContact.id), singleContact)
+          : await createRecruiterContactWithPostgres(singleContact);
+        return res.json({ success: true, contact: saved });
+      }
+
+      const savedContacts = [];
+      for (const row of batchContacts) {
+        savedContacts.push(await createRecruiterContactWithPostgres(row));
+      }
+      return res.json({ success: true, contacts: savedContacts });
+    }
+
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        if (singleContact) {
+          const query = singleContact.id
+            ? supabase.from("recruiter_contacts").update(singleContact).eq("id", Number(singleContact.id)).select().single()
+            : supabase.from("recruiter_contacts").insert([singleContact]).select().single();
+          const { data, error } = await query;
+          if (error) throw error;
+          return res.json({ success: true, contact: data });
+        }
+
+        const { data, error } = await supabase.from("recruiter_contacts").insert(batchContacts).select();
+        if (error) throw error;
+        return res.json({ success: true, contacts: data ?? [] });
+      } catch (error) {
+        if (!isMissingRelationError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    if (singleContact) {
+      const saved = await upsertLocalRecruiterContact(singleContact);
+      return res.json({ success: true, contact: saved, mode: "local_preview" });
+    }
+
+    const savedContacts = [];
+    for (const row of batchContacts) {
+      savedContacts.push(await upsertLocalRecruiterContact(row));
+    }
+    return res.json({ success: true, contacts: savedContacts, mode: "local_preview" });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/contacts failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save hiring manager" });
+  }
+});
+
+router.get("/admin/tracker/contacts", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      const contacts = await getRecruiterContactsWithPostgres(clientId);
+      return res.json({ success: true, contacts });
+    }
+
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const query = clientId
+          ? supabase.from("recruiter_contacts").select("*").eq("client_id", clientId).order("contact_date", { ascending: false })
+          : supabase.from("recruiter_contacts").select("*").order("contact_date", { ascending: false });
+        const { data, error } = await query;
+        if (error) throw error;
+        return res.json({ success: true, contacts: data ?? [] });
+      } catch (error) {
+        if (!isMissingRelationError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    const contacts = await getLocalRecruiterContacts(clientId);
+    return res.json({ success: true, contacts, mode: "local_preview" });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/contacts failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load hiring managers" });
+  }
+});
+
+router.delete("/admin/tracker/contacts/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const contactId = Number(req.params.id);
+  if (!Number.isFinite(contactId)) {
+    return res.status(400).json({ error: "Invalid hiring manager id" });
+  }
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      const deleted = await deleteRecruiterContactWithPostgres(contactId);
+      return res.json({ success: deleted });
+    }
+
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const { error } = await supabase.from("recruiter_contacts").delete().eq("id", contactId);
+        if (error) throw error;
+        return res.json({ success: true });
+      } catch (error) {
+        if (!isMissingRelationError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    const deleted = await deleteLocalRecruiterContact(contactId);
+    return res.json({ success: deleted, mode: "local_preview" });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/contacts/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete hiring manager" });
+  }
+});
+
 router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const requester = req.user;
   const requestedUserId = typeof req.query.userId === "string" ? req.query.userId : undefined;
@@ -359,6 +681,28 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
         .select("*")
         .or(`sender_id.eq.${targetUserId},recipient_id.eq.${targetUserId}`)
         .order("created_at", { ascending: true });
+    })();
+
+    const recruiterContactsPromise = (async () => {
+      if (hasUsableDatabaseUrl()) {
+        return { data: await getRecruiterContactsWithPostgres(targetUserId), error: null };
+      }
+
+      const result = await supabase
+        .from("recruiter_contacts")
+        .select("*")
+        .eq("client_id", targetUserId)
+        .order("contact_date", { ascending: false });
+
+      if (!result.error) {
+        return result;
+      }
+
+      if (isMissingRelationError(result.error)) {
+        return { data: await getLocalRecruiterContacts(targetUserId), error: null };
+      }
+
+      return result;
     })();
 
     const [
@@ -392,7 +736,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("interviews").select("*").eq("client_id", targetUserId).order("interview_date", { ascending: false }),
       supabase.from("follow_ups").select("*").eq("client_id", targetUserId).order("due_date", { ascending: true }),
-      supabase.from("recruiter_contacts").select("*").eq("client_id", targetUserId).order("contact_date", { ascending: false }),
+      recruiterContactsPromise,
       supabase.from("cold_emails").select("*").eq("client_id", targetUserId).order("sent_at", { ascending: false }),
       supabase.from("client_scores").select("*").eq("client_id", targetUserId).order("calculated_at", { ascending: false }),
     ]);

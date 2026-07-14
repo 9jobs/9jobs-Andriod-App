@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { previewAdminCredentials, resolveAdminAccess, validatePreviewAdminLogin } from "./lib/adminAuth";
 import { calculateTrackerMetrics } from "./lib/trackerMetrics";
+import { parseHiringManagersCsv } from "./lib/hiringManagers";
 import { io } from "socket.io-client";
 
 let adminSocket: any = null;
@@ -155,6 +156,8 @@ type Tab =
   | "jobs"
   | "applications"
   | "job_tracker"
+  | "hiring_managers"
+  | "interview_preparation"
   | "messages"
   | "services"
   | "resume_ai"
@@ -271,6 +274,8 @@ export default function App() {
   const [trackerColdEmails, setTrackerColdEmails] = useState<any[]>([]);
   const [trackerScores, setTrackerScores] = useState<any[]>([]);
   const [trackerActivities, setTrackerActivities] = useState<any[]>([]);
+  const [interviewPrepSessions, setInterviewPrepSessions] = useState<any[]>([]);
+  const [interviewPrepResponses, setInterviewPrepResponses] = useState<any[]>([]);
   const [selectedTrackerClientId, setSelectedTrackerClientId] = useState("");
   const [trackerSection, setTrackerSection] = useState<"overview" | "applications" | "interviews" | "follow_ups" | "contacts" | "cold_emails" | "scores" | "activity">("overview");
   const [stats, setStats] = useState({
@@ -296,6 +301,7 @@ export default function App() {
   const [activeChatUser, setActiveChatUser] = useState<any>(null);
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const hiringManagersUploadRef = useRef<HTMLInputElement>(null);
 
   // App Settings state
   const [appSettings, setAppSettings] = useState({
@@ -313,7 +319,7 @@ export default function App() {
   const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied" });
   const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
   const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
-  const [contactForm, setContactForm] = useState({ client_id: "", application_id: "", recruiter_name: "", company_name: "", email: "", phone: "", contact_method: "email", contact_date: "", response_status: "no_response", notes: "" });
+  const [contactForm, setContactForm] = useState({ client_id: "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
   const [coldEmailForm, setColdEmailForm] = useState({ client_id: "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
   const [scoreForm, setScoreForm] = useState({ client_id: "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
   const [quickUpdateForm, setQuickUpdateForm] = useState({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "" });
@@ -457,8 +463,11 @@ export default function App() {
   }, [activeTab, isAdmin]);
 
   useEffect(() => {
-    if (isAdmin && activeTab === "job_tracker" && selectedTrackerClientId) {
+    if (isAdmin && (activeTab === "job_tracker" || activeTab === "hiring_managers") && selectedTrackerClientId) {
       void fetchTrackerClientData(selectedTrackerClientId);
+    }
+    if (isAdmin && activeTab === "interview_preparation") {
+      void fetchInterviewPreparationData(selectedTrackerClientId || undefined);
     }
   }, [activeTab, isAdmin, selectedTrackerClientId]);
 
@@ -745,6 +754,16 @@ export default function App() {
             await fetchTrackerClientData(selectedTrackerClientId);
           }
           break;
+        case "hiring_managers":
+          await fetchUsers();
+          if (selectedTrackerClientId) {
+            await fetchTrackerClientData(selectedTrackerClientId);
+          }
+          break;
+        case "interview_preparation":
+          await fetchUsers();
+          await fetchInterviewPreparationData(selectedTrackerClientId || undefined);
+          break;
         case "messages":
           await fetchChatUsers();
           break;
@@ -952,6 +971,36 @@ export default function App() {
   };
 
   const fetchTrackerClientData = async (clientId: string) => {
+    const contactsPromise = (async () => {
+      const directResult = await supabase
+        .from("recruiter_contacts")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("contact_date", { ascending: false });
+
+      if (!directResult.error || !isMissingRelationError(directResult.error)) {
+        return directResult;
+      }
+
+      const token = await ensureAdminToken();
+      if (!token) {
+        return directResult;
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/contacts?clientId=${encodeURIComponent(clientId)}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        return directResult;
+      }
+
+      const payload = await response.json();
+      return { data: payload.contacts ?? [], error: null };
+    })();
+
     const [
       applicationsResult,
       interviewsResult,
@@ -964,7 +1013,7 @@ export default function App() {
       supabase.from("applications").select("*, jobs(*)").eq("user_id", clientId).order("created_at", { ascending: false }),
       supabase.from("interviews").select("*").eq("client_id", clientId).order("interview_date", { ascending: false }),
       supabase.from("follow_ups").select("*").eq("client_id", clientId).order("due_date", { ascending: true }),
-      supabase.from("recruiter_contacts").select("*").eq("client_id", clientId).order("contact_date", { ascending: false }),
+      contactsPromise,
       supabase.from("cold_emails").select("*").eq("client_id", clientId).order("sent_at", { ascending: false }),
       supabase.from("client_scores").select("*").eq("client_id", clientId).order("calculated_at", { ascending: false }),
       supabase.from("activity_logs").select("*").eq("client_id", clientId).order("created_at", { ascending: false }),
@@ -1094,6 +1143,32 @@ export default function App() {
         }
       }
     }
+  };
+
+  const fetchInterviewPreparationData = async (clientId?: string) => {
+    const token = await ensureAdminToken();
+    if (!token) {
+      throw new Error("Admin auth token missing. Please sign in again.");
+    }
+
+    const url = clientId
+      ? `${BACKEND_URL}/api/admin/interview-prep?clientId=${encodeURIComponent(clientId)}`
+      : `${BACKEND_URL}/api/admin/interview-prep`;
+
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+    }
+
+    const payload = await res.json();
+    setInterviewPrepSessions(payload.sessions ?? []);
+    setInterviewPrepResponses(payload.responses ?? []);
   };
 
   const fetchChatMessages = async (userId: string) => {
@@ -1485,31 +1560,111 @@ export default function App() {
     e.preventDefault();
     try {
       const payload = {
+        ...(editItem?.id ? { id: editItem.id } : {}),
         client_id: contactForm.client_id,
         application_id: contactForm.application_id ? Number(contactForm.application_id) : null,
         recruiter_name: contactForm.recruiter_name,
-        company_name: contactForm.company_name,
+        company_name: contactForm.position,
         email: contactForm.email,
-        phone: contactForm.phone,
-        contact_method: contactForm.contact_method,
+        linkedin_url: contactForm.linkedin_url,
+        contact_method: contactForm.linkedin_url ? "linkedin" : contactForm.email ? "email" : "other",
         contact_date: contactForm.contact_date || new Date().toISOString(),
         response_status: contactForm.response_status,
         notes: contactForm.notes,
       };
 
-      if (editItem) {
-        const { error } = await supabase.from("recruiter_contacts").update(payload).eq("id", editItem.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("recruiter_contacts").insert([payload]);
-        if (error) throw error;
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
       }
 
-      await logActivity(payload.client_id, payload.application_id, "recruiter_contact_saved", "Recruiter contact saved", "Recruiter contact details updated from admin panel.", editItem ?? null, payload);
-      showSuccess("Recruiter contact saved successfully!");
+      const res = await fetch(`${BACKEND_URL}/api/admin/tracker/contacts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ contact: payload }),
+      });
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+      }
+
+      await logActivity(payload.client_id, payload.application_id, "recruiter_contact_saved", "Hiring manager saved", "Hiring manager details updated from admin panel.", editItem ?? null, payload);
+      showSuccess("Hiring manager saved successfully!");
       await fetchTrackerClientData(payload.client_id);
     } catch (err: any) {
       showError(err.message);
+    }
+  };
+
+  const handleHiringManagersUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    if (!selectedTrackerClientId) {
+      showError("Please select a client before uploading hiring managers.");
+      return;
+    }
+
+    try {
+      const rows = parseHiringManagersCsv(await file.text());
+      if (rows.length === 0) {
+        throw new Error("Upload file is empty.");
+      }
+
+      const payload = rows.map((row) => ({
+        client_id: selectedTrackerClientId,
+        application_id: null,
+        recruiter_name: row.name,
+        company_name: row.position,
+        email: row.email,
+        linkedin_url: row.profileLink,
+        contact_method: row.profileLink ? "linkedin" : row.email ? "email" : "other",
+        contact_date: new Date().toISOString(),
+        response_status: "no_response",
+        notes: "Uploaded from admin panel",
+      }));
+
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const res = await fetch(`${BACKEND_URL}/api/admin/tracker/contacts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ contacts: payload }),
+      });
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+      }
+
+      await logActivity(
+        selectedTrackerClientId,
+        null,
+        "hiring_managers_uploaded",
+        "Hiring managers uploaded",
+        `${payload.length} hiring manager records uploaded from admin panel.`,
+        null,
+        { count: payload.length },
+      );
+
+      showSuccess(`Uploaded ${payload.length} hiring manager${payload.length === 1 ? "" : "s"} successfully!`);
+      await fetchTrackerClientData(selectedTrackerClientId);
+    } catch (err: any) {
+      showError(err.message || "Failed to upload hiring managers.");
     }
   };
 
@@ -1612,6 +1767,31 @@ export default function App() {
   const handleDelete = async (table: string, id: string) => {
     if (!confirm("Are you sure you want to delete this item?")) return;
     try {
+      if (table === "recruiter_contacts") {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const res = await fetch(`${BACKEND_URL}/api/admin/tracker/contacts/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        }
+
+        showSuccess("Item deleted successfully.");
+        if (selectedTrackerClientId) {
+          await fetchTrackerClientData(selectedTrackerClientId);
+        }
+        return;
+      }
+
       const { error } = await supabase.from(table).delete().eq("id", id);
       if (error) throw error;
       showSuccess("Item deleted successfully.");
@@ -1750,7 +1930,7 @@ export default function App() {
     setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied" });
     setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
     setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
-    setContactForm({ client_id: selectedTrackerClientId || "", application_id: "", recruiter_name: "", company_name: "", email: "", phone: "", contact_method: "email", contact_date: "", response_status: "no_response", notes: "" });
+    setContactForm({ client_id: selectedTrackerClientId || "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
     setColdEmailForm({ client_id: selectedTrackerClientId || "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
     setScoreForm({ client_id: selectedTrackerClientId || "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
     setQuickUpdateForm({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "" });
@@ -1778,7 +1958,7 @@ export default function App() {
     } else if (type === "follow_up") {
       setFollowUpForm({ client_id: item.client_id, application_id: String(item.application_id), follow_up_type: item.follow_up_type || "email", due_date: item.due_date || "", status: item.status || "pending", contact_person: item.contact_person || "", contact_email: item.contact_email || "", notes: item.notes || "" });
     } else if (type === "contact") {
-      setContactForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", recruiter_name: item.recruiter_name || "", company_name: item.company_name || "", email: item.email || "", phone: item.phone || "", contact_method: item.contact_method || "email", contact_date: item.contact_date || "", response_status: item.response_status || "no_response", notes: item.notes || "" });
+      setContactForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", recruiter_name: item.recruiter_name || "", position: item.company_name || "", email: item.email || "", linkedin_url: item.linkedin_url || "", contact_date: item.contact_date || "", response_status: item.response_status || "no_response", notes: item.notes || "" });
     } else if (type === "cold_email") {
       setColdEmailForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", recipient_name: item.recipient_name || "", recipient_email: item.recipient_email || "", company_name: item.company_name || "", subject: item.subject || "", message: item.message || "", sent_at: item.sent_at || "", delivery_status: item.delivery_status || "sent", response_status: item.response_status || "no_response" });
     } else if (type === "score") {
@@ -1826,6 +2006,10 @@ export default function App() {
     scores: trackerScores,
     timezone: selectedTrackerClient?.timezone || "Australia/Melbourne",
   });
+
+  const modalHeading = modalType === "contact"
+    ? `${editItem ? "Edit" : "Create"} Hiring Manager`
+    : `${editItem ? "Edit " : "Create "}${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`;
 
   // Protected Auth Screen
   if (!(isPreviewAuthenticated || (isSignedIn && isAdmin))) {
@@ -1917,6 +2101,14 @@ export default function App() {
             <Layers size={18} />
             <span>Job Tracker</span>
           </a>
+          <a className={`sidebar-item ${activeTab === "hiring_managers" ? "active" : ""}`} onClick={() => setActiveTab("hiring_managers")}>
+            <Users size={18} />
+            <span>Hiring Managers</span>
+          </a>
+          <a className={`sidebar-item ${activeTab === "interview_preparation" ? "active" : ""}`} onClick={() => setActiveTab("interview_preparation")}>
+            <Sparkles size={18} />
+            <span>Interview Preparation</span>
+          </a>
           <a className={`sidebar-item ${activeTab === "messages" ? "active" : ""}`} onClick={() => setActiveTab("messages")}>
             <MessageSquare size={18} />
             <span>Messages</span>
@@ -1961,13 +2153,15 @@ export default function App() {
       <main className="main-content">
         <header className="header">
           <div className="header-title">
-            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
+            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
             <p>Welcome back to your 9Jobs administration console.</p>
           </div>
           <div className="header-actions">
             {activeTab === "users" && <button className="btn btn-primary" onClick={() => openAddModal("user")}><Plus size={16} /> Add Candidate</button>}
             {activeTab === "jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Opportunity</button>}
             {activeTab === "job_tracker" && <button className="btn btn-primary" onClick={() => openAddModal("tracker")}><Plus size={16} /> Add Tracker Entry</button>}
+            {activeTab === "hiring_managers" && <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}><Plus size={16} /> Add Hiring Manager</button>}
+            {activeTab === "interview_preparation" && <button className="btn btn-primary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}><Plus size={16} /> Refresh</button>}
             {activeTab === "subscriptions" && <button className="btn btn-primary" onClick={() => openAddModal("plan")}><Plus size={16} /> Add Pricing Plan</button>}
             {activeTab === "notifications" && <button className="btn btn-primary" onClick={() => openAddModal("notification")}><Plus size={16} /> New Broadcast</button>}
           </div>
@@ -2283,7 +2477,7 @@ export default function App() {
                   <button className="btn btn-primary" onClick={() => openAddModal("tracker")} disabled={!selectedTrackerClientId}><Plus size={16} /> Application</button>
                   <button className="btn btn-secondary" onClick={() => openAddModal("interview")} disabled={!selectedTrackerClientId}>Interview</button>
                   <button className="btn btn-secondary" onClick={() => openAddModal("follow_up")} disabled={!selectedTrackerClientId}>Follow-up</button>
-                  <button className="btn btn-secondary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}>Contact</button>
+                  <button className="btn btn-secondary" onClick={() => { setTrackerSection("contacts"); openAddModal("contact"); }} disabled={!selectedTrackerClientId}>Hiring Manager</button>
                   <button className="btn btn-secondary" onClick={() => openAddModal("cold_email")} disabled={!selectedTrackerClientId}>Cold Email</button>
                   <button className="btn btn-secondary" onClick={() => openAddModal("score")} disabled={!selectedTrackerClientId}>Score</button>
                 </div>
@@ -2362,7 +2556,7 @@ export default function App() {
                   ["applications", "Applications"],
                   ["interviews", "Interviews"],
                   ["follow_ups", "Follow-ups"],
-                  ["contacts", "Recruiter Contacts"],
+                  ["contacts", "Hiring Managers"],
                   ["cold_emails", "Cold Emails"],
                   ["scores", "Scores"],
                   ["activity", "Activity Timeline"],
@@ -2525,25 +2719,46 @@ export default function App() {
               )}
 
               {trackerSection === "contacts" && (
+                <>
+                <div className="controls-row" style={{ marginBottom: "18px" }}>
+                  <div style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
+                    Manage hiring managers for <strong style={{ color: "var(--text-primary)" }}>{selectedTrackerClient?.full_name || "selected client"}</strong>.
+                    CSV columns: <code>Name</code>, <code>Email</code>, <code>Position</code>, <code>Profile Link</code>.
+                  </div>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <input
+                      ref={hiringManagersUploadRef}
+                      type="file"
+                      accept=".csv,text/csv"
+                      style={{ display: "none" }}
+                      onChange={(event) => void handleHiringManagersUpload(event)}
+                    />
+                    <button className="btn btn-secondary" onClick={() => hiringManagersUploadRef.current?.click()}>
+                      Upload CSV
+                    </button>
+                    <button className="btn btn-primary" onClick={() => openAddModal("contact")}>
+                      <Plus size={16} /> Add Hiring Manager
+                    </button>
+                  </div>
+                </div>
                 <div className="table-responsive">
                   <table className="table">
-                    <thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>Method</th><th>Response</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Email</th><th>Position</th><th>Response</th><th>Actions</th></tr></thead>
                     <tbody>
                       {trackerContacts.map((item) => (
                         <tr key={item.id}>
                           <td>{item.recruiter_name || "—"}</td>
-                          <td>{item.company_name || "—"}</td>
                           <td>{item.email || "—"}</td>
-                          <td>{item.phone || "—"}</td>
-                          <td>{item.contact_method}</td>
+                          <td>{item.company_name || "—"}</td>
                           <td><span className="badge badge-info">{item.response_status}</span></td>
-                          <td><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button></div></td>
+                          <td><div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>{item.linkedin_url ? <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={item.linkedin_url} target="_blank" rel="noreferrer">View Profile</a> : <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => openEditModal("contact", item)}>Add Profile</button>}<button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button></div></td>
                         </tr>
                       ))}
-                      {trackerContacts.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No recruiter contacts logged.</td></tr>}
+                      {trackerContacts.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No hiring managers added yet. Select a client, then add Name, Email, Position and LinkedIn profile.</td></tr>}
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
 
               {trackerSection === "cold_emails" && (
@@ -2607,6 +2822,195 @@ export default function App() {
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "hiring_managers" && (
+          <div className="card">
+            <div className="controls-row" style={{ marginBottom: "20px" }}>
+              <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="form-label">Select Client</label>
+                <select className="form-input" value={selectedTrackerClientId} onChange={(e) => setSelectedTrackerClientId(e.target.value)}>
+                  <option value="">Choose client</option>
+                  {users.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.full_name} ({candidate.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap" }}>
+                <input
+                  ref={hiringManagersUploadRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  style={{ display: "none" }}
+                  onChange={(event) => void handleHiringManagersUpload(event)}
+                />
+                <button className="btn btn-secondary" onClick={() => hiringManagersUploadRef.current?.click()} disabled={!selectedTrackerClientId}>
+                  Upload CSV
+                </button>
+                <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}>
+                  <Plus size={16} /> Add Hiring Manager
+                </button>
+              </div>
+            </div>
+
+            <div style={{ color: "var(--text-secondary)", fontSize: "14px", marginBottom: "16px" }}>
+              {selectedTrackerClient
+                ? <>Showing hiring managers for <strong style={{ color: "var(--text-primary)" }}>{selectedTrackerClient.full_name}</strong>. Add `Name`, `Email`, `Position` and optional LinkedIn `Profile Link`.</>
+                : "Select a client to manage hiring managers and sync them to the mobile app outreach screen."}
+            </div>
+
+            <div className="table-responsive">
+              <table className="table">
+                <thead>
+                  <tr><th>Name</th><th>Email</th><th>Position</th><th>Response</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                  {trackerContacts.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.recruiter_name || "—"}</td>
+                      <td>{item.email || "—"}</td>
+                      <td>{item.company_name || "—"}</td>
+                      <td><span className="badge badge-info">{item.response_status}</span></td>
+                      <td>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          {item.linkedin_url ? (
+                            <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={item.linkedin_url} target="_blank" rel="noreferrer">
+                              View Profile
+                            </a>
+                          ) : (
+                            <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => openEditModal("contact", item)}>
+                              Add Profile
+                            </button>
+                          )}
+                          <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button>
+                          <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {trackerContacts.length === 0 && (
+                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No hiring managers added yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "interview_preparation" && (
+          <div className="card">
+            <div className="controls-row" style={{ marginBottom: "20px" }}>
+              <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                <label className="form-label">Select Client</label>
+                <select className="form-input" value={selectedTrackerClientId} onChange={(e) => setSelectedTrackerClientId(e.target.value)}>
+                  <option value="">All clients</option>
+                  {users.map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.full_name} ({candidate.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+                <button className="btn btn-secondary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}>
+                  Refresh Data
+                </button>
+              </div>
+            </div>
+
+            <div style={{ color: "var(--text-secondary)", fontSize: "14px", marginBottom: "16px" }}>
+              Review live interview preparation sessions, generated AI answers, and coaching scores synced from the mobile app.
+            </div>
+
+            <div className="stats-grid" style={{ marginBottom: "24px" }}>
+              <div className="stat-card">
+                <div className="stat-value">{interviewPrepSessions.length}</div>
+                <div className="stat-label">Active Sessions</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{interviewPrepResponses.length}</div>
+                <div className="stat-label">Generated Answers</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">
+                  {interviewPrepResponses.length > 0
+                    ? Math.round(interviewPrepResponses.reduce((sum, item) => sum + (Number(item.clarity_score) || 0), 0) / interviewPrepResponses.length)
+                    : 0}
+                </div>
+                <div className="stat-label">Avg Clarity</div>
+              </div>
+            </div>
+
+            <div className="table-responsive" style={{ marginBottom: "24px" }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Status</th>
+                    <th>Current Question</th>
+                    <th>Latest Feedback</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {interviewPrepSessions.map((session) => {
+                    const client = users.find((candidate) => candidate.id === session.client_id);
+                    return (
+                      <tr key={session.id}>
+                        <td>
+                          <strong>{client?.full_name || session.client_id}</strong>
+                          <br />
+                          <span style={{ fontSize: "11px", color: "#888" }}>{client?.email || "No email"}</span>
+                        </td>
+                        <td><span className="badge badge-info">{session.status}</span></td>
+                        <td>{session.current_question_index + 1} / {session.question_total}</td>
+                        <td>{session.last_feedback || "No answer yet."}</td>
+                        <td>{new Date(session.updated_at).toLocaleString()}</td>
+                      </tr>
+                    );
+                  })}
+                  {interviewPrepSessions.length === 0 && (
+                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No interview preparation data available yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="table-responsive">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Question</th>
+                    <th>AI Answer</th>
+                    <th>Clarity</th>
+                    <th>Impact</th>
+                    <th>Structure</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {interviewPrepResponses.map((item) => {
+                    const client = users.find((candidate) => candidate.id === item.client_id);
+                    return (
+                      <tr key={item.id}>
+                        <td>{client?.full_name || item.client_id}</td>
+                        <td>{item.question_text}</td>
+                        <td style={{ maxWidth: "420px" }}>{item.ai_answer}</td>
+                        <td><strong>{item.clarity_score}</strong></td>
+                        <td><strong>{item.impact_score}</strong></td>
+                        <td><strong>{item.structure_score}</strong></td>
+                      </tr>
+                    );
+                  })}
+                  {interviewPrepResponses.length === 0 && (
+                    <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No AI-generated interview answers yet.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
@@ -2957,10 +3361,7 @@ export default function App() {
         <div className="modal-overlay">
           <div className="modal-content">
             <button className="modal-close" onClick={() => setIsModalOpen(false)}>×</button>
-            <h3 className="modal-title">
-              {editItem ? "Edit " : "Create "}
-              {modalType.charAt(0).toUpperCase() + modalType.slice(1)}
-            </h3>
+            <h3 className="modal-title">{modalHeading}</h3>
 
             {/* Candidate User Form */}
             {modalType === "user" && (
@@ -3222,20 +3623,24 @@ export default function App() {
             {modalType === "contact" && (
               <form onSubmit={handleSaveContact}>
                 <div className="form-group">
-                  <label className="form-label">Recruiter Name</label>
+                  <label className="form-label">Name</label>
                   <input type="text" className="form-input" required value={contactForm.recruiter_name} onChange={(e) => setContactForm({ ...contactForm, recruiter_name: e.target.value })} />
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Company</label>
-                    <input type="text" className="form-input" value={contactForm.company_name} onChange={(e) => setContactForm({ ...contactForm, company_name: e.target.value })} />
+                    <label className="form-label">Position</label>
+                    <input type="text" className="form-input" value={contactForm.position} onChange={(e) => setContactForm({ ...contactForm, position: e.target.value })} />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Email</label>
+                    <label className="form-label">Email (Optional)</label>
                     <input type="email" className="form-input" value={contactForm.email} onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })} />
                   </div>
                 </div>
-                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Recruiter Contact</button>
+                <div className="form-group">
+                  <label className="form-label">Profile Link (Optional)</label>
+                  <input type="url" className="form-input" placeholder="https://linkedin.com/in/..." value={contactForm.linkedin_url} onChange={(e) => setContactForm({ ...contactForm, linkedin_url: e.target.value })} />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Hiring Manager</button>
               </form>
             )}
 

@@ -79,8 +79,10 @@ type RecruiterContactRow = {
   client_id: string;
   application_id: number | null;
   recruiter_name: string | null;
+  company_name?: string | null;
   email: string | null;
   phone: string | null;
+  linkedin_url?: string | null;
   contact_date: string | null;
   response_status: string | null;
 };
@@ -259,6 +261,15 @@ export type LiveMessage = MessageRow & {
   direction: "incoming" | "outgoing";
 };
 
+export type LiveOutreachContact = {
+  id: number;
+  name: string;
+  email: string;
+  position: string;
+  profileLink: string;
+  responseStatus: string;
+};
+
 export type MobileSyncSnapshot = {
   profile: CandidateProfile & {
     id: string;
@@ -314,6 +325,7 @@ export type MobileSyncSnapshot = {
     lastUpdatedAt: string;
   };
   messages: LiveMessage[];
+  outreachContacts: LiveOutreachContact[];
   messageThread: ReturnType<typeof buildMessageThread>;
   services: LiveServiceCard[];
   pricingContent: PremiumScreenContent;
@@ -823,6 +835,14 @@ function buildSnapshotFromSource({
       },
     ),
     messages,
+    outreachContacts: recruiterContactsRows.map((contact) => ({
+      id: contact.id,
+      name: contact.recruiter_name?.trim() || "Hiring Manager",
+      email: contact.email?.trim() || "",
+      position: contact.company_name?.trim() || "",
+      profileLink: contact.linkedin_url?.trim() || "",
+      responseStatus: contact.response_status?.trim() || "no_response",
+    })),
     messageThread: buildMessageThread(messages, profile.fullName),
     services: mapServices(servicesRows),
     pricingContent: buildPricingScreenContent(plansRows, activePlanId),

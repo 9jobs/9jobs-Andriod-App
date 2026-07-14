@@ -285,5 +285,340 @@
       "created_at": "2026-07-13T05:44:46.913Z",
       "updated_at": "2026-07-14T05:40:08.999Z"
     }
+  ],
+  "recruiter_contacts": [],
+  "interview_prep_sessions": [
+    {
+      "id": 1,
+      "client_id": "preview-user-9jobs",
+      "interviewer_name": "AI Interviewer - Sarah",
+      "interviewer_role": "Engineering Manager",
+      "interviewer_company": "Google",
+      "interviewer_avatar_url": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&h=150&q=80",
+      "current_question_index": 3,
+      "question_total": 4,
+      "status": "completed",
+      "last_question": "Why are you interested in this role and what would make you successful here?",
+      "last_question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "last_transcript": "",
+      "last_ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "last_feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "last_clarity_score": 88,
+      "last_impact_score": 82,
+      "last_structure_score": 91,
+      "created_at": "2026-07-14T08:11:20.631Z",
+      "updated_at": "2026-07-14T08:17:29.514Z"
+    }
+  ],
+  "interview_prep_responses": [
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 0,
+      "question_text": "Tell me about yourself and your background",
+      "question_tags": [
+        "Behavioral",
+        "Leadership"
+      ],
+      "transcript": "",
+      "ai_answer": "I am a results-focused professional with hands-on experience delivering cross-functional projects, improving team workflows, and communicating clearly with stakeholders. Over the last few years, I have built strong ownership habits, solved fast-moving problems, and consistently looked for ways to create measurable impact. What excites me about this opportunity is combining that execution mindset with a team where I can contribute quickly, learn fast, and keep raising the quality of outcomes.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 1,
+      "created_at": "2026-07-14T08:11:20.657Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 1,
+      "question_text": "Describe a project where you delivered measurable impact under pressure",
+      "question_tags": [
+        "Impact",
+        "Execution"
+      ],
+      "transcript": "",
+      "ai_answer": "One strong example was a project where timelines were tight and expectations were high. I first clarified the goal, aligned the team around the highest-impact deliverables, and broke the work into short milestones. I kept stakeholders updated early, removed blockers quickly, and focused the team on decisions that moved the metric that mattered most. As a result, we delivered on time, improved efficiency, and created a clear measurable outcome the business could see.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 2,
+      "created_at": "2026-07-14T08:16:42.003Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 3,
+      "created_at": "2026-07-14T08:16:51.661Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 4,
+      "created_at": "2026-07-14T08:16:53.075Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 5,
+      "created_at": "2026-07-14T08:16:53.916Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 6,
+      "created_at": "2026-07-14T08:16:54.691Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 7,
+      "created_at": "2026-07-14T08:16:55.475Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 8,
+      "created_at": "2026-07-14T08:16:56.908Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 9,
+      "created_at": "2026-07-14T08:17:07.578Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 10,
+      "created_at": "2026-07-14T08:17:08.496Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 11,
+      "created_at": "2026-07-14T08:17:09.256Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 12,
+      "created_at": "2026-07-14T08:17:10.458Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 13,
+      "created_at": "2026-07-14T08:17:11.307Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 14,
+      "created_at": "2026-07-14T08:17:12.073Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 15,
+      "created_at": "2026-07-14T08:17:18.112Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 16,
+      "created_at": "2026-07-14T08:17:27.334Z"
+    },
+    {
+      "session_id": 1,
+      "client_id": "preview-user-9jobs",
+      "question_index": 3,
+      "question_text": "Why are you interested in this role and what would make you successful here?",
+      "question_tags": [
+        "Motivation",
+        "Strategy"
+      ],
+      "transcript": "",
+      "ai_answer": "I am interested in this role because it matches both my strengths and the kind of impact I want to keep building. The position requires clear communication, ownership, and the ability to deliver consistently, which are all areas where I have produced strong results. I believe I would be successful here because I learn quickly, stay calm under pressure, and turn goals into structured action plans that the team can execute with confidence.",
+      "feedback": "Use a confident first-person story, keep it structured, and include a measurable outcome near the end.",
+      "clarity_score": 88,
+      "impact_score": 82,
+      "structure_score": 91,
+      "id": 17,
+      "created_at": "2026-07-14T08:17:29.505Z"
+    }
   ]
 }

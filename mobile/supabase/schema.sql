@@ -306,6 +306,8 @@ create table if not exists recruiter_contacts (
   updated_at timestamptz default now()
 );
 
+alter table recruiter_contacts add column if not exists linkedin_url text default '';
+
 drop trigger if exists recruiter_contacts_set_updated_at on recruiter_contacts;
 create trigger recruiter_contacts_set_updated_at
 before update on recruiter_contacts

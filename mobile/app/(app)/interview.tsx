@@ -1,17 +1,99 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View, Animated, Image } from "react-native";
+import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
+import { fetchInterviewPrepSession, requestInterviewPrepAnswer } from "@/lib/data/interview-prep";
+import { useSession } from "@/providers/SessionProvider";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
-export default function InterviewScreen() {
-  const [isRecording, setIsRecording] = useState(false);
+type ExpoSpeechModule = {
+  speak: (id: string, text: string, options?: Record<string, unknown>) => void;
+  stop: () => Promise<void> | void;
+};
 
-  // Animated values for continuous staggered wave ripples
+type SpeechRecognitionPermission = {
+  granted: boolean;
+};
+
+type SpeechRecognitionResultEvent = {
+  isFinal: boolean;
+  results: Array<{
+    transcript: string;
+  }>;
+};
+
+type SpeechRecognitionErrorEvent = {
+  error?: string;
+  message?: string;
+};
+
+type SpeechRecognitionSubscription = {
+  remove: () => void;
+};
+
+type OptionalSpeechRecognitionModule = {
+  start: (options: Record<string, unknown>) => void;
+  stop: () => void;
+  abort: () => void;
+  requestPermissionsAsync: () => Promise<SpeechRecognitionPermission>;
+  isRecognitionAvailable?: () => boolean;
+  addListener: (
+    eventName: "start" | "end" | "result" | "error",
+    listener: ((event: SpeechRecognitionResultEvent) => void) | ((event: SpeechRecognitionErrorEvent) => void) | (() => void),
+  ) => SpeechRecognitionSubscription;
+};
+
+function getSpeechModule(): null | { speak: (text: string) => void; stop: () => void } {
+  try {
+    const nativeSpeech = requireOptionalNativeModule<ExpoSpeechModule>("ExpoSpeech");
+    if (!nativeSpeech) {
+      return null;
+    }
+
+    return {
+      speak: (text: string) => {
+        nativeSpeech.speak(String(Date.now()), text, {});
+      },
+      stop: () => {
+        void nativeSpeech.stop();
+      },
+    };
+  } catch (error) {
+    console.warn("[Interview Screen] expo-speech native module is unavailable:", error);
+    return null;
+  }
+}
+
+function getSpeechRecognitionModule(): OptionalSpeechRecognitionModule | null {
+  try {
+    return requireOptionalNativeModule<OptionalSpeechRecognitionModule>("ExpoSpeechRecognition");
+  } catch (error) {
+    console.warn("[Interview Screen] expo-speech-recognition native module is unavailable:", error);
+    return null;
+  }
+}
+
+export default function InterviewScreen() {
+  const { user } = useSession();
+  const [isRecording, setIsRecording] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGeneratingAnswer, setIsGeneratingAnswer] = useState(false);
+  const [error, setError] = useState("");
+  const [screenData, setScreenData] = useState<any>(null);
+
   const pulseAnim1 = useRef(new Animated.Value(0)).current;
   const pulseAnim2 = useRef(new Animated.Value(0)).current;
   const pulseAnim3 = useRef(new Animated.Value(0)).current;
+  const transcriptRef = useRef("");
+  const submittedTranscriptRef = useRef(false);
+  const speechModuleRef = useRef<OptionalSpeechRecognitionModule | null>(getSpeechRecognitionModule());
+
+  const refreshSession = async () => {
+    const payload = await fetchInterviewPrepSession(user);
+    setScreenData(payload);
+  };
 
   useEffect(() => {
     const runAnimation = (val: Animated.Value) => {
@@ -21,22 +103,13 @@ export default function InterviewScreen() {
           toValue: 1,
           duration: 2200,
           useNativeDriver: true,
-        })
+        }),
       ).start();
     };
 
-    // Start Ring 1 immediately
     runAnimation(pulseAnim1);
-
-    // Stagger Ring 2 by 700ms using JS timeout
-    const t2 = setTimeout(() => {
-      runAnimation(pulseAnim2);
-    }, 700);
-
-    // Stagger Ring 3 by 1400ms using JS timeout
-    const t3 = setTimeout(() => {
-      runAnimation(pulseAnim3);
-    }, 1400);
+    const t2 = setTimeout(() => runAnimation(pulseAnim2), 700);
+    const t3 = setTimeout(() => runAnimation(pulseAnim3), 1400);
 
     return () => {
       clearTimeout(t2);
@@ -44,10 +117,102 @@ export default function InterviewScreen() {
       pulseAnim1.stopAnimation();
       pulseAnim2.stopAnimation();
       pulseAnim3.stopAnimation();
+      speechModuleRef.current?.abort();
+      getSpeechModule()?.stop();
     };
   }, [pulseAnim1, pulseAnim2, pulseAnim3]);
 
-  // Expand scale from 0.7 to 1.45 (rippling out)
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        setIsLoading(true);
+        setError("");
+        const payload = await fetchInterviewPrepSession(user);
+        setScreenData(payload);
+      } catch (err: any) {
+        setError(err.message || "Could not load interview preparation.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadSession();
+  }, [user]);
+
+  useEffect(() => {
+    const speechRecognitionModule = speechModuleRef.current;
+    if (!speechRecognitionModule) {
+      return;
+    }
+
+    const submitTranscript = async (rawTranscript?: string) => {
+      const transcript = (rawTranscript ?? transcriptRef.current).trim();
+      if (!transcript || submittedTranscriptRef.current) {
+        return;
+      }
+
+      submittedTranscriptRef.current = true;
+
+      try {
+        setIsGeneratingAnswer(true);
+        setError("");
+        const result = await requestInterviewPrepAnswer(user, transcript);
+        await refreshSession();
+        const spokenAnswer = result?.response?.ai_answer;
+        if (spokenAnswer) {
+          getSpeechModule()?.speak(spokenAnswer);
+        }
+      } catch (err: any) {
+        submittedTranscriptRef.current = false;
+        setError(err.message || "Could not generate interview answer.");
+      } finally {
+        setIsGeneratingAnswer(false);
+      }
+    };
+
+    const startSubscription = speechRecognitionModule.addListener("start", () => {
+      setIsRecording(true);
+      setError("");
+    });
+
+    const endSubscription = speechRecognitionModule.addListener("end", () => {
+      setIsRecording(false);
+      if (!submittedTranscriptRef.current && transcriptRef.current.trim()) {
+        void submitTranscript();
+      }
+    });
+
+    const resultSubscription = speechRecognitionModule.addListener("result", (event: SpeechRecognitionResultEvent) => {
+      const transcript = event.results?.[0]?.transcript?.trim() ?? "";
+      if (!transcript) {
+        return;
+      }
+
+      transcriptRef.current = transcript;
+
+      if (event.isFinal) {
+        void submitTranscript(transcript);
+      }
+    });
+
+    const errorSubscription = speechRecognitionModule.addListener("error", (event: SpeechRecognitionErrorEvent) => {
+      setIsRecording(false);
+      setIsGeneratingAnswer(false);
+      if (event.error === "aborted") {
+        return;
+      }
+
+      setError(event.message || "Voice assistant is not available right now.");
+    });
+
+    return () => {
+      startSubscription.remove();
+      endSubscription.remove();
+      resultSubscription.remove();
+      errorSubscription.remove();
+    };
+  }, [user]);
+
   const scale1 = pulseAnim1.interpolate({
     inputRange: [0, 1],
     outputRange: [0.75, 1.45],
@@ -61,7 +226,6 @@ export default function InterviewScreen() {
     outputRange: [0.75, 1.45],
   });
 
-  // Fade in at start, fade out at outer boundary
   const opacity1 = pulseAnim1.interpolate({
     inputRange: [0, 0.15, 0.75, 1],
     outputRange: [0, 0.9, 0.35, 0],
@@ -75,21 +239,72 @@ export default function InterviewScreen() {
     outputRange: [0, 0.9, 0.35, 0],
   });
 
-  // Border colors matching recording status
-  const waveBorderColor = isRecording
-    ? "rgba(239, 68, 68, 0.24)"
-    : "rgba(163, 230, 53, 0.22)";
+  const waveBorderColor = isRecording ? "rgba(239, 68, 68, 0.24)" : "rgba(163, 230, 53, 0.22)";
+
+  const interviewer = screenData?.interviewer;
+  const currentQuestion = screenData?.currentQuestion;
+  const latestResponse = screenData?.responses?.[0] ?? null;
+  const feedbackBody =
+    latestResponse?.ai_answer ||
+    screenData?.session?.last_ai_answer ||
+    "Tap the mic to generate a strong AI interview answer for this question.";
+  const feedbackHint =
+    latestResponse?.feedback ||
+    screenData?.session?.last_feedback ||
+    "Your generated answer and coaching feedback will appear here.";
+  const clarityScore = String(latestResponse?.clarity_score ?? screenData?.session?.last_clarity_score ?? 0);
+  const impactScore = String(latestResponse?.impact_score ?? screenData?.session?.last_impact_score ?? 0);
+  const structureScore = String(latestResponse?.structure_score ?? screenData?.session?.last_structure_score ?? 0);
+
+  const handleGenerateAnswer = async () => {
+    const speechRecognitionModule = speechModuleRef.current;
+    if (!speechRecognitionModule) {
+      setError("Voice assistant needs a fresh Android build to enable speech recognition.");
+      return;
+    }
+
+    if (isRecording) {
+      speechRecognitionModule.stop();
+      return;
+    }
+
+    try {
+      setError("");
+      transcriptRef.current = "";
+      submittedTranscriptRef.current = false;
+      getSpeechModule()?.stop();
+
+      if (speechRecognitionModule.isRecognitionAvailable && !speechRecognitionModule.isRecognitionAvailable()) {
+        setError("Speech recognition is unavailable on this device right now.");
+        return;
+      }
+
+      const permission = await speechRecognitionModule.requestPermissionsAsync();
+      if (!permission.granted) {
+        setError("Microphone permission is required for interview voice answers.");
+        return;
+      }
+
+      speechRecognitionModule.start({
+        lang: "en-US",
+        interimResults: true,
+        continuous: false,
+        addsPunctuation: true,
+      });
+    } catch (err: any) {
+      setIsRecording(false);
+      setIsGeneratingAnswer(false);
+      setError(err.message || "Could not start voice capture.");
+    }
+  };
 
   return (
     <Screen contentStyle={styles.screenContent}>
-      {/* Header */}
       <BackHeader label="Back" />
       <Text style={styles.title}>Interview Prep</Text>
 
-      {/* 1. AI Interviewer Card with perfectly centered continuous wave ripples */}
       <View style={styles.hero}>
         <View style={styles.avatarContainer}>
-          {/* Wave Ripple Ring 1 */}
           <Animated.View
             style={[
               styles.ring,
@@ -100,7 +315,6 @@ export default function InterviewScreen() {
               },
             ]}
           />
-          {/* Wave Ripple Ring 2 */}
           <Animated.View
             style={[
               styles.ring,
@@ -111,7 +325,6 @@ export default function InterviewScreen() {
               },
             ]}
           />
-          {/* Wave Ripple Ring 3 */}
           <Animated.View
             style={[
               styles.ring,
@@ -122,93 +335,77 @@ export default function InterviewScreen() {
               },
             ]}
           />
-          
-          {/* Profile photo */}
+
           <Image
             source={{
-              uri: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&h=150&q=80",
+              uri:
+                interviewer?.avatarUrl ||
+                "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&h=150&q=80",
             }}
             style={styles.avatar}
           />
-          
-          {/* HIRING badge overlapping bottom edge of profile photo */}
+
           <View style={styles.hiringBadge}>
             <Text style={styles.hiringBadgeText}>HIRING</Text>
           </View>
         </View>
 
-        <Text style={styles.heroName}>AI Interviewer — Sarah</Text>
-        <Text style={styles.heroRole}>Google · Engineering Manager</Text>
+        <Text style={styles.heroName}>{interviewer?.name || "AI Interviewer - Sarah"}</Text>
+        <Text style={styles.heroRole}>
+          {interviewer ? `${interviewer.company} · ${interviewer.role}` : "Google · Engineering Manager"}
+        </Text>
       </View>
 
-      {/* 2. Question Card */}
       <View style={styles.questionCard}>
-        <Text style={styles.questionMeta}>QUESTION 1 OF 4</Text>
-        <Text style={styles.questionText}>Tell me about yourself and your background</Text>
+        <Text style={styles.questionMeta}>
+          {currentQuestion ? `QUESTION ${currentQuestion.index + 1} OF ${currentQuestion.total}` : "QUESTION 1 OF 4"}
+        </Text>
+        <Text style={styles.questionText}>
+          {currentQuestion?.text || (isLoading ? "Loading your interview question..." : "Tell me about yourself and your background")}
+        </Text>
         <View style={styles.tagRow}>
-          <Badge label="Behavioral" />
-          <Badge label="Leadership" />
+          {(currentQuestion?.tags || ["Behavioral", "Leadership"]).map((tag: string) => (
+            <Badge key={tag} label={tag} />
+          ))}
         </View>
       </View>
 
-      {/* 3. Recording Interface (with clean green outline mic icon) */}
       <View style={styles.answerBlock}>
         <View>
-          <Pressable
-            style={[styles.micButton, isRecording && { backgroundColor: "red" }]}
-            onPress={() => setIsRecording(!isRecording)}
-          >
+          <Pressable style={[styles.micButton, isRecording && { backgroundColor: "red" }]} onPress={() => void handleGenerateAnswer()} disabled={isLoading || isGeneratingAnswer}>
             <Svg width={26} height={26} viewBox="0 0 24 24" fill="none">
-              {/* Clean outline mic body */}
               <Path
                 d="M12 2C10.34 2 9 3.34 9 5V11C9 12.66 10.34 14 12 14C13.66 14 15 12.66 15 11V5C15 3.34 13.66 2 12 2Z"
                 stroke={isRecording ? colors.surface : colors.accent}
                 strokeWidth={2}
                 fill="none"
               />
-              {/* Mic stand */}
               <Path
                 d="M19 10V11C19 14.87 15.87 18 12 18C8.13 18 5 14.87 5 11V10"
                 stroke={isRecording ? colors.surface : colors.accent}
                 strokeWidth={2}
                 strokeLinecap="round"
               />
-              <Path
-                d="M12 18V22"
-                stroke={isRecording ? colors.surface : colors.accent}
-                strokeWidth={2}
-                strokeLinecap="round"
-              />
+              <Path d="M12 18V22" stroke={isRecording ? colors.surface : colors.accent} strokeWidth={2} strokeLinecap="round" />
             </Svg>
           </Pressable>
         </View>
         <Text style={[styles.answerText, isRecording && { color: "red", fontWeight: "700" }]}>
-          {isRecording ? "Recording... Tap to stop" : "Tap to answer"}
+          {isRecording
+            ? "Listening... tap again to stop"
+            : isGeneratingAnswer
+              ? "Generating... Please wait"
+              : isLoading
+                ? "Loading interview session"
+                : "Tap to answer"}
         </Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
 
-      {/* 4. AI Feedback Panel */}
       <View style={styles.feedbackCard}>
-        <Text style={styles.feedbackTitle}>AI Feedback · Previous answer</Text>
-        <Text style={styles.feedbackBody}>
-          Strong STAR structure. Consider adding more quantifiable outcomes — e.g., "reduced churn
-          by 18%". Your pacing was excellent.
-        </Text>
-        <View style={styles.scoreGrid}>
-          <ScoreStat label="Clarity" value="88" />
-          <ScoreStat label="Impact" value="72" />
-          <ScoreStat label="Structure" value="95" />
-        </View>
-      </View>
-
-      {/* 5. Bottom Navigation row */}
-      <View style={styles.bottomNavRow}>
-        <Pressable style={styles.prevButton} onPress={() => router.back()}>
-          <Text style={styles.prevButtonText}>← Prev</Text>
-        </Pressable>
-        <Pressable style={styles.nextButton} onPress={() => router.back()}>
-          <Text style={styles.nextButtonText}>Next →</Text>
-        </Pressable>
+        <Text style={styles.feedbackTitle}>AI Feedback · Latest answer</Text>
+        <Text style={styles.feedbackBody}>{feedbackBody}</Text>
+        <Text style={styles.feedbackHint}>{feedbackHint}</Text>
       </View>
     </Screen>
   );
@@ -235,15 +432,6 @@ function Badge({ label }: { label: string }) {
   return (
     <View style={styles.badge}>
       <Text style={styles.badgeText}>{label}</Text>
-    </View>
-  );
-}
-
-function ScoreStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.scoreStat}>
-      <Text style={styles.scoreValue}>{value}</Text>
-      <Text style={styles.scoreLabel}>{label}</Text>
     </View>
   );
 }
@@ -388,6 +576,13 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.mutedText,
   },
+  errorText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#D64545",
+    textAlign: "center",
+    maxWidth: 260,
+  },
   feedbackCard: {
     borderRadius: radii.lg,
     backgroundColor: "#F4F7EE",
@@ -403,61 +598,13 @@ const styles = StyleSheet.create({
   },
   feedbackBody: {
     fontSize: 14,
-    color: colors.mutedText,
+    color: colors.text,
     lineHeight: 20,
-  },
-  scoreGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(0, 0, 0, 0.04)",
-    paddingTop: 12,
-  },
-  scoreStat: {
-    alignItems: "center",
-    gap: 4,
-    flex: 1,
-  },
-  scoreValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: colors.text,
-  },
-  scoreLabel: {
-    fontSize: 12,
     fontWeight: "600",
-    color: colors.subtleText,
   },
-  bottomNavRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-    marginTop: 8,
-  },
-  prevButton: {
-    flex: 1,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "rgba(23, 24, 22, 0.05)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  prevButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  nextButton: {
-    flex: 1,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.dark,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nextButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: colors.accent,
+  feedbackHint: {
+    fontSize: 13,
+    color: colors.mutedText,
+    lineHeight: 19,
   },
 });
