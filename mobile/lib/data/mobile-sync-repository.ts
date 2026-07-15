@@ -112,6 +112,7 @@ type JobRow = {
   company: string;
   location: string;
   salary: string;
+  job_link?: string | null;
   posted_at: string;
   match_score: number | null;
   tags: string[] | null;
@@ -856,29 +857,7 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
     return null;
   }
 
-  let token = await AsyncStorage.getItem("auth_token");
-  if (!token) {
-    const tokenRes = await fetch(`${backendUrl}/api/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: activeUser.id,
-        email: activeUser.email,
-        fullName: activeUser.fullName,
-        role: "client",
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      throw new Error(`Backend token bootstrap failed with HTTP ${tokenRes.status}`);
-    }
-
-    const tokenData = await tokenRes.json();
-    token = tokenData?.token ?? null;
-    if (token) {
-      await AsyncStorage.setItem("auth_token", token);
-    }
-  }
+  const token = await ensureBackendAuthToken(activeUser, backendUrl);
 
   if (!token) {
     return null;
@@ -898,6 +877,41 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
   }
 
   return await res.json();
+}
+
+async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiveUser>, backendUrl?: string) {
+  const resolvedBackendUrl = backendUrl || process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+  if (!resolvedBackendUrl) {
+    return null;
+  }
+
+  let token = await AsyncStorage.getItem("auth_token");
+  if (token) {
+    return token;
+  }
+
+  const tokenRes = await fetch(`${resolvedBackendUrl}/api/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId: activeUser.id,
+      email: activeUser.email,
+      fullName: activeUser.fullName,
+      role: "client",
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    throw new Error(`Backend token bootstrap failed with HTTP ${tokenRes.status}`);
+  }
+
+  const tokenData = await tokenRes.json();
+  token = tokenData?.token ?? null;
+  if (token) {
+    await AsyncStorage.setItem("auth_token", token);
+  }
+
+  return token;
 }
 
 async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
@@ -1227,33 +1241,39 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
 export async function toggleSavedJob(jobId: string, sessionUser?: SessionUser | null) {
   const activeUser = resolveActiveUser(sessionUser);
   try {
-    await ensurePreviewUserRecords(sessionUser);
-    const client = requireSupabase();
-    const { data: existing, error: readError } = await client
-      .from("saved_jobs")
-      .select("job_id")
-      .eq("user_id", activeUser.id)
-      .eq("job_id", jobId)
-      .maybeSingle();
-
-    if (readError) throw readError;
-
-    if (existing) {
-      const { error } = await client
-        .from("saved_jobs")
-        .delete()
-        .eq("user_id", activeUser.id)
-        .eq("job_id", jobId);
-      if (error) throw error;
-    } else {
-      const { error } = await client.from("saved_jobs").insert([{ user_id: activeUser.id, job_id: jobId }]);
-      if (error) throw error;
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
+    if (!token) {
+      throw new Error("Backend auth token missing.");
     }
+
+    const res = await fetch(`${backendUrl}/api/mobile/saved-jobs/toggle`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ jobId }),
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+    }
+
+    const payload = await res.json();
+    const current = await getLocalSyncSnapshot(sessionUser);
+    current.jobs = current.jobs.map((job) =>
+      job.id === jobId ? { ...job, isSaved: Boolean(payload?.isSaved) } : job,
+    );
+    inMemoryStore = { ...current };
+    void AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(inMemoryStore));
+    return Boolean(payload?.isSaved);
   } catch (err) {
-    console.warn("Supabase toggleSavedJob failed, updating local store:", err);
+    console.warn("Backend toggleSavedJob failed, falling back to local store:", err);
   }
 
-  const current = await getLocalSyncSnapshot();
+  const current = await getLocalSyncSnapshot(sessionUser);
   const hasJob = current.jobs.find((j) => j.id === jobId)?.isSaved;
   current.jobs = current.jobs.map((j) => (j.id === jobId ? { ...j, isSaved: !hasJob } : j));
   inMemoryStore = { ...current };

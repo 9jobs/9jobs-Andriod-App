@@ -22,11 +22,152 @@ function normalizeJobPayload(job: any) {
     location: String(job.location || "Remote"),
     salary: String(job.salary || "Not disclosed"),
     job_type: String(job.job_type || "Full-time"),
+    job_link: String(job.job_link || ""),
     posted_at: String(job.posted_at || "Just now"),
     match_score: Number(job.match_score || 80),
     tags: Array.isArray(job.tags) ? job.tags : [],
     description: String(job.description || ""),
   };
+}
+
+function normalizeApplicationPayload(application: any) {
+  if (!application?.user_id || !application?.client_id || !application?.job_id || !application?.status) {
+    return null;
+  }
+
+  return {
+    user_id: String(application.user_id),
+    client_id: String(application.client_id),
+    job_id: String(application.job_id),
+    status: String(application.status),
+    current_stage: String(application.current_stage || application.status),
+    is_saved: Boolean(application.is_saved),
+    is_active: application.is_active === undefined ? true : Boolean(application.is_active),
+    application_date: application.application_date || null,
+    applied_at: application.applied_at || null,
+    company_name: String(application.company_name || ""),
+    job_title: String(application.job_title || ""),
+    job_location: String(application.job_location || ""),
+    state: String(application.state || ""),
+    country: String(application.country || "Australia"),
+    work_type: String(application.work_type || ""),
+    employment_type: String(application.employment_type || ""),
+    source: String(application.source || ""),
+    source_url: String(application.source_url || ""),
+    job_reference_number: String(application.job_reference_number || ""),
+    priority: String(application.priority || "medium"),
+    salary_range: String(application.salary_range || ""),
+    recruiter_name: String(application.recruiter_name || ""),
+    recruiter_email: String(application.recruiter_email || ""),
+    recruiter_phone: String(application.recruiter_phone || ""),
+    hiring_manager_name: String(application.hiring_manager_name || ""),
+    hiring_manager_email: String(application.hiring_manager_email || ""),
+    job_description: String(application.job_description || ""),
+    notes: String(application.notes || ""),
+    next_action: String(application.next_action || ""),
+    next_action_date: application.next_action_date || null,
+    follow_up_required: Boolean(application.follow_up_required),
+    rejection_reason: String(application.rejection_reason || ""),
+    offer_amount: application.offer_amount ?? null,
+    offer_received_at: application.offer_received_at || null,
+    hired_at: application.hired_at || null,
+    created_by_admin_id: String(application.created_by_admin_id || "admin"),
+  };
+}
+
+function mergeSavedJobEntries({
+  savedJobsData,
+  applicationsData,
+  profilesData,
+  jobsData,
+}: {
+  savedJobsData: any[];
+  applicationsData: any[];
+  profilesData: any[];
+  jobsData: any[];
+}) {
+  const profileMap = new Map(profilesData.map((profile) => [profile.id, profile]));
+  const jobMap = new Map(jobsData.map((job) => [job.id, job]));
+  const entryMap = new Map<string, any>();
+
+  for (const row of savedJobsData) {
+    const compositeKey = `${row.user_id}:${row.job_id}`;
+    const job = jobMap.get(row.job_id) || null;
+    const profile = profileMap.get(row.user_id) || null;
+    const linkedApplication =
+      applicationsData.find((application) => (application.user_id || application.client_id) === row.user_id && application.job_id === row.job_id) || null;
+
+    entryMap.set(compositeKey, {
+      id: linkedApplication?.id ? String(linkedApplication.id) : compositeKey,
+      application_id: linkedApplication?.id ? String(linkedApplication.id) : null,
+      user_id: row.user_id,
+      client_id: row.user_id,
+      job_id: row.job_id,
+      status: linkedApplication?.status || "saved",
+      current_stage: linkedApplication?.current_stage || linkedApplication?.status || "saved",
+      is_saved: true,
+      application_date: linkedApplication?.application_date || null,
+      applied_at: linkedApplication?.applied_at || null,
+      created_at: row.created_at || linkedApplication?.created_at,
+      profiles: profile,
+      jobs: job,
+      job_title: linkedApplication?.job_title || job?.title || "",
+      company_name: linkedApplication?.company_name || job?.company || "",
+      job_location: linkedApplication?.job_location || job?.location || "",
+      salary_range: linkedApplication?.salary_range || job?.salary || "",
+      employment_type: linkedApplication?.employment_type || job?.job_type || "Full-time",
+      job_description: linkedApplication?.job_description || job?.description || "",
+      source_url: linkedApplication?.source_url || job?.job_link || "",
+    });
+  }
+
+  for (const application of applicationsData) {
+    const isSaved = Boolean(application.is_saved) || application.status === "saved";
+    if (!isSaved) continue;
+
+    const compositeKey = `${application.user_id || application.client_id}:${application.job_id}`;
+    if (entryMap.has(compositeKey)) continue;
+
+    const job = jobMap.get(application.job_id) || null;
+    const profile = profileMap.get(application.user_id || application.client_id) || null;
+    entryMap.set(compositeKey, {
+      id: String(application.id),
+      application_id: String(application.id),
+      user_id: application.user_id || application.client_id,
+      client_id: application.client_id || application.user_id,
+      job_id: application.job_id,
+      status: application.status || "saved",
+      current_stage: application.current_stage || application.status || "saved",
+      is_saved: Boolean(application.is_saved) || application.status === "saved",
+      application_date: application.application_date || null,
+      applied_at: application.applied_at || null,
+      created_at: application.created_at,
+      profiles: profile,
+      jobs: job,
+      job_title: application.job_title || job?.title || "",
+      company_name: application.company_name || job?.company || "",
+      job_location: application.job_location || job?.location || "",
+      salary_range: application.salary_range || job?.salary || "",
+      employment_type: application.employment_type || job?.job_type || "Full-time",
+      job_description: application.job_description || job?.description || "",
+      source_url: application.source_url || job?.job_link || "",
+    });
+  }
+
+  return Array.from(entryMap.values()).sort((a, b) => {
+    const aTime = new Date(a.created_at || 0).getTime();
+    const bTime = new Date(b.created_at || 0).getTime();
+    return bTime - aTime;
+  });
+}
+
+function canRetryJobWithoutLink(error: unknown) {
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: string }).message).toLowerCase()
+      : "";
+
+  return message.includes("job_link");
 }
 
 function ensureAdminRole(req: AuthenticatedRequest, res: Response) {
@@ -87,6 +228,13 @@ async function ensureRecruiterContactsTable(client: any) {
   `);
 }
 
+async function ensureJobsTableColumns(client: any) {
+  await client.query(`
+    alter table if exists jobs
+    add column if not exists job_link text default ''
+  `);
+}
+
 function buildProfilePayload(application: any) {
   const userId = String(application?.user_id || application?.client_id || "");
   if (!userId) {
@@ -118,12 +266,13 @@ async function upsertJobWithPostgres(job: any) {
   const client = await pool.connect();
 
   try {
+    await ensureJobsTableColumns(client);
     await client.query(
       `
       insert into jobs (
-        id, title, company, location, salary, job_type, posted_at, match_score, tags, description
+        id, title, company, location, salary, job_type, job_link, posted_at, match_score, tags, description
       ) values (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
       )
       on conflict (id) do update set
         title = excluded.title,
@@ -131,6 +280,7 @@ async function upsertJobWithPostgres(job: any) {
         location = excluded.location,
         salary = excluded.salary,
         job_type = excluded.job_type,
+        job_link = excluded.job_link,
         posted_at = excluded.posted_at,
         match_score = excluded.match_score,
         tags = excluded.tags,
@@ -144,12 +294,73 @@ async function upsertJobWithPostgres(job: any) {
         normalizedJob.location,
         normalizedJob.salary,
         normalizedJob.job_type,
+        normalizedJob.job_link,
         normalizedJob.posted_at,
         normalizedJob.match_score,
         normalizedJob.tags,
         normalizedJob.description,
       ],
     );
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function upsertSavedJobWithPostgres(userId: string, jobId: string) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query(
+      `
+      insert into saved_jobs (user_id, job_id)
+      values ($1, $2)
+      on conflict (user_id, job_id) do nothing
+      `,
+      [userId, jobId],
+    );
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function deleteSavedJobWithPostgres(userId: string, jobId: string) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query(
+      `
+      delete from saved_jobs
+      where user_id = $1 and job_id = $2
+      `,
+      [userId, jobId],
+    );
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function getApplicationByUserAndJobWithPostgres(userId: string, jobId: string) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    const result = await client.query(
+      `
+      select *
+      from applications
+      where user_id = $1 and job_id = $2
+      order by created_at desc nulls last
+      limit 1
+      `,
+      [userId, jobId],
+    );
+
+    return result.rows[0] ?? null;
   } finally {
     client.release();
     await pool.end();
@@ -316,6 +527,29 @@ async function updateApplicationWithPostgres(applicationId: number, application:
   }
 }
 
+async function updateApplicationSavedFlagWithPostgres(applicationId: number, isSaved: boolean) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    const result = await client.query(
+      `
+      update applications set
+        is_saved = $2,
+        updated_at = now()
+      where id = $1
+      returning *
+      `,
+      [applicationId, isSaved],
+    );
+
+    return result.rows[0] ?? null;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
 async function createRecruiterContactWithPostgres(contact: any) {
   const pool = createPool();
   const client = await pool.connect();
@@ -465,7 +699,8 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
   }
 
   const { application, job } = req.body || {};
-  if (!application?.user_id || !application?.client_id || !application?.job_id || !application?.status) {
+  const normalizedApplication = normalizeApplicationPayload(application);
+  if (!normalizedApplication) {
     return res.status(400).json({ error: "Missing tracker application payload" });
   }
 
@@ -481,8 +716,13 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
         await upsertJobWithPostgres(normalizedJob);
       }
       const saved = application.id
-        ? await updateApplicationWithPostgres(Number(application.id), application)
-        : await createApplicationWithPostgres(application);
+        ? await updateApplicationWithPostgres(Number(application.id), normalizedApplication)
+        : await createApplicationWithPostgres(normalizedApplication);
+      if (normalizedApplication.is_saved) {
+        await upsertSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
+      } else {
+        await deleteSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
+      }
       return res.json({ success: true, application: saved });
     }
 
@@ -500,19 +740,278 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
 
     if (normalizedJob?.id) {
       const { error: jobError } = await supabase.from("jobs").upsert([normalizedJob], { onConflict: "id" });
-      if (jobError) throw jobError;
+      if (jobError) {
+        if (!canRetryJobWithoutLink(jobError)) {
+          throw jobError;
+        }
+
+        const { job_link: _jobLink, ...legacyJobPayload } = normalizedJob;
+        const { error: legacyJobError } = await supabase.from("jobs").upsert([legacyJobPayload], { onConflict: "id" });
+        if (legacyJobError) throw legacyJobError;
+      }
     }
 
     const query = application.id
-      ? supabase.from("applications").update(application).eq("id", Number(application.id)).select().single()
-      : supabase.from("applications").insert([application]).select().single();
+      ? supabase.from("applications").update(normalizedApplication).eq("id", Number(application.id)).select().single()
+      : supabase.from("applications").insert([normalizedApplication]).select().single();
     const { data, error } = await query;
     if (error) throw error;
+
+    if (normalizedApplication.is_saved) {
+      const { error: savedJobError } = await supabase
+        .from("saved_jobs")
+        .upsert([{ user_id: normalizedApplication.user_id, job_id: normalizedApplication.job_id }], { onConflict: "user_id,job_id" });
+      if (savedJobError) throw savedJobError;
+    } else {
+      const { error: savedJobDeleteError } = await supabase
+        .from("saved_jobs")
+        .delete()
+        .eq("user_id", normalizedApplication.user_id)
+        .eq("job_id", normalizedApplication.job_id);
+      if (savedJobDeleteError) throw savedJobDeleteError;
+    }
 
     return res.json({ success: true, application: data });
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/tracker/applications failed:", err);
     return res.status(500).json({ error: err.message || "Failed to create tracker application" });
+  }
+});
+
+router.delete("/admin/tracker/saved-jobs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const { applicationId, jobId, userId, status } = req.body || {};
+  if (!jobId || !userId) {
+    return res.status(400).json({ error: "Missing saved job identifiers" });
+  }
+
+  const normalizedStatus = String(status || "").toLowerCase();
+  const numericApplicationId = Number(applicationId);
+  const hasApplicationId = Number.isFinite(numericApplicationId);
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      await deleteSavedJobWithPostgres(String(userId), String(jobId));
+
+      if (hasApplicationId) {
+        if (normalizedStatus === "saved") {
+          const pool = createPool();
+          const client = await pool.connect();
+          try {
+            await client.query(`delete from applications where id = $1`, [numericApplicationId]);
+          } finally {
+            client.release();
+            await pool.end();
+          }
+        } else {
+          await updateApplicationSavedFlagWithPostgres(numericApplicationId, false);
+        }
+      }
+
+      return res.json({ success: true });
+    }
+
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({
+        error:
+          "Backend write credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY or a real DATABASE_URL in backend/.env to delete tracker records without RLS errors.",
+      });
+    }
+
+    const { error: savedJobDeleteError } = await supabase
+      .from("saved_jobs")
+      .delete()
+      .eq("user_id", String(userId))
+      .eq("job_id", String(jobId));
+    if (savedJobDeleteError) throw savedJobDeleteError;
+
+    if (hasApplicationId) {
+      if (normalizedStatus === "saved") {
+        const { error: applicationDeleteError } = await supabase.from("applications").delete().eq("id", numericApplicationId);
+        if (applicationDeleteError) throw applicationDeleteError;
+      } else {
+        const { error: applicationUpdateError } = await supabase
+          .from("applications")
+          .update({ is_saved: false })
+          .eq("id", numericApplicationId);
+        if (applicationUpdateError) throw applicationUpdateError;
+      }
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/saved-jobs failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete saved job" });
+  }
+});
+
+router.post("/mobile/saved-jobs/toggle", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const requester = req.user;
+  const requestedJobId = String(req.body?.jobId || "");
+
+  if (!requester?.userId || !requestedJobId) {
+    return res.status(400).json({ error: "Missing saved job toggle payload" });
+  }
+
+  const userId = requester.userId;
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      const existingApplication = await getApplicationByUserAndJobWithPostgres(userId, requestedJobId);
+
+      const pool = createPool();
+      const client = await pool.connect();
+      try {
+        const existingSavedJobResult = await client.query(
+          `
+          select user_id, job_id
+          from saved_jobs
+          where user_id = $1 and job_id = $2
+          limit 1
+          `,
+          [userId, requestedJobId],
+        );
+        const existingSavedJob = existingSavedJobResult.rows[0] ?? null;
+
+        const serverSaved = Boolean(existingSavedJob) || Boolean(existingApplication?.is_saved) || existingApplication?.status === "saved";
+
+        if (serverSaved) {
+          await client.query(
+            `
+            delete from saved_jobs
+            where user_id = $1 and job_id = $2
+            `,
+            [userId, requestedJobId],
+          );
+
+          if (existingApplication?.id) {
+            if (String(existingApplication.status || "").toLowerCase() === "saved") {
+              await client.query(`delete from applications where id = $1`, [existingApplication.id]);
+            } else {
+              await client.query(
+                `
+                update applications
+                set is_saved = false,
+                    updated_at = now()
+                where id = $1
+                `,
+                [existingApplication.id],
+              );
+            }
+          }
+
+          return res.json({ success: true, isSaved: false });
+        }
+
+        await client.query(
+          `
+          insert into saved_jobs (user_id, job_id)
+          values ($1, $2)
+          on conflict (user_id, job_id) do nothing
+          `,
+          [userId, requestedJobId],
+        );
+
+        if (existingApplication?.id) {
+          const shouldPromoteToSaved = !existingApplication.status || String(existingApplication.status).toLowerCase() === "draft";
+          await client.query(
+            `
+            update applications
+            set is_saved = true,
+                status = case when $2 then 'saved' else status end,
+                current_stage = case when $2 then 'saved' else current_stage end,
+                is_active = case when $2 then false else is_active end,
+                updated_at = now()
+            where id = $1
+            `,
+            [existingApplication.id, shouldPromoteToSaved],
+          );
+        }
+
+        return res.json({ success: true, isSaved: true });
+      } finally {
+        client.release();
+        await pool.end();
+      }
+    }
+
+    const { data: existingSavedJob, error: savedJobReadError } = await supabase
+      .from("saved_jobs")
+      .select("user_id,job_id")
+      .eq("user_id", userId)
+      .eq("job_id", requestedJobId)
+      .maybeSingle();
+    if (savedJobReadError) throw savedJobReadError;
+
+    const { data: existingApplication, error: applicationReadError } = await supabase
+      .from("applications")
+      .select("id,status,current_stage,is_saved,is_active")
+      .eq("user_id", userId)
+      .eq("job_id", requestedJobId)
+      .maybeSingle();
+    if (applicationReadError) throw applicationReadError;
+
+    const serverSaved =
+      Boolean(existingSavedJob) ||
+      Boolean(existingApplication?.is_saved) ||
+      existingApplication?.status === "saved";
+
+    if (serverSaved) {
+      if (existingSavedJob) {
+        const { error: deleteSavedJobError } = await supabase
+          .from("saved_jobs")
+          .delete()
+          .eq("user_id", userId)
+          .eq("job_id", requestedJobId);
+        if (deleteSavedJobError) throw deleteSavedJobError;
+      }
+
+      if (existingApplication?.id) {
+        if (existingApplication.status === "saved") {
+          const { error: deleteApplicationError } = await supabase
+            .from("applications")
+            .delete()
+            .eq("id", existingApplication.id);
+          if (deleteApplicationError) throw deleteApplicationError;
+        } else {
+          const { error: updateApplicationError } = await supabase
+            .from("applications")
+            .update({ is_saved: false })
+            .eq("id", existingApplication.id);
+          if (updateApplicationError) throw updateApplicationError;
+        }
+      }
+
+      return res.json({ success: true, isSaved: false });
+    }
+
+    const { error: insertSavedJobError } = await supabase
+      .from("saved_jobs")
+      .upsert([{ user_id: userId, job_id: requestedJobId }], { onConflict: "user_id,job_id" });
+    if (insertSavedJobError) throw insertSavedJobError;
+
+    if (existingApplication?.id) {
+      const shouldPromoteToSaved = !existingApplication.status || existingApplication.status === "draft";
+      const patch: Record<string, unknown> = { is_saved: true };
+      if (shouldPromoteToSaved) {
+        patch.status = "saved";
+        patch.current_stage = "saved";
+        patch.is_active = false;
+      }
+      const { error: updateApplicationError } = await supabase
+        .from("applications")
+        .update(patch)
+        .eq("id", existingApplication.id);
+      if (updateApplicationError) throw updateApplicationError;
+    }
+
+    return res.json({ success: true, isSaved: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /mobile/saved-jobs/toggle failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to toggle saved job" });
   }
 });
 
@@ -579,6 +1078,39 @@ router.post("/admin/tracker/contacts", authMiddleware, async (req: Authenticated
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/tracker/contacts failed:", err);
     return res.status(500).json({ error: err.message || "Failed to save hiring manager" });
+  }
+});
+
+router.get("/admin/tracker/saved-jobs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const [savedJobsResult, applicationsResult, profilesResult, jobsResult] = await Promise.all([
+      supabase.from("saved_jobs").select("*").order("created_at", { ascending: false }),
+      supabase.from("applications").select("*").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("*"),
+      supabase.from("jobs").select("*"),
+    ]);
+
+    const results = [savedJobsResult, applicationsResult, profilesResult, jobsResult];
+    const firstError = results.find((result) => result.error)?.error;
+    if (firstError) {
+      throw firstError;
+    }
+
+    const entries = mergeSavedJobEntries({
+      savedJobsData: (savedJobsResult.data || []) as any[],
+      applicationsData: (applicationsResult.data || []) as any[],
+      profilesData: (profilesResult.data || []) as any[],
+      jobsData: (jobsResult.data || []) as any[],
+    });
+
+    return res.json({ success: true, entries });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/saved-jobs failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load saved jobs" });
   }
 });
 

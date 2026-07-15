@@ -55,6 +55,74 @@ const previewTrackerJobs = [
   },
 ] as const;
 
+const australianLocationOptions = [
+  "Remote - Australia",
+  "New South Wales",
+  "Sydney, NSW",
+  "Newcastle, NSW",
+  "Wollongong, NSW",
+  "Central Coast, NSW",
+  "Maitland, NSW",
+  "Coffs Harbour, NSW",
+  "Wagga Wagga, NSW",
+  "Albury, NSW",
+  "Orange, NSW",
+  "Dubbo, NSW",
+  "Victoria",
+  "Melbourne, VIC",
+  "Geelong, VIC",
+  "Ballarat, VIC",
+  "Bendigo, VIC",
+  "Shepparton, VIC",
+  "Mildura, VIC",
+  "Warrnambool, VIC",
+  "Queensland",
+  "Brisbane, QLD",
+  "Gold Coast, QLD",
+  "Sunshine Coast, QLD",
+  "Townsville, QLD",
+  "Cairns, QLD",
+  "Toowoomba, QLD",
+  "Mackay, QLD",
+  "Rockhampton, QLD",
+  "Bundaberg, QLD",
+  "South Australia",
+  "Adelaide, SA",
+  "Mount Gambier, SA",
+  "Whyalla, SA",
+  "Murray Bridge, SA",
+  "Port Lincoln, SA",
+  "Western Australia",
+  "Perth, WA",
+  "Fremantle, WA",
+  "Mandurah, WA",
+  "Bunbury, WA",
+  "Geraldton, WA",
+  "Albany, WA",
+  "Kalgoorlie, WA",
+  "Tasmania",
+  "Hobart, TAS",
+  "Launceston, TAS",
+  "Devonport, TAS",
+  "Burnie, TAS",
+  "Northern Territory",
+  "Darwin, NT",
+  "Alice Springs, NT",
+  "Palmerston, NT",
+  "Australian Capital Territory",
+  "Canberra, ACT",
+] as const;
+
+function getAustraliaLocationOptions(currentLocation?: string) {
+  if (!currentLocation?.trim()) {
+    return australianLocationOptions;
+  }
+
+  return australianLocationOptions.includes(currentLocation as (typeof australianLocationOptions)[number])
+    ? australianLocationOptions
+    : [currentLocation, ...australianLocationOptions];
+}
+
 function connectAdminSocket(token: string, onEvent: (event: string, payload: any) => void) {
   if (adminSocket) {
     adminSocket.disconnect();
@@ -154,6 +222,7 @@ type Tab =
   | "dashboard"
   | "users"
   | "jobs"
+  | "saved_jobs"
   | "applications"
   | "job_tracker"
   | "hiring_managers"
@@ -263,6 +332,7 @@ export default function App() {
   const [users, setUsers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
+  const [savedJobEntries, setSavedJobEntries] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
@@ -312,7 +382,7 @@ export default function App() {
 
   // Form State Handlers
   const [userForm, setUserForm] = useState({ id: "", full_name: "", email: "", phone_number: "", subscription_plan: "free" });
-  const [jobForm, setJobForm] = useState({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "" });
+  const [jobForm, setJobForm] = useState({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: "", application_id: "" });
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
@@ -716,6 +786,32 @@ export default function App() {
     return message.includes("row-level security");
   };
 
+  const canRetryJobWithoutLink = (error: unknown) => {
+    const message =
+      typeof error === "object" && error && "message" in error
+        ? String((error as { message?: string }).message).toLowerCase()
+        : "";
+
+    return message.includes("job_link");
+  };
+
+  const upsertJobRecord = async (jobRecord: any) => {
+    const primaryResult = await supabase.from("jobs").upsert([jobRecord], { onConflict: "id" });
+    if (!primaryResult.error) {
+      return;
+    }
+
+    if (!canRetryJobWithoutLink(primaryResult.error)) {
+      throw primaryResult.error;
+    }
+
+    const { job_link: _jobLink, ...legacyJobRecord } = jobRecord;
+    const fallbackResult = await supabase.from("jobs").upsert([legacyJobRecord], { onConflict: "id" });
+    if (fallbackResult.error) {
+      throw fallbackResult.error;
+    }
+  };
+
   const toAdminErrorMessage = (error: unknown) => {
     const rawMessage =
       typeof error === "object" && error && "message" in error
@@ -743,7 +839,10 @@ export default function App() {
           await fetchUsers();
           break;
         case "jobs":
-          await fetchJobs();
+          await Promise.all([fetchJobs(), fetchUsers()]);
+          break;
+        case "saved_jobs":
+          await Promise.all([fetchApplications(), fetchUsers(), fetchSavedJobs()]);
           break;
         case "applications":
           await fetchApplications();
@@ -968,6 +1067,27 @@ export default function App() {
       .order("created_at", { ascending: false });
     if (error) throw error;
     setApplications(data || []);
+  };
+
+  const fetchSavedJobs = async () => {
+    const token = await ensureAdminToken();
+    if (!token) {
+      throw new Error("Admin auth token missing. Please sign in again.");
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/admin/tracker/saved-jobs`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+    }
+
+    const payload = await response.json();
+    setSavedJobEntries(payload.entries || []);
   };
 
   const fetchTrackerClientData = async (clientId: string) => {
@@ -1318,27 +1438,80 @@ export default function App() {
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const jobId = editItem?.id || jobForm.id || "job_" + Math.random().toString(36).substring(2, 10);
+      const applicationId = jobForm.application_id ? Number(jobForm.application_id) : null;
       const payload = {
         title: jobForm.title,
         company: jobForm.company,
         location: jobForm.location,
-        salary: jobForm.salary,
+        salary: jobForm.salary || "Not disclosed",
         job_type: jobForm.job_type,
-        description: jobForm.description,
+        job_link: jobForm.job_link.trim(),
+        description: jobForm.description.trim() || `${jobForm.title} role at ${jobForm.company}.`,
         tags: jobForm.tags.split(",").map((t) => t.trim()).filter(Boolean)
       };
+      const jobRecord = { id: jobId, ...payload, posted_at: "Just now" };
 
-      if (editItem) {
-        const { error } = await supabase.from("jobs").update(payload).eq("id", editItem.id);
-        if (error) throw error;
+      if (jobForm.user_id) {
+        const existingSavedJob = savedJobEntries.find((entry) => {
+          const entryApplicationId = entry.application_id ? Number(entry.application_id) : null;
+          return (
+            (applicationId && entryApplicationId === applicationId) ||
+            (entry.user_id === jobForm.user_id && entry.job_id === jobId)
+          );
+        });
+        const trackerStatus = existingSavedJob?.status || "saved";
+        const trackerPayload = {
+          ...(applicationId ? { id: applicationId } : {}),
+          user_id: jobForm.user_id,
+          client_id: jobForm.user_id,
+          job_id: jobId,
+          status: trackerStatus,
+          current_stage: existingSavedJob?.current_stage || trackerStatus,
+          is_saved: true,
+          is_active: !["hired", "rejected", "withdrawn", "closed"].includes(trackerStatus),
+          application_date: existingSavedJob?.application_date || existingSavedJob?.created_at || new Date().toISOString(),
+          applied_at: existingSavedJob?.applied_at || null,
+          company_name: payload.company,
+          job_title: payload.title,
+          job_location: payload.location,
+          state: payload.location.split(",").slice(-1)[0]?.trim() || "",
+          country: "Australia",
+          salary_range: payload.salary,
+          work_type: payload.location.toLowerCase().includes("remote") ? "Remote" : "On-site",
+          employment_type: payload.job_type,
+          job_description: payload.description,
+          created_by_admin_id: user?.id || "admin",
+        };
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/applications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            application: trackerPayload,
+            job: jobRecord,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+      } else if (editItem) {
+        await upsertJobRecord({ id: editItem.id, ...payload, posted_at: editItem.posted_at || "Just now" });
       } else {
-        const jobId = jobForm.id || "job_" + Math.random().toString(36).substring(2, 10);
-        const { error } = await supabase.from("jobs").insert([{ id: jobId, ...payload, posted_at: "Just now" }]);
-        if (error) throw error;
+        await upsertJobRecord(jobRecord);
       }
 
-      showSuccess("Job saved successfully!");
-      fetchJobs();
+      showSuccess(jobForm.user_id ? "Saved role synced to the app successfully!" : "Job saved successfully!");
+      void Promise.all([fetchJobs(), fetchApplications(), fetchUsers(), fetchSavedJobs()]);
     } catch (err: any) {
       showError(err.message);
     }
@@ -1801,6 +1974,41 @@ export default function App() {
     }
   };
 
+  const handleDeleteSavedJob = async (entry: any) => {
+    if (!confirm("Are you sure you want to delete this saved job?")) return;
+
+    try {
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/saved-jobs`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          applicationId: entry.application_id || null,
+          jobId: entry.job_id,
+          userId: entry.user_id,
+          status: entry.status || "saved",
+        }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+      }
+
+      showSuccess("Saved job deleted successfully.");
+      await Promise.all([fetchApplications(), fetchUsers(), fetchSavedJobs()]);
+    } catch (err: any) {
+      showError(err.message);
+    }
+  };
+
   const handleUpdateApplicationStatus = async (appId: number, status: string) => {
     try {
       const patch: Record<string, unknown> = {
@@ -1921,9 +2129,13 @@ export default function App() {
     setModalType(type);
     setEditItem(null);
     setErrorMsg("");
+    const defaultSavedJobUserId =
+      type === "job" && activeTab === "saved_jobs"
+        ? selectedTrackerClientId || users[0]?.id || previewTrackerClient.id
+        : "";
     // Clear forms
     setUserForm({ id: "", full_name: "", email: "", phone_number: "", subscription_plan: "free" });
-    setJobForm({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "" });
+    setJobForm({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: defaultSavedJobUserId, application_id: "" });
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
@@ -1946,7 +2158,19 @@ export default function App() {
     if (type === "user") {
       setUserForm({ id: item.id, full_name: item.full_name, email: item.email, phone_number: item.phone_number || "", subscription_plan: item.subscription_plan || "free" });
     } else if (type === "job") {
-      setJobForm({ id: item.id, title: item.title, company: item.company, location: item.location, salary: item.salary, job_type: item.job_type, description: item.description, tags: item.tags?.join(", ") || "" });
+      setJobForm({
+        id: item.id,
+        title: item.title,
+        company: item.company,
+        location: item.location,
+        salary: item.salary,
+        job_type: item.job_type,
+        description: item.description,
+        tags: item.tags?.join(", ") || "",
+        job_link: item.job_link || "",
+        user_id: item.user_id || item.client_id || "",
+        application_id: item.application_id ? String(item.application_id) : "",
+      });
     } else if (type === "plan") {
       setPlanForm({ id: item.id, name: item.name, price: item.price, features: item.features?.join(", ") || "" });
     } else if (type === "resume") {
@@ -1996,7 +2220,44 @@ export default function App() {
     return matchesSearch && a.status === filterType;
   });
 
+  const filteredSavedJobs = savedJobEntries.filter((application) => {
+    const query = searchQuery.toLowerCase();
+    if (!query) {
+      return true;
+    }
+
+    return [
+      application.profiles?.full_name,
+      application.profiles?.email,
+      application.jobs?.title,
+      application.jobs?.company,
+      application.jobs?.location,
+      application.job_title,
+      application.company_name,
+      application.job_location,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  });
+
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
+  const buildSavedJobModalItem = (item: any, title: string, company: string, location: string, salary: string, tags: string[], jobLink: string) => ({
+    ...(item.jobs || {}),
+    id: item.job_id,
+    title,
+    company,
+    location,
+    salary,
+    job_type: item.jobs?.job_type || item.employment_type || "Full-time",
+    description: item.jobs?.description || item.job_description || "",
+    tags: Array.isArray(item.jobs?.tags) ? item.jobs.tags : tags,
+    job_link: item.jobs?.job_link || jobLink,
+    user_id: item.user_id,
+    client_id: item.client_id,
+    application_id: item.application_id ? String(item.application_id) : "",
+    status: item.status || "saved",
+    current_stage: item.current_stage || item.status || "saved",
+    application_date: item.application_date || item.created_at,
+    applied_at: item.applied_at || null,
+  });
   const selectedTrackerMetrics = calculateTrackerMetrics({
     applications,
     interviews: trackerInterviews,
@@ -2093,6 +2354,10 @@ export default function App() {
             <Briefcase size={18} />
             <span>Opportunities</span>
           </a>
+          <a className={`sidebar-item ${activeTab === "saved_jobs" ? "active" : ""}`} onClick={() => setActiveTab("saved_jobs")}>
+            <Eye size={18} />
+            <span>Saved Jobs</span>
+          </a>
           <a className={`sidebar-item ${activeTab === "applications" ? "active" : ""}`} onClick={() => setActiveTab("applications")}>
             <Layers size={18} />
             <span>Applications</span>
@@ -2153,12 +2418,13 @@ export default function App() {
       <main className="main-content">
         <header className="header">
           <div className="header-title">
-            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
+            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab === "saved_jobs" ? "Saved Jobs" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
             <p>Welcome back to your 9Jobs administration console.</p>
           </div>
           <div className="header-actions">
             {activeTab === "users" && <button className="btn btn-primary" onClick={() => openAddModal("user")}><Plus size={16} /> Add Candidate</button>}
             {activeTab === "jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Opportunity</button>}
+            {activeTab === "saved_jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Saved Job</button>}
             {activeTab === "job_tracker" && <button className="btn btn-primary" onClick={() => openAddModal("tracker")}><Plus size={16} /> Add Tracker Entry</button>}
             {activeTab === "hiring_managers" && <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}><Plus size={16} /> Add Hiring Manager</button>}
             {activeTab === "interview_preparation" && <button className="btn btn-primary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}><Plus size={16} /> Refresh</button>}
@@ -2384,6 +2650,188 @@ export default function App() {
                   ))}
                   {filteredJobs.length === 0 && (
                     <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No opportunities listed matching search.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "saved_jobs" && (
+          <div className="card">
+            <div className="controls-row">
+              <div className="search-input-wrapper">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="Search saved jobs by candidate, company, or role..."
+                  className="form-input search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="stats-grid" style={{ marginBottom: "20px" }}>
+              <div className="stat-card">
+                <div className="stat-value">{savedJobEntries.length}</div>
+                <div className="stat-label">Total Saved Jobs</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{new Set(savedJobEntries.map((item) => item.user_id)).size}</div>
+                <div className="stat-label">Candidates With Saves</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{filteredSavedJobs.length}</div>
+                <div className="stat-label">Visible In Current Filter</div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px" }}>
+              {filteredSavedJobs.map((item) => {
+                const savedJob = item.jobs || {};
+                const title = savedJob.title || item.job_title || "Saved role";
+                const company = savedJob.company || item.company_name || "9Jobs";
+                const location = savedJob.location || item.job_location || "Australia";
+                const salary = savedJob.salary || item.salary_range || "Not disclosed";
+                const jobLink = savedJob.job_link || item.source_url || "";
+                const tags = Array.isArray(savedJob.tags) ? savedJob.tags.slice(0, 3) : [];
+
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      background: "var(--surface-color)",
+                      border: "1px solid var(--border-color)",
+                      borderRadius: "24px",
+                      padding: "22px",
+                      boxShadow: "0 14px 34px rgba(10, 10, 8, 0.08)",
+                      display: "grid",
+                      gap: "14px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                      <div>
+                        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px" }}>
+                          {item.profiles?.full_name || "Candidate"}
+                        </div>
+                        <h3 style={{ fontSize: "22px", lineHeight: 1.2, margin: 0 }}>{title}</h3>
+                        <p style={{ margin: "8px 0 0", color: "var(--text-secondary)" }}>{company} • {location}</p>
+                      </div>
+                      <span className="badge badge-success">{item.status || "saved"}</span>
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>Salary</div>
+                        <strong style={{ fontSize: "18px" }}>{salary}</strong>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        {tags.map((tag: string) => (
+                          <span key={tag} className="badge badge-neutral">{tag}</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                      {jobLink ? (
+                        <a className="btn btn-dark" href={jobLink} target="_blank" rel="noreferrer">
+                          <Eye size={16} /> View Job
+                        </a>
+                      ) : (
+                        <button className="btn btn-dark" onClick={() => openEditModal("job", buildSavedJobModalItem(item, title, company, location, salary, tags, jobLink))}>
+                          <Eye size={16} /> View Job
+                        </button>
+                      )}
+                      <button className="btn btn-secondary" onClick={() => { setSelectedTrackerClientId(item.user_id); setActiveTab("job_tracker"); }}>
+                        Open Tracker
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => openEditModal("job", buildSavedJobModalItem(item, title, company, location, salary, tags, jobLink))}
+                      >
+                        <Edit size={16} /> Edit
+                      </button>
+                      <button className="btn btn-danger" onClick={() => void handleDeleteSavedJob(item)}>
+                        <Trash2 size={16} /> Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {filteredSavedJobs.length === 0 && (
+                <div className="card" style={{ gridColumn: "1 / -1", textAlign: "center", color: "var(--text-secondary)" }}>
+                  No saved jobs found yet. Save a role for a candidate and it will appear here.
+                </div>
+              )}
+            </div>
+
+            <div className="table-responsive" style={{ marginTop: "24px" }}>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Company</th>
+                    <th>Job Title</th>
+                    <th>Status</th>
+                    <th>Salary</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSavedJobs.map((item) => {
+                    const savedJob = item.jobs || {};
+                    const title = savedJob.title || item.job_title || "Saved role";
+                    const company = savedJob.company || item.company_name || "9Jobs";
+                    const salary = savedJob.salary || item.salary_range || "Not disclosed";
+                    const location = savedJob.location || item.job_location || "Australia";
+                    const jobLink = savedJob.job_link || item.source_url || "";
+                    const tags = Array.isArray(savedJob.tags) ? savedJob.tags.slice(0, 3) : [];
+
+                    return (
+                      <tr key={`table-${item.id}`}>
+                        <td>
+                          <strong>{item.profiles?.full_name || "Candidate"}</strong>
+                          <br />
+                          <span style={{ fontSize: "11px", color: "#888" }}>{item.profiles?.email || item.user_id}</span>
+                        </td>
+                        <td>{company}</td>
+                        <td>
+                          <strong>{title}</strong>
+                          <br />
+                          <span style={{ fontSize: "11px", color: "#888" }}>{location}</span>
+                        </td>
+                        <td><span className="badge badge-success">{item.status || "saved"}</span></td>
+                        <td>{salary}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            {jobLink ? (
+                              <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={jobLink} target="_blank" rel="noreferrer">
+                                <Eye size={14} />
+                              </a>
+                            ) : (
+                              <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => openEditModal("job", buildSavedJobModalItem(item, title, company, location, salary, tags, jobLink))}>
+                                <Eye size={14} />
+                              </button>
+                            )}
+                            <button className="btn btn-secondary" style={{ padding: "6px 10px" }} onClick={() => openEditModal("job", buildSavedJobModalItem(item, title, company, location, salary, tags, jobLink))}>
+                              <Edit size={14} />
+                            </button>
+                            <button className="btn btn-danger" style={{ padding: "6px 10px" }} onClick={() => void handleDeleteSavedJob(item)}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredSavedJobs.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>
+                        No saved jobs available in table view yet.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -3399,24 +3847,42 @@ export default function App() {
             {/* Candidate Opportunity Form */}
             {modalType === "job" && (
               <form onSubmit={handleSaveJob}>
+                <div className="form-group">
+                  <label className="form-label">Save For Candidate (Optional)</label>
+                  <select className="form-input" value={jobForm.user_id} onChange={(e) => setJobForm({ ...jobForm, user_id: e.target.value })}>
+                    <option value="">General opportunity only</option>
+                    {users.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.full_name} ({candidate.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Opportunity Title</label>
+                    <label className="form-label">Position</label>
                     <input type="text" className="form-input" required placeholder="e.g. Senior Frontend Engineer" value={jobForm.title} onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Company Name</label>
-                    <input type="text" className="form-input" required placeholder="e.g. Google India" value={jobForm.company} onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })} />
+                    <input type="text" className="form-input" required placeholder="e.g. Atlassian" value={jobForm.company} onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })} />
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Location</label>
-                    <input type="text" className="form-input" required placeholder="e.g. Bangalore, KA" value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })} />
+                    <select className="form-input" required value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })}>
+                      <option value="">Select Australia location</option>
+                      {getAustraliaLocationOptions(jobForm.location).map((location) => (
+                        <option key={location} value={location}>
+                          {location}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Salary Range</label>
-                    <input type="text" className="form-input" required placeholder="e.g. ₹18L - ₹24L" value={jobForm.salary} onChange={(e) => setJobForm({ ...jobForm, salary: e.target.value })} />
+                    <input type="text" className="form-input" placeholder="e.g. AUD 90k - AUD 120k" value={jobForm.salary} onChange={(e) => setJobForm({ ...jobForm, salary: e.target.value })} />
                   </div>
                 </div>
                 <div className="form-row">
@@ -3430,15 +3896,19 @@ export default function App() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Tags (comma separated)</label>
-                    <input type="text" className="form-input" placeholder="React, Node, TypeScript" value={jobForm.tags} onChange={(e) => setJobForm({ ...jobForm, tags: e.target.value })} />
+                    <label className="form-label">Job Link</label>
+                    <input type="url" className="form-input" placeholder="https://..." value={jobForm.job_link} onChange={(e) => setJobForm({ ...jobForm, job_link: e.target.value })} />
                   </div>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Opportunity Notes</label>
-                  <textarea rows={5} className="form-input" required placeholder="Enter role details so the 9Jobs team can apply on behalf of candidates..." value={jobForm.description} onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })} />
+                  <label className="form-label">Tags (comma separated)</label>
+                  <input type="text" className="form-input" placeholder="React, Node, TypeScript" value={jobForm.tags} onChange={(e) => setJobForm({ ...jobForm, tags: e.target.value })} />
                 </div>
-                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Opportunity</button>
+                <div className="form-group">
+                  <label className="form-label">Opportunity Notes</label>
+                  <textarea rows={5} className="form-input" placeholder="Enter role details so the 9Jobs team can apply on behalf of candidates..." value={jobForm.description} onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })} />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>{jobForm.user_id ? "Save And Sync To App" : "Save Opportunity"}</button>
               </form>
             )}
 
