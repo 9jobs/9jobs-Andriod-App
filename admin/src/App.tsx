@@ -475,6 +475,8 @@ export default function App() {
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const [settingsSubsection, setSettingsSubsection] = useState<"personal_information" | "notifications">("personal_information");
+  const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(true);
 
   // Data states
   const [users, setUsers] = useState<any[]>([]);
@@ -515,9 +517,6 @@ export default function App() {
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const [selectedPersonalInfoUserId, setSelectedPersonalInfoUserId] = useState("all");
-  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
-  const [settingsSubsection, setSettingsSubsection] = useState<"general" | "personal-info">("general");
 
   // Chat state
   const [activeChatUser, setActiveChatUser] = useState<any>(null);
@@ -551,7 +550,7 @@ export default function App() {
   });
   const [jobForm, setJobForm] = useState({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: "", application_id: "" });
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
-  const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "" });
+  const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "", status: "sent" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
   const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied" });
   const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
@@ -1011,7 +1010,7 @@ export default function App() {
           await Promise.all([fetchJobs(), fetchUsers()]);
           break;
         case "saved_jobs":
-          await Promise.all([fetchApplications(), fetchUsers(), fetchSavedJobs()]);
+          await Promise.all([fetchUsers(), fetchSavedJobs()]);
           break;
         case "success_stories":
           await fetchSuccessStories();
@@ -1047,11 +1046,8 @@ export default function App() {
         case "subscriptions":
           await fetchPlans();
           break;
-        case "notifications":
-          await fetchNotifications();
-          break;
         case "settings":
-          await Promise.all([fetchSystemSettings(), fetchUsers()]);
+          await Promise.all([fetchSystemSettings(), fetchNotifications(), fetchUsers()]);
           break;
         default:
           break;
@@ -1696,9 +1692,24 @@ export default function App() {
   };
 
   const fetchNotifications = async () => {
-    const { data, error } = await supabase.from("notifications").select("*, profiles(*)").order("sent_at", { ascending: false });
-    if (error) throw error;
-    setNotifications(data || []);
+    const token = await ensureAdminToken();
+    if (!token) {
+      throw new Error("Admin auth token missing. Please sign in again.");
+    }
+
+    const res = await fetch(`${BACKEND_URL}/api/admin/notifications`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+    }
+
+    const payload = await res.json();
+    setNotifications(payload.notifications || []);
   };
 
   // CRUD Actions
@@ -1836,7 +1847,7 @@ export default function App() {
       }
 
       showSuccess(jobForm.user_id ? "Saved role synced to the app successfully!" : "Job saved successfully!");
-      void Promise.all([fetchJobs(), fetchApplications(), fetchUsers(), fetchSavedJobs()]);
+      void Promise.all([fetchJobs(), fetchUsers(), fetchSavedJobs()]);
     } catch (err: any) {
       showError(err.message);
     }
@@ -1962,17 +1973,42 @@ export default function App() {
   const handleSendNotification = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase.from("notifications").insert([
-        {
-          title: notificationForm.title,
-          body: notificationForm.body,
-          user_id: notificationForm.user_id || null,
-          status: "sent"
-        }
-      ]);
-      if (error) throw error;
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
 
-      showSuccess("Broadcast notification sent successfully!");
+      const res = await fetch(`${BACKEND_URL}/api/admin/notifications`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          notification: {
+            id: editItem?.id,
+            title: notificationForm.title,
+            body: notificationForm.body,
+            user_id: notificationForm.user_id.trim() || null,
+            status: notificationForm.status || "sent",
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+      }
+
+      const payload = await res.json();
+      if (editItem) {
+        showSuccess("Notification updated successfully!");
+      } else if (Array.isArray(payload.notifications)) {
+        showSuccess(`Broadcast sent to ${payload.notifications.length} clients.`);
+      } else {
+        showSuccess("Notification sent successfully!");
+      }
+
       fetchNotifications();
     } catch (err: any) {
       showError(err.message);
@@ -2448,6 +2484,29 @@ export default function App() {
         return;
       }
 
+      if (table === "notifications") {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const res = await fetch(`${BACKEND_URL}/api/admin/notifications/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        }
+
+        showSuccess("Item deleted successfully.");
+        fetchNotifications();
+        return;
+      }
+
       const { error } = await supabase.from(table).delete().eq("id", id);
       if (error) throw error;
       showSuccess("Item deleted successfully.");
@@ -2486,7 +2545,7 @@ export default function App() {
       }
 
       showSuccess("Saved job deleted successfully.");
-      await Promise.all([fetchApplications(), fetchUsers(), fetchSavedJobs()]);
+      await Promise.all([fetchUsers(), fetchSavedJobs()]);
     } catch (err: any) {
       showError(err.message);
     }
@@ -2633,7 +2692,7 @@ export default function App() {
     });
     setJobForm({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: defaultSavedJobUserId, application_id: "" });
     setPlanForm({ id: "", name: "", price: "", features: "" });
-    setNotificationForm({ title: "", body: "", user_id: "" });
+    setNotificationForm({ title: "", body: "", user_id: "", status: "sent" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
     setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied" });
     setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
@@ -2683,6 +2742,13 @@ export default function App() {
       });
     } else if (type === "plan") {
       setPlanForm({ id: item.id, name: item.name, price: item.price, features: item.features?.join(", ") || "" });
+    } else if (type === "notification") {
+      setNotificationForm({
+        title: item.title || "",
+        body: item.body || "",
+        user_id: item.user_id || "",
+        status: item.status || "sent",
+      });
     } else if (type === "resume") {
       setResumeForm({ user_id: item.user_id, score: item.score, suggestions: item.suggestions?.join(", ") || "", notes: item.notes || "" });
     } else if (type === "tracker") {
@@ -2770,13 +2836,6 @@ export default function App() {
       .some((value) => String(value || "").toLowerCase().includes(query));
   });
 
-  const filteredPersonalInfoUsers = filteredUsers.filter((userItem) => {
-    if (selectedPersonalInfoUserId === "all") {
-      return true;
-    }
-
-    return userItem.id === selectedPersonalInfoUserId;
-  });
 
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
   const buildSavedJobModalItem = (item: any, title: string, company: string, location: string, salary: string, tags: string[], jobLink: string) => ({
@@ -2798,14 +2857,6 @@ export default function App() {
     application_date: item.application_date || item.created_at,
     applied_at: item.applied_at || null,
   });
-  const openPersonalInformationFromSidebar = () => {
-    setSettingsSubsection("personal-info");
-    setSettingsMenuOpen(true);
-    setActiveTab("settings");
-    setTimeout(() => {
-      document.getElementById("admin-personal-information")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
-  };
   const selectedTrackerMetrics = calculateTrackerMetrics({
     applications,
     interviews: trackerInterviews,
@@ -2944,32 +2995,45 @@ export default function App() {
             <DollarSign size={18} />
             <span>Subscriptions</span>
           </a>
-          <a className={`sidebar-item ${activeTab === "notifications" ? "active" : ""}`} onClick={() => setActiveTab("notifications")}>
-            <Bell size={18} />
-            <span>Notifications</span>
-          </a>
           <div>
             <a
               className={`sidebar-item ${activeTab === "settings" ? "active" : ""}`}
               onClick={() => {
-                setSettingsMenuOpen((current) => !current);
-                setSettingsSubsection("general");
                 setActiveTab("settings");
+                setIsSettingsDropdownOpen((prev) => (activeTab === "settings" ? !prev : true));
               }}
             >
               <Settings size={18} />
               <span style={{ flex: 1 }}>Settings</span>
-              <span style={{ fontSize: "12px", opacity: 0.8 }}>{settingsMenuOpen || activeTab === "settings" ? "▾" : "▸"}</span>
+              <span style={{ fontSize: "12px", opacity: 0.9 }}>{isSettingsDropdownOpen ? "▾" : "▸"}</span>
             </a>
-            {(settingsMenuOpen || activeTab === "settings") && (
-              <button
-                type="button"
-                className={`sidebar-item sidebar-subitem ${activeTab === "settings" && settingsSubsection === "personal-info" ? "sidebar-subitem-active" : ""}`}
-                onClick={openPersonalInformationFromSidebar}
-              >
-                <User size={16} />
-                <span>Personal Information</span>
-              </button>
+            {isSettingsDropdownOpen && (
+              <div style={{ marginTop: "8px", paddingLeft: "22px", display: "grid", gap: "8px" }}>
+                <a
+                  className={`sidebar-item ${activeTab === "settings" && settingsSubsection === "personal_information" ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("settings");
+                    setSettingsSubsection("personal_information");
+                    setIsSettingsDropdownOpen(true);
+                  }}
+                  style={{ minHeight: "48px", fontSize: "14px" }}
+                >
+                  <User size={16} />
+                  <span>Personal Information</span>
+                </a>
+                <a
+                  className={`sidebar-item ${activeTab === "settings" && settingsSubsection === "notifications" ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("settings");
+                    setSettingsSubsection("notifications");
+                    setIsSettingsDropdownOpen(true);
+                  }}
+                  style={{ minHeight: "48px", fontSize: "14px" }}
+                >
+                  <Bell size={16} />
+                  <span>Notifications</span>
+                </a>
+              </div>
             )}
           </div>
         </nav>
@@ -3004,7 +3068,8 @@ export default function App() {
             {activeTab === "hiring_managers" && <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}><Plus size={16} /> Add Hiring Manager</button>}
             {activeTab === "interview_preparation" && <button className="btn btn-primary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}><Plus size={16} /> Refresh</button>}
             {activeTab === "subscriptions" && <button className="btn btn-primary" onClick={() => openAddModal("plan")}><Plus size={16} /> Add Pricing Plan</button>}
-            {activeTab === "notifications" && <button className="btn btn-primary" onClick={() => openAddModal("notification")}><Plus size={16} /> New Broadcast</button>}
+            {activeTab === "settings" && settingsSubsection === "notifications" && <button className="btn btn-primary" onClick={() => openAddModal("notification")}><Plus size={16} /> Add Notification</button>}
+            {activeTab === "settings" && settingsSubsection === "personal_information" && <button className="btn btn-primary" onClick={() => openAddModal("user")}><Plus size={16} /> Add Personal Information</button>}
           </div>
         </header>
 
@@ -4319,31 +4384,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Notifications Tab */}
-        {activeTab === "notifications" && (
-          <div className="card">
-            <div className="table-responsive">
-              <table className="table">
-                <thead>
-                  <tr><th>ID</th><th>Broadcast Title</th><th>Message Body</th><th>Sent To</th><th>Status</th><th>Timestamp</th></tr>
-                </thead>
-                <tbody>
-                  {notifications.map((n) => (
-                    <tr key={n.id}>
-                      <td>{n.id}</td>
-                      <td><strong>{n.title}</strong></td>
-                      <td>{n.body}</td>
-                      <td>{n.profiles?.full_name || "ALL USERS (Broadcast)"}</td>
-                      <td><span className="badge badge-success">{n.status}</span></td>
-                      <td>{new Date(n.sent_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
         {/* Settings Tab */}
         {activeTab === "settings" && (
           <div style={{ display: "grid", gap: "30px" }}>
@@ -4459,148 +4499,79 @@ export default function App() {
               </div>
             </div>
 
-            <div className="card">
-              <div className="card-header" style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
-                <h3 className="card-title">Personal Information</h3>
-                <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
-                  <select className="form-input" style={{ minWidth: "240px" }} value={selectedPersonalInfoUserId} onChange={(e) => setSelectedPersonalInfoUserId(e.target.value)}>
-                    <option value="all">Personal Information List</option>
-                    {users.map((userItem) => (
-                      <option key={userItem.id} value={userItem.id}>
-                        {userItem.full_name || userItem.email || userItem.id}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" className="btn btn-primary" onClick={() => openAddModal("user")}>
-                    <Plus size={16} /> Add Personal Information
-                  </button>
+            {settingsSubsection === "personal_information" && (
+              <div className="card">
+                <div className="card-header"><h3 className="card-title">Personal Information</h3></div>
+                <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px" }}>Client personal information synced from the app and editable from the admin panel.</p>
+                <div className="table-responsive">
+                  <table className="table">
+                    <thead>
+                      <tr><th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Plan</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                      {users.map((u) => (
+                        <tr key={u.id}>
+                          <td><img src={u.avatar_url || "https://randomuser.me/api/portraits/men/32.jpg"} alt="" className="chat-user-item-avatar" /></td>
+                          <td><strong>{u.full_name || "—"}</strong></td>
+                          <td>{u.email || "—"}</td>
+                          <td>{u.phone_number || "—"}</td>
+                          <td><span className="badge badge-success">{u.subscription_plan || "free"}</span></td>
+                          <td>
+                            <div style={{ display: "flex", gap: "8px" }}>
+                              <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("user", u)} title="Edit personal information"><Edit size={14} /></button>
+                              <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("profiles", u.id)} title="Delete personal information"><Trash2 size={14} /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {users.length === 0 && (
+                        <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No personal information found yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            )}
 
-              <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px" }}>
-                App settings → Personal Information se candidate jo data save karega, woh yahan table form me live show hoga.
-              </p>
-
-              <details open style={{ border: "1px solid var(--border-color)", borderRadius: "18px", padding: "18px", marginBottom: "22px", background: "#fff" }}>
-                <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "16px", marginBottom: "18px" }}>Personal Information Form</summary>
-                <form onSubmit={handleSaveUser}>
-                  {!editItem && (
-                    <div className="form-group">
-                      <label className="form-label">Optional Clerk User ID</label>
-                      <input type="text" className="form-input" placeholder="user_2d..." value={userForm.id} onChange={(e) => setUserForm({ ...userForm, id: e.target.value })} />
-                    </div>
-                  )}
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Name</label>
-                      <input type="text" className="form-input" required value={userForm.full_name} onChange={(e) => setUserForm({ ...userForm, full_name: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Email</label>
-                      <input type="email" className="form-input" required value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Phone</label>
-                      <input type="text" className="form-input" value={userForm.phone_number} onChange={(e) => setUserForm({ ...userForm, phone_number: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Address</label>
-                      <input type="text" className="form-input" value={userForm.location} onChange={(e) => setUserForm({ ...userForm, location: e.target.value })} />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Position</label>
-                      <input type="text" className="form-input" value={userForm.headline} onChange={(e) => setUserForm({ ...userForm, headline: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Subscription tier</label>
-                      <select className="form-input" value={userForm.subscription_plan} onChange={(e) => setUserForm({ ...userForm, subscription_plan: e.target.value })}>
-                        <option value="free">free</option>
-                        <option value="pro">pro</option>
-                        <option value="elite">elite</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">LinkedIn URL (Optional)</label>
-                      <input type="url" className="form-input" value={userForm.linkedin_url} onChange={(e) => setUserForm({ ...userForm, linkedin_url: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Facebook URL (Optional)</label>
-                      <input type="url" className="form-input" value={userForm.facebook_url} onChange={(e) => setUserForm({ ...userForm, facebook_url: e.target.value })} />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Instagram URL (Optional)</label>
-                      <input type="url" className="form-input" value={userForm.instagram_url} onChange={(e) => setUserForm({ ...userForm, instagram_url: e.target.value })} />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Twitter URL (Optional)</label>
-                      <input type="url" className="form-input" value={userForm.twitter_url} onChange={(e) => setUserForm({ ...userForm, twitter_url: e.target.value })} />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Profile Photo</label>
-                    <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                      {userForm.avatar_url ? (
-                        <img src={userForm.avatar_url} alt="" className="chat-user-item-avatar" />
-                      ) : (
-                        <div className="chat-user-item-avatar" style={{ display: "grid", placeItems: "center", background: "#F3F4F6", color: "#666" }}>+</div>
-                      )}
-                      <button type="button" className="btn btn-secondary" onClick={() => personalInfoPhotoInputRef.current?.click()}>
-                        Choose Your Device
-                      </button>
-                      <input ref={personalInfoPhotoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void handlePersonalInfoPhotoChange(e)} />
-                    </div>
-                  </div>
-
-                  <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>
-                    {editItem ? "Update Personal Information" : "Save Personal Information"}
-                  </button>
-                </form>
-              </details>
-
+            {settingsSubsection === "notifications" && (
+            <div className="card">
+              <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h3 className="card-title">Notifications</h3>
+                  <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "6px" }}>Create, edit, update, and delete app notifications without changing the client UI.</p>
+                </div>
+                <button className="btn btn-primary" onClick={() => openAddModal("notification")}><Plus size={16} /> Add Notification</button>
+              </div>
               <div className="table-responsive">
                 <table className="table">
                   <thead>
-                    <tr><th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Position</th><th>Plan</th><th>Actions</th></tr>
+                    <tr><th>ID</th><th>Title</th><th>Message</th><th>Client</th><th>Status</th><th>Timestamp</th><th>Actions</th></tr>
                   </thead>
                   <tbody>
-                    {filteredPersonalInfoUsers.map((u) => (
-                      <tr key={`personal-${u.id}`}>
-                        <td><img src={u.avatar_url || "https://randomuser.me/api/portraits/men/32.jpg"} alt="" className="chat-user-item-avatar" /></td>
-                        <td><strong>{u.full_name || "—"}</strong></td>
-                        <td>{u.email || "—"}</td>
-                        <td>{u.phone_number || "—"}</td>
-                        <td>{u.location || "—"}</td>
-                        <td>{u.headline || "—"}</td>
-                        <td><span className="badge badge-info">{u.subscription_plan || "free"}</span></td>
+                    {notifications.map((n) => (
+                      <tr key={n.id}>
+                        <td>{n.id}</td>
+                        <td><strong>{n.title}</strong></td>
+                        <td>{n.body}</td>
+                        <td>{n.profiles?.full_name || n.user_id || "Unknown client"}</td>
+                        <td><span className={`badge ${n.status === "read" ? "badge-success" : "badge-warning"}`}>{n.status}</span></td>
+                        <td>{n.sent_at ? new Date(n.sent_at).toLocaleString() : "—"}</td>
                         <td>
-                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                            <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("user", u)} title="Edit personal information"><Edit size={14} /></button>
-                            <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("profiles", u.id)} title="Delete personal information"><Trash2 size={14} /></button>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("notification", n)} title="Edit notification"><Edit size={14} /></button>
+                            <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("notifications", String(n.id))} title="Delete notification"><Trash2 size={14} /></button>
                           </div>
                         </td>
                       </tr>
                     ))}
-                    {filteredPersonalInfoUsers.length === 0 && (
-                      <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No personal information records available yet.</td></tr>
+                    {notifications.length === 0 && (
+                      <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No notifications created yet.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
+            )}
           </div>
         )}
       </main>
@@ -5091,7 +5062,14 @@ export default function App() {
                   <label className="form-label">Broadcast Target Candidate ID (Leave empty to send to all users)</label>
                   <input type="text" className="form-input" placeholder="user_2d... or empty" value={notificationForm.user_id} onChange={(e) => setNotificationForm({ ...notificationForm, user_id: e.target.value })} />
                 </div>
-                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Send Notification</button>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select className="form-input" value={notificationForm.status} onChange={(e) => setNotificationForm({ ...notificationForm, status: e.target.value })}>
+                    <option value="sent">sent</option>
+                    <option value="read">read</option>
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>{editItem ? "Update Notification" : "Send Notification"}</button>
               </form>
             )}
 

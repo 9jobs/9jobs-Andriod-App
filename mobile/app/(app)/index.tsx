@@ -41,6 +41,7 @@ export default function HomeScreen() {
   const profile = snapshot?.profile;
   const metrics = snapshot?.homeMetrics;
   const recommendedJobs = snapshot?.jobs.slice(0, 3) ?? [];
+  const hasUnreadNotifications = snapshot?.notifications.some((item) => item.unread) ?? false;
   const applyMutation = useApplyMutation();
 
   return (
@@ -57,7 +58,7 @@ export default function HomeScreen() {
             onPress={() => router.push("/(app)/notifications" as never)}
           >
             <AppIcon name="bell" size={22} color={colors.text} />
-            <View style={styles.bellDot} />
+            {hasUnreadNotifications ? <View style={styles.bellDot} /> : null}
           </Pressable>
           <Image
             source={{

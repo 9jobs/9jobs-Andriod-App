@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseQueryOptions } from "@tanstack/react-query";
-import { fetchMobileSyncSnapshot, sendMessageToAdmin, sendRichMessageToAdmin } from "@/lib/data/mobile-sync-repository";
+import {
+  fetchMobileSyncSnapshot,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+  sendMessageToAdmin,
+  sendRichMessageToAdmin,
+} from "@/lib/data/mobile-sync-repository";
 import { queryKeys } from "@/lib/queries";
 import { useRealtimeInvalidation } from "@/lib/supabase/useRealtimeInvalidation";
 import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
@@ -32,6 +38,7 @@ const previewSyncTables = [
   "resume_scores",
   "job_categories",
   "system_settings",
+  "notifications",
 ];
 
 export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
@@ -73,6 +80,30 @@ export function useSendMessageToAdminMutation() {
             attachmentSize?: number;
           },
     ) => (typeof content === "string" ? sendMessageToAdmin(content, user) : sendRichMessageToAdmin(content, user)),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useMarkNotificationAsReadMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: (notificationId: number) => markNotificationAsRead(notificationId, user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useMarkAllNotificationsAsReadMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: () => markAllNotificationsAsRead(user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },

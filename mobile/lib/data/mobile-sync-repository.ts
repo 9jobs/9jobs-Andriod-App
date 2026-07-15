@@ -189,6 +189,15 @@ type MessageRow = {
   created_at: string;
 };
 
+type NotificationRow = {
+  id: number;
+  title: string;
+  body: string;
+  user_id: string | null;
+  status: string;
+  sent_at: string | null;
+};
+
 const seedCategoryNames = [
   "Career Growth",
   "AI Resume",
@@ -284,6 +293,15 @@ export type LiveSuccessStory = {
   photoUrl: string;
 };
 
+export type LiveNotification = {
+  id: number;
+  title: string;
+  body: string;
+  status: string;
+  sentAt: string;
+  unread: boolean;
+};
+
 export type LiveOutreachContact = {
   id: number;
   name: string;
@@ -347,6 +365,7 @@ export type MobileSyncSnapshot = {
     hiringManagersContacted: number;
     lastUpdatedAt: string;
   };
+  notifications: LiveNotification[];
   messages: LiveMessage[];
   outreachContacts: LiveOutreachContact[];
   messageThread: ReturnType<typeof buildMessageThread>;
@@ -797,6 +816,20 @@ function mapMessages(messages: MessageRow[], activeUserId: string): LiveMessage[
     }));
 }
 
+function mapNotifications(rows: NotificationRow[]): LiveNotification[] {
+  return rows
+    .slice()
+    .sort((a, b) => (b.sent_at ?? "").localeCompare(a.sent_at ?? ""))
+    .map((row) => ({
+      id: row.id,
+      title: row.title?.trim() || "Notification",
+      body: row.body?.trim() || "",
+      status: row.status?.trim() || "sent",
+      sentAt: row.sent_at || new Date().toISOString(),
+      unread: (row.status?.trim().toLowerCase() || "sent") !== "read",
+    }));
+}
+
 let inMemoryStore: any = null;
 
 function resolveActiveUser(sessionUser?: SessionUser | null) {
@@ -831,6 +864,7 @@ function buildSnapshotFromSource({
   recruiterContactsRows,
   coldEmailsRows,
   clientScoresRows,
+  notificationRows,
 }: {
   activeUser: ReturnType<typeof resolveActiveUser>;
   profileRow?: ProfileRow | null;
@@ -850,6 +884,7 @@ function buildSnapshotFromSource({
   recruiterContactsRows: RecruiterContactRow[];
   coldEmailsRows: ColdEmailRow[];
   clientScoresRows: ClientScoreRow[];
+  notificationRows: NotificationRow[];
 }): MobileSyncSnapshot {
   const categoriesById = Object.fromEntries(
     categoriesRows.map((category) => [category.id, category.name]),
@@ -894,6 +929,7 @@ function buildSnapshotFromSource({
     activePlanId,
   );
   const messages = mapMessages(messagesRows, activeUser.id);
+  const notifications = mapNotifications(notificationRows);
   const systemSettings = {
     maintenanceMode: systemSettingsRow?.maintenance_mode ?? false,
     pushNotificationsEnabled: systemSettingsRow?.push_notifications_enabled ?? true,
@@ -925,6 +961,7 @@ function buildSnapshotFromSource({
         scores: clientScoresRows,
       },
     ),
+    notifications,
     messages,
     outreachContacts: recruiterContactsRows.map((contact) => ({
       id: contact.id,
@@ -1014,6 +1051,9 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
     const cached = await AsyncStorage.getItem("mobile_sync_snapshot_cache");
     if (cached) {
       inMemoryStore = JSON.parse(cached);
+      if (!Array.isArray(inMemoryStore.notifications)) {
+        inMemoryStore.notifications = [];
+      }
       return inMemoryStore;
     }
   } catch (err) {
@@ -1142,6 +1182,17 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
     },
   ];
 
+  const notifications: NotificationRow[] = [
+    {
+      id: 1,
+      title: "Application viewed",
+      body: "Stripe viewed your profile · Sr. Frontend Engineer",
+      user_id: activeUser.id,
+      status: "sent",
+      sent_at: new Date().toISOString(),
+    },
+  ];
+
 
   const systemSettings = {
     maintenanceMode: false,
@@ -1163,6 +1214,7 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
       recruiterContacts: [],
       scores: [{ application_id: null, ats_score: resumeScore, ai_match_score: 84, calculated_at: new Date().toISOString() }],
     }),
+    notifications: mapNotifications(notifications),
     messages: mapMessages(messages, activeUser.id),
     messageThread: buildMessageThread(mapMessages(messages, activeUser.id), profile.fullName),
     services: mapServices(seedServices as any),
@@ -1201,6 +1253,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           recruiterContactsRows: (backendSnapshot.recruiterContacts as RecruiterContactRow[]) ?? [],
           coldEmailsRows: (backendSnapshot.coldEmails as ColdEmailRow[]) ?? [],
           clientScoresRows: (backendSnapshot.clientScores as ClientScoreRow[]) ?? [],
+          notificationRows: (backendSnapshot.notifications as NotificationRow[]) ?? [],
         });
 
         const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
@@ -1252,6 +1305,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       recruiterContactsResult,
       coldEmailsResult,
       clientScoresResult,
+      notificationsResult,
     ] = await Promise.all([
       client.from("profiles").select("*").eq("id", activeUser.id).single(),
       client.from("jobs").select("*").order("created_at", { ascending: false }),
@@ -1270,6 +1324,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       client.from("recruiter_contacts").select("*").eq("client_id", activeUser.id).order("contact_date", { ascending: false }),
       client.from("cold_emails").select("*").eq("client_id", activeUser.id).order("sent_at", { ascending: false }),
       client.from("client_scores").select("*").eq("client_id", activeUser.id).order("calculated_at", { ascending: false }),
+      client.from("notifications").select("*").eq("user_id", activeUser.id).order("sent_at", { ascending: false }),
     ]);
 
     const results = [
@@ -1290,6 +1345,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       recruiterContactsResult,
       coldEmailsResult,
       clientScoresResult,
+      notificationsResult,
     ];
 
     for (const result of results) {
@@ -1317,6 +1373,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       recruiterContactsRows: (recruiterContactsResult.data as RecruiterContactRow[] | null) ?? [],
       coldEmailsRows: (coldEmailsResult.data as ColdEmailRow[] | null) ?? [],
       clientScoresRows: (clientScoresResult.data as ClientScoreRow[] | null) ?? [],
+      notificationRows: (notificationsResult.data as NotificationRow[] | null) ?? [],
     });
 
     const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
@@ -1649,6 +1706,60 @@ export async function updateSystemSettings(
   setTheme(isDarkMode);
 
   return current.systemSettings;
+}
+
+export async function markNotificationAsRead(notificationId: number, sessionUser?: SessionUser | null) {
+  const activeUser = resolveActiveUser(sessionUser);
+  try {
+    await ensurePreviewUserRecords(sessionUser);
+    const client = requireSupabase();
+    const { error } = await client
+      .from("notifications")
+      .update({ status: "read" })
+      .eq("id", notificationId)
+      .eq("user_id", activeUser.id);
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Supabase markNotificationAsRead failed, updating local store:", err);
+  }
+
+  const current = await getLocalSyncSnapshot(sessionUser);
+  const nextNotifications = Array.isArray(current.notifications) ? current.notifications : [];
+  current.notifications = nextNotifications.map((notification: LiveNotification) =>
+    notification.id === notificationId
+      ? { ...notification, status: "read", unread: false }
+      : notification,
+  );
+
+  await persistLocalSnapshot(current);
+  return current.notifications;
+}
+
+export async function markAllNotificationsAsRead(sessionUser?: SessionUser | null) {
+  const activeUser = resolveActiveUser(sessionUser);
+  try {
+    await ensurePreviewUserRecords(sessionUser);
+    const client = requireSupabase();
+    const { error } = await client
+      .from("notifications")
+      .update({ status: "read" })
+      .eq("user_id", activeUser.id)
+      .neq("status", "read");
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Supabase markAllNotificationsAsRead failed, updating local store:", err);
+  }
+
+  const current = await getLocalSyncSnapshot(sessionUser);
+  const nextNotifications = Array.isArray(current.notifications) ? current.notifications : [];
+  current.notifications = nextNotifications.map((notification: LiveNotification) => ({
+    ...notification,
+    status: "read",
+    unread: false,
+  }));
+
+  await persistLocalSnapshot(current);
+  return current.notifications;
 }
 
 async function persistLocalSnapshot(snapshot: MobileSyncSnapshot) {

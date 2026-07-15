@@ -255,6 +255,31 @@ function createPool() {
   });
 }
 
+async function listProfilesByIds(profileIds: string[]) {
+  const uniqueIds = Array.from(new Set(profileIds.filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .in("id", uniqueIds);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function buildNotificationsWithProfiles(rows: any[]) {
+  const profileIds = rows.map((row) => String(row.user_id || "")).filter(Boolean);
+  const profiles = await listProfilesByIds(profileIds);
+  const profileMap = new Map(profiles.map((profile: any) => [String(profile.id), profile]));
+
+  return rows.map((row) => ({
+    ...row,
+    profiles: row.user_id ? profileMap.get(String(row.user_id)) ?? null : null,
+  }));
+}
+
 async function ensureRecruiterContactsTable(client: any) {
   await client.query(`
     create table if not exists recruiter_contacts (
@@ -1674,6 +1699,137 @@ router.post(
   },
 );
 
+router.get("/admin/notifications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .order("sent_at", { ascending: false });
+    if (error) throw error;
+
+    const notifications = await buildNotificationsWithProfiles(data ?? []);
+    return res.json({ success: true, notifications });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/notifications failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load notifications" });
+  }
+});
+
+router.post("/admin/notifications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const { notification } = req.body || {};
+  if (!notification?.title || !notification?.body) {
+    return res.status(400).json({ error: "Missing notification payload" });
+  }
+
+  try {
+    if (notification.user_id) {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("id", String(notification.user_id))
+        .maybeSingle();
+      if (profileError) throw profileError;
+      if (!profile) {
+        return res.status(400).json({ error: "Candidate ID not found. Please use a valid client ID from Personal Information." });
+      }
+    }
+
+    if (notification.id) {
+      const { data, error } = await supabase
+        .from("notifications")
+        .update({
+          title: String(notification.title),
+          body: String(notification.body),
+          user_id: notification.user_id ? String(notification.user_id) : null,
+          status: String(notification.status || "sent"),
+        })
+        .eq("id", Number(notification.id))
+        .select("*")
+        .single();
+      if (error) throw error;
+
+      const [notificationWithProfile] = await buildNotificationsWithProfiles(data ? [data] : []);
+      return res.json({ success: true, notification: notificationWithProfile ?? data });
+    }
+
+    if (notification.user_id) {
+      const { data, error } = await supabase
+        .from("notifications")
+        .insert([
+          {
+            title: String(notification.title),
+            body: String(notification.body),
+            user_id: String(notification.user_id),
+            status: String(notification.status || "sent"),
+          },
+        ])
+        .select("*")
+        .single();
+      if (error) throw error;
+
+      const [notificationWithProfile] = await buildNotificationsWithProfiles(data ? [data] : []);
+      return res.json({ success: true, notification: notificationWithProfile ?? data });
+    }
+
+    const { data: profiles, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id")
+      .neq("role", "admin");
+    if (profilesError) throw profilesError;
+
+    const recipients = (profiles || []).map((profile) => ({
+      title: String(notification.title),
+      body: String(notification.body),
+      user_id: String(profile.id),
+      status: String(notification.status || "sent"),
+    }));
+
+    if (recipients.length === 0) {
+      return res.status(400).json({ error: "No client profiles found for broadcast." });
+    }
+
+    const { data, error } = await supabase
+      .from("notifications")
+      .insert(recipients)
+      .select("*");
+    if (error) throw error;
+
+    const notifications = await buildNotificationsWithProfiles(data ?? []);
+    return res.json({ success: true, notifications });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/notifications failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save notification" });
+  }
+});
+
+router.delete("/admin/notifications/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const notificationId = Number(req.params.id);
+  if (!Number.isFinite(notificationId)) {
+    return res.status(400).json({ error: "Invalid notification id" });
+  }
+
+  try {
+    const { error } = await supabase.from("notifications").delete().eq("id", notificationId);
+    if (error) throw error;
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/notifications/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete notification" });
+  }
+});
 router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const requester = req.user;
   const requestedUserId = typeof req.query.userId === "string" ? req.query.userId : undefined;
@@ -1766,6 +1922,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       recruiterContactsResult,
       coldEmailsResult,
       clientScoresResult,
+      notificationsResult,
     ] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", targetUserId).maybeSingle(),
       supabase.from("jobs").select("*").order("created_at", { ascending: false }),
@@ -1784,6 +1941,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       recruiterContactsPromise,
       supabase.from("cold_emails").select("*").eq("client_id", targetUserId).order("sent_at", { ascending: false }),
       supabase.from("client_scores").select("*").eq("client_id", targetUserId).order("calculated_at", { ascending: false }),
+      supabase.from("notifications").select("*").eq("user_id", targetUserId).order("sent_at", { ascending: false }),
     ]);
 
     const localProfile = await getLocalProfile(targetUserId);
@@ -1809,6 +1967,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       recruiterContactsResult,
       coldEmailsResult,
       clientScoresResult,
+      notificationsResult,
     ];
 
     for (const result of results) {
@@ -1836,6 +1995,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       recruiterContacts: recruiterContactsResult.data ?? [],
       coldEmails: coldEmailsResult.data ?? [],
       clientScores: clientScoresResult.data ?? [],
+      notifications: notificationsResult.data ?? [],
     });
   } catch (err: any) {
     console.error("[Tracker Route] GET /mobile/snapshot failed:", err);

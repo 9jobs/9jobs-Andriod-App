@@ -175,8 +175,19 @@ export function AppIcon({
     case "bell":
       return (
         <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-          <Path d="M8 18H16L15 16V11C15 9.3 13.7 8 12 8C10.3 8 9 9.3 9 11V16L8 18Z" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
-          <Path d="M11 20C11.3 20.6 11.6 21 12 21C12.4 21 12.7 20.6 13 20" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+          <Path
+            d="M18 9.5C18 6.46 15.99 4 12.95 4H11.05C8.01 4 6 6.46 6 9.5V13.32C6 14.13 5.72 14.91 5.21 15.54L4.32 16.62C3.61 17.49 4.23 18.8 5.35 18.8H18.65C19.77 18.8 20.39 17.49 19.68 16.62L18.79 15.54C18.28 14.91 18 14.13 18 13.32V9.5Z"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <Path
+            d="M10 20C10.48 21.08 11.12 21.6 12 21.6C12.88 21.6 13.52 21.08 14 20"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
         </Svg>
       );
     case "story":
