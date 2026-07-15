@@ -26,6 +26,7 @@ const previewSyncTables = [
   "activity_logs",
   "messages",
   "services",
+  "success_stories",
   "pricing_plans",
   "user_subscriptions",
   "resume_scores",

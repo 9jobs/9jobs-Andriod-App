@@ -94,18 +94,33 @@ export interface LocalInterviewPrepResponse {
   created_at: string;
 }
 
+export interface LocalSuccessStory {
+  id: string;
+  name: string;
+  position: string;
+  year: string;
+  message: string;
+  story_rate: number;
+  photo_url: string;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface LocalDbSchema {
   messages: LocalMessage[];
   conversations: LocalConversation[];
   recruiter_contacts: LocalRecruiterContact[];
   interview_prep_sessions: LocalInterviewPrepSession[];
   interview_prep_responses: LocalInterviewPrepResponse[];
+  success_stories: LocalSuccessStory[];
 }
 
 function readDb(): LocalDbSchema {
   try {
     if (!fs.existsSync(DB_FILE)) {
-      return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [] };
+      return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [] };
     }
     const data = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(data);
@@ -115,9 +130,10 @@ function readDb(): LocalDbSchema {
       recruiter_contacts: Array.isArray(parsed.recruiter_contacts) ? parsed.recruiter_contacts : [],
       interview_prep_sessions: Array.isArray(parsed.interview_prep_sessions) ? parsed.interview_prep_sessions : [],
       interview_prep_responses: Array.isArray(parsed.interview_prep_responses) ? parsed.interview_prep_responses : [],
+      success_stories: Array.isArray(parsed.success_stories) ? parsed.success_stories : [],
     };
   } catch (err) {
-    return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [] };
+    return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [] };
   }
 }
 
@@ -324,6 +340,82 @@ export async function deleteLocalRecruiterContact(id: number): Promise<boolean> 
   db.recruiter_contacts = db.recruiter_contacts.filter((item) => item.id !== id);
 
   if (db.recruiter_contacts.length === originalLength) {
+    return false;
+  }
+
+  writeDb(db);
+  return true;
+}
+
+export async function getLocalSuccessStories(): Promise<LocalSuccessStory[]> {
+  const db = readDb();
+  return [...db.success_stories].sort((a, b) => {
+    if (a.display_order !== b.display_order) {
+      return a.display_order - b.display_order;
+    }
+
+    const aTime = new Date(a.created_at).getTime();
+    const bTime = new Date(b.created_at).getTime();
+    return bTime - aTime;
+  });
+}
+
+export async function upsertLocalSuccessStory(
+  story: Partial<LocalSuccessStory> & {
+    id: string;
+    name: string;
+    position: string;
+    year: string;
+    message: string;
+    story_rate: number;
+    photo_url?: string;
+    display_order?: number;
+    is_active?: boolean;
+  },
+): Promise<LocalSuccessStory> {
+  const db = readDb();
+  const existingIndex = db.success_stories.findIndex((item) => item.id === story.id);
+  const now = new Date().toISOString();
+
+  if (existingIndex !== -1) {
+    const existing = db.success_stories[existingIndex];
+    const updated: LocalSuccessStory = {
+      ...existing,
+      ...story,
+      photo_url: story.photo_url ?? existing.photo_url ?? "",
+      display_order: story.display_order ?? existing.display_order ?? 0,
+      is_active: story.is_active ?? existing.is_active ?? true,
+      updated_at: now,
+    };
+    db.success_stories[existingIndex] = updated;
+    writeDb(db);
+    return updated;
+  }
+
+  const created: LocalSuccessStory = {
+    id: story.id,
+    name: story.name,
+    position: story.position,
+    year: story.year,
+    message: story.message,
+    story_rate: story.story_rate,
+    photo_url: story.photo_url ?? "",
+    display_order: story.display_order ?? db.success_stories.length,
+    is_active: story.is_active ?? true,
+    created_at: now,
+    updated_at: now,
+  };
+
+  db.success_stories.push(created);
+  writeDb(db);
+  return created;
+}
+
+export async function deleteLocalSuccessStory(id: string): Promise<boolean> {
+  const db = readDb();
+  const originalLength = db.success_stories.length;
+  db.success_stories = db.success_stories.filter((item) => item.id !== id);
+  if (db.success_stories.length === originalLength) {
     return false;
   }
 

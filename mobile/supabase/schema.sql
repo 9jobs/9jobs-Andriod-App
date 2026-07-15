@@ -94,6 +94,7 @@ create table if not exists jobs (
   location text not null,
   salary text not null,
   job_type text not null default 'Full-time',
+  job_link text default '',
   category_id bigint references job_categories (id) on delete set null,
   posted_at text not null,
   match_score int not null default 80,
@@ -104,6 +105,7 @@ create table if not exists jobs (
 );
 
 alter table jobs add column if not exists updated_at timestamptz default now();
+alter table jobs add column if not exists job_link text default '';
 
 drop trigger if exists jobs_set_updated_at on jobs;
 create trigger jobs_set_updated_at
@@ -441,6 +443,21 @@ create table if not exists services (
 );
 
 -- 15. Managed Pricing Plans
+create table if not exists success_stories (
+  id text primary key,
+  name text not null,
+  position text not null,
+  year text not null default 'Recent',
+  message text not null,
+  story_rate int not null default 5,
+  photo_url text default '',
+  display_order int not null default 0,
+  is_active boolean default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- 16. Managed Pricing Plans
 create table if not exists pricing_plans (
   id text primary key,
   name text not null,
@@ -449,7 +466,7 @@ create table if not exists pricing_plans (
   created_at timestamptz default now()
 );
 
--- 16. User Subscriptions
+-- 17. User Subscriptions
 create table if not exists user_subscriptions (
   user_id text primary key references profiles (id) on delete cascade,
   plan_id text references pricing_plans (id) on delete set null,
@@ -458,7 +475,7 @@ create table if not exists user_subscriptions (
   created_at timestamptz default now()
 );
 
--- 17. Push Notifications
+-- 18. Push Notifications
 create table if not exists notifications (
   id bigint generated always as identity primary key,
   title text not null,
@@ -468,7 +485,7 @@ create table if not exists notifications (
   sent_at timestamptz default now()
 );
 
--- 18. Resume Scores
+-- 19. Resume Scores
 create table if not exists resume_scores (
   user_id text primary key references profiles (id) on delete cascade,
   score int not null default 0,
@@ -477,7 +494,7 @@ create table if not exists resume_scores (
   updated_at timestamptz default now()
 );
 
--- 19. System Settings
+-- 20. System Settings
 create table if not exists system_settings (
   id bigint primary key default 1,
   maintenance_mode boolean default false,
@@ -501,6 +518,12 @@ insert into services (id, title, description, status, visibility) values
 ('interview-prep', 'Interview Prep', 'Personalized mock interviews and feedback.', 'active', true),
 ('job-tracker', 'Job Tracker', 'Advanced job application tracking pipeline.', 'active', true),
 ('success-stories', 'Success Stories', 'Read how other candidates landed top offers.', 'active', true)
+on conflict (id) do nothing;
+
+insert into success_stories (id, name, position, year, message, story_rate, photo_url, display_order, is_active) values
+('story_jasmine_park', 'Jasmine Park', 'Barista -> UX Designer at Apple', '4 months', '"9Jobs helped me land my dream role. The resume AI was a game-changer."', 5, 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&h=120&q=80', 1, true),
+('story_david_okonkwo', 'David Okonkwo', 'Marketing -> PM at Stripe', '6 months', '"The interview prep feature alone is worth 10x the subscription cost."', 5, 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&h=120&q=80', 2, true),
+('story_sarah_jenkins', 'Sarah Jenkins', 'Customer Support -> CSM at Slack', '3 months', '"The automated outreach saved me hundreds of hours. I got 5 interviews in 2 weeks!"', 5, 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=120&h=120&q=80', 3, true)
 on conflict (id) do nothing;
 
 insert into pricing_plans (id, name, price, features) values
@@ -580,6 +603,7 @@ alter table if exists conversations disable row level security;
 alter table if exists messages disable row level security;
 alter table if exists chat_activity_logs disable row level security;
 alter table if exists services disable row level security;
+alter table if exists success_stories disable row level security;
 alter table if exists pricing_plans disable row level security;
 alter table if exists user_subscriptions disable row level security;
 alter table if exists notifications disable row level security;

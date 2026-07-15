@@ -145,6 +145,18 @@ type PricingPlanRow = {
   features: string[] | null;
 };
 
+type SuccessStoryRow = {
+  id: string;
+  name: string;
+  position: string;
+  year: string;
+  message: string;
+  story_rate: number;
+  photo_url: string | null;
+  display_order?: number | null;
+  is_active?: boolean | null;
+};
+
 type SubscriptionRow = {
   user_id: string;
   plan_id: string | null;
@@ -262,6 +274,16 @@ export type LiveMessage = MessageRow & {
   direction: "incoming" | "outgoing";
 };
 
+export type LiveSuccessStory = {
+  id: string;
+  name: string;
+  position: string;
+  year: string;
+  message: string;
+  storyRate: number;
+  photoUrl: string;
+};
+
 export type LiveOutreachContact = {
   id: number;
   name: string;
@@ -330,8 +352,45 @@ export type MobileSyncSnapshot = {
   messageThread: ReturnType<typeof buildMessageThread>;
   services: LiveServiceCard[];
   pricingContent: PremiumScreenContent;
+  successStories: LiveSuccessStory[];
   activePlanId: string | null;
 };
+
+const seedSuccessStories: SuccessStoryRow[] = [
+  {
+    id: "story_jasmine_park",
+    name: "Jasmine Park",
+    position: "Barista -> UX Designer at Apple",
+    year: "4 months",
+    message: '"9Jobs helped me land my dream role. The resume AI was a game-changer."',
+    story_rate: 5,
+    photo_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&h=120&q=80",
+    display_order: 1,
+    is_active: true,
+  },
+  {
+    id: "story_david_okonkwo",
+    name: "David Okonkwo",
+    position: "Marketing -> PM at Stripe",
+    year: "6 months",
+    message: '"The interview prep feature alone is worth 10x the subscription cost."',
+    story_rate: 5,
+    photo_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&h=120&q=80",
+    display_order: 2,
+    is_active: true,
+  },
+  {
+    id: "story_sarah_jenkins",
+    name: "Sarah Jenkins",
+    position: "Customer Support -> CSM at Slack",
+    year: "3 months",
+    message: '"The automated outreach saved me hundreds of hours. I got 5 interviews in 2 weeks!"',
+    story_rate: 5,
+    photo_url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=120&h=120&q=80",
+    display_order: 3,
+    is_active: true,
+  },
+];
 
 function requireSupabase() {
   if (!supabase) {
@@ -366,6 +425,13 @@ async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
     if (planError) throw planError;
   } catch (e: any) {
     console.warn("Seeding pricing_plans failed (likely due to RLS):", e.message || e);
+  }
+
+  try {
+    const { error: successStoriesError } = await client.from("success_stories").upsert(seedSuccessStories, { onConflict: "id" });
+    if (successStoriesError) throw successStoriesError;
+  } catch (e: any) {
+    console.warn("Seeding success_stories failed (likely due to RLS):", e.message || e);
   }
 
   try {
@@ -683,6 +749,28 @@ function mapServices(services: ServiceRow[]): LiveServiceCard[] {
   return activeServices;
 }
 
+function mapSuccessStories(stories: SuccessStoryRow[]): LiveSuccessStory[] {
+  return stories
+    .filter((story) => story.is_active !== false)
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = left.display_order ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = right.display_order ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    })
+    .map((story) => ({
+      id: story.id,
+      name: story.name,
+      position: story.position,
+      year: story.year,
+      message: story.message,
+      storyRate: Math.max(1, Math.min(5, Number(story.story_rate || 5))),
+      photoUrl:
+        story.photo_url?.trim() ||
+        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&h=120&q=80",
+    }));
+}
+
 function resolveMessageDirection(
   message: Pick<MessageRow, "sender_id" | "sender_role" | "recipient_id">,
   activeUserId: string,
@@ -734,6 +822,7 @@ function buildSnapshotFromSource({
   messagesRows,
   servicesRows,
   plansRows,
+  successStoriesRows,
   subscriptionRow,
   resumeScoreRow,
   systemSettingsRow,
@@ -752,6 +841,7 @@ function buildSnapshotFromSource({
   messagesRows: MessageRow[];
   servicesRows: ServiceRow[];
   plansRows: PricingPlanRow[];
+  successStoriesRows: SuccessStoryRow[];
   subscriptionRow?: SubscriptionRow | null;
   resumeScoreRow?: ResumeScoreRow | null;
   systemSettingsRow?: SystemSettingsRow | null;
@@ -847,6 +937,7 @@ function buildSnapshotFromSource({
     messageThread: buildMessageThread(messages, profile.fullName),
     services: mapServices(servicesRows),
     pricingContent: buildPricingScreenContent(plansRows, activePlanId),
+    successStories: mapSuccessStories(successStoriesRows),
     activePlanId,
   };
 }
@@ -1076,6 +1167,7 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
     messageThread: buildMessageThread(mapMessages(messages, activeUser.id), profile.fullName),
     services: mapServices(seedServices as any),
     pricingContent: buildPricingScreenContent(seedPricingPlans as any, activePlanId),
+    successStories: mapSuccessStories(seedSuccessStories),
     activePlanId,
   };
 
@@ -1100,6 +1192,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           messagesRows: (backendSnapshot.messages as MessageRow[]) ?? [],
           servicesRows: (backendSnapshot.services as ServiceRow[]) ?? [],
           plansRows: (backendSnapshot.pricingPlans as PricingPlanRow[]) ?? [],
+          successStoriesRows: (backendSnapshot.successStories as SuccessStoryRow[]) ?? [],
           subscriptionRow: (backendSnapshot.subscription as SubscriptionRow | null) ?? null,
           resumeScoreRow: (backendSnapshot.resumeScore as ResumeScoreRow | null) ?? null,
           systemSettingsRow: (backendSnapshot.systemSettings as SystemSettingsRow | null) ?? null,
@@ -1150,6 +1243,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       messagesResult,
       servicesResult,
       plansResult,
+      successStoriesResult,
       subscriptionResult,
       resumeScoreResult,
       systemSettingsResult,
@@ -1167,6 +1261,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       messagesPromise,
       client.from("services").select("*").order("created_at", { ascending: true }),
       client.from("pricing_plans").select("*").order("created_at", { ascending: true }),
+      client.from("success_stories").select("*").eq("is_active", true).order("display_order", { ascending: true }).order("created_at", { ascending: false }),
       client.from("user_subscriptions").select("*").eq("user_id", activeUser.id).maybeSingle(),
       client.from("resume_scores").select("*").eq("user_id", activeUser.id).maybeSingle(),
       client.from("system_settings").select("*").eq("id", 1).maybeSingle(),
@@ -1186,6 +1281,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       messagesResult,
       servicesResult,
       plansResult,
+      successStoriesResult,
       subscriptionResult,
       resumeScoreResult,
       systemSettingsResult,
@@ -1212,6 +1308,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       messagesRows: (messagesResult.data as MessageRow[]) ?? [],
       servicesRows: (servicesResult.data as ServiceRow[]) ?? [],
       plansRows: (plansResult.data as PricingPlanRow[]) ?? [],
+      successStoriesRows: (successStoriesResult.data as SuccessStoryRow[] | null) ?? [],
       subscriptionRow: (subscriptionResult.data as SubscriptionRow | null) ?? null,
       resumeScoreRow: (resumeScoreResult.data as ResumeScoreRow | null) ?? null,
       systemSettingsRow: (systemSettingsResult.data as SystemSettingsRow | null) ?? null,

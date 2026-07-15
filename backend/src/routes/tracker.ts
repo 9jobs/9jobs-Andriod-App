@@ -1,14 +1,59 @@
-import { Router, Response } from "express";
+import express, { Router, Response } from "express";
 import { Pool } from "pg";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import {
   deleteLocalRecruiterContact,
   getLocalRecruiterContacts,
+  getLocalSuccessStories,
+  deleteLocalSuccessStory,
   upsertLocalRecruiterContact,
+  upsertLocalSuccessStory,
 } from "../lib/localDb";
 import { supabase } from "../lib/supabase";
 
 const router = Router();
+const SUCCESS_STORY_BUCKET = "assets";
+
+function sanitizeAttachmentName(fileName: string) {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+async function ensurePublicAssetBucket() {
+  const { data: bucket, error: bucketError } = await supabase.storage.getBucket(SUCCESS_STORY_BUCKET);
+  if (!bucketError && bucket) {
+    return;
+  }
+
+  const { error: createError } = await supabase.storage.createBucket(SUCCESS_STORY_BUCKET, {
+    public: true,
+    fileSizeLimit: 15 * 1024 * 1024,
+  });
+
+  if (createError && !/already exists/i.test(createError.message || "")) {
+    throw createError;
+  }
+}
+
+function normalizeSuccessStoryPayload(story: any) {
+  if (!story?.name || !story?.position || !story?.message) {
+    return null;
+  }
+
+  const storyRate = Number(story.story_rate ?? story.storyRate ?? 5);
+  const displayOrder = Number(story.display_order ?? story.displayOrder ?? 0);
+
+  return {
+    id: String(story.id || `story_${Math.random().toString(36).slice(2, 10)}`),
+    name: String(story.name).trim(),
+    position: String(story.position).trim(),
+    year: String(story.year || "Recent").trim(),
+    message: String(story.message).trim(),
+    story_rate: Number.isFinite(storyRate) ? Math.max(1, Math.min(5, Math.round(storyRate))) : 5,
+    photo_url: String(story.photo_url || story.photoUrl || "").trim(),
+    display_order: Number.isFinite(displayOrder) ? displayOrder : 0,
+    is_active: story.is_active === undefined ? true : Boolean(story.is_active),
+  };
+}
 
 function normalizeJobPayload(job: any) {
   if (!job?.id) {
@@ -235,6 +280,54 @@ async function ensureJobsTableColumns(client: any) {
   `);
 }
 
+async function ensureSuccessStoriesTable(client: any) {
+  await client.query(`
+    create table if not exists success_stories (
+      id text primary key,
+      name text not null,
+      position text not null,
+      year text not null default 'Recent',
+      message text not null,
+      story_rate integer not null default 5,
+      photo_url text default '',
+      display_order integer not null default 0,
+      is_active boolean not null default true,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    )
+  `);
+
+  await client.query(`
+    alter table if exists success_stories
+    add column if not exists year text not null default 'Recent'
+  `);
+
+  await client.query(`
+    alter table if exists success_stories
+    add column if not exists story_rate integer not null default 5
+  `);
+
+  await client.query(`
+    alter table if exists success_stories
+    add column if not exists photo_url text default ''
+  `);
+
+  await client.query(`
+    alter table if exists success_stories
+    add column if not exists display_order integer not null default 0
+  `);
+
+  await client.query(`
+    alter table if exists success_stories
+    add column if not exists is_active boolean not null default true
+  `);
+
+  await client.query(`
+    alter table if exists success_stories
+    add column if not exists updated_at timestamptz default now()
+  `);
+}
+
 function buildProfilePayload(application: any) {
   const userId = String(application?.user_id || application?.client_id || "");
   if (!userId) {
@@ -320,6 +413,94 @@ async function upsertSavedJobWithPostgres(userId: string, jobId: string) {
       `,
       [userId, jobId],
     );
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function getSuccessStoriesWithPostgres() {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureSuccessStoriesTable(client);
+    const result = await client.query(`
+      select *
+      from success_stories
+      order by display_order asc, created_at desc nulls last
+    `);
+    return result.rows;
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function upsertSuccessStoryWithPostgres(story: any) {
+  const normalizedStory = normalizeSuccessStoryPayload(story);
+  if (!normalizedStory) {
+    throw new Error("Missing success story fields");
+  }
+
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureSuccessStoriesTable(client);
+    const result = await client.query(
+      `
+      insert into success_stories (
+        id, name, position, year, message, story_rate, photo_url, display_order, is_active
+      ) values (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
+      )
+      on conflict (id) do update set
+        name = excluded.name,
+        position = excluded.position,
+        year = excluded.year,
+        message = excluded.message,
+        story_rate = excluded.story_rate,
+        photo_url = excluded.photo_url,
+        display_order = excluded.display_order,
+        is_active = excluded.is_active,
+        updated_at = now()
+      returning *
+      `,
+      [
+        normalizedStory.id,
+        normalizedStory.name,
+        normalizedStory.position,
+        normalizedStory.year,
+        normalizedStory.message,
+        normalizedStory.story_rate,
+        normalizedStory.photo_url,
+        normalizedStory.display_order,
+        normalizedStory.is_active,
+      ],
+    );
+
+    return result.rows[0];
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+async function deleteSuccessStoryWithPostgres(id: string) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await ensureSuccessStoriesTable(client);
+    await client.query(
+      `
+      delete from success_stories
+      where id = $1
+      `,
+      [id],
+    );
+    return true;
   } finally {
     client.release();
     await pool.end();
@@ -1186,6 +1367,156 @@ router.delete("/admin/tracker/contacts/:id", authMiddleware, async (req: Authent
   }
 });
 
+router.get("/admin/success-stories", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      const stories = await getSuccessStoriesWithPostgres();
+      return res.json({ success: true, stories });
+    }
+
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { data, error } = await supabase
+        .from("success_stories")
+        .select("*")
+        .order("display_order", { ascending: true })
+        .order("created_at", { ascending: false });
+
+      if (!error) {
+        return res.json({ success: true, stories: data ?? [] });
+      }
+
+      if (!isMissingRelationError(error)) {
+        throw error;
+      }
+    }
+
+    const stories = await getLocalSuccessStories();
+    return res.json({ success: true, stories, mode: "local_preview" });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/success-stories failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load success stories" });
+  }
+});
+
+router.post("/admin/success-stories", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const normalizedStory = normalizeSuccessStoryPayload(req.body?.story);
+  if (!normalizedStory) {
+    return res.status(400).json({ error: "Missing success story fields" });
+  }
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      const story = await upsertSuccessStoryWithPostgres(normalizedStory);
+      return res.json({ success: true, story });
+    }
+
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { data, error } = await supabase
+        .from("success_stories")
+        .upsert([{ ...normalizedStory, updated_at: new Date().toISOString() }], { onConflict: "id" })
+        .select()
+        .single();
+
+      if (!error) {
+        return res.json({ success: true, story: data });
+      }
+
+      if (!isMissingRelationError(error)) {
+        throw error;
+      }
+    }
+
+    const story = await upsertLocalSuccessStory(normalizedStory);
+    return res.json({ success: true, story, mode: "local_preview" });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/success-stories failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save success story" });
+  }
+});
+
+router.delete("/admin/success-stories/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      await deleteSuccessStoryWithPostgres(String(req.params.id));
+      return res.json({ success: true });
+    }
+
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { error } = await supabase.from("success_stories").delete().eq("id", String(req.params.id));
+      if (!error) {
+        return res.json({ success: true });
+      }
+
+      if (!isMissingRelationError(error)) {
+        throw error;
+      }
+    }
+
+    const deleted = await deleteLocalSuccessStory(String(req.params.id));
+    return res.json({ success: deleted, mode: "local_preview" });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/success-stories/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete success story" });
+  }
+});
+
+router.post(
+  "/admin/success-stories/photo",
+  authMiddleware,
+  express.raw({ type: "*/*", limit: "15mb" }),
+  async (req: AuthenticatedRequest, res: Response) => {
+    if (!ensureAdminRole(req, res)) {
+      return;
+    }
+
+    const fileNameHeader = req.headers["x-file-name"];
+    const mimeTypeHeader = req.headers["x-file-type"];
+    const fileName = Array.isArray(fileNameHeader) ? fileNameHeader[0] : fileNameHeader;
+    const mimeType = Array.isArray(mimeTypeHeader) ? mimeTypeHeader[0] : mimeTypeHeader;
+    const body = req.body;
+
+    if (!fileName || !mimeType || !Buffer.isBuffer(body) || body.length === 0) {
+      return res.status(400).json({ error: "Missing story photo payload" });
+    }
+
+    try {
+      await ensurePublicAssetBucket();
+      const safeName = sanitizeAttachmentName(fileName);
+      const storagePath = `success-stories/${Date.now()}-${safeName}`;
+      const { error } = await supabase.storage.from(SUCCESS_STORY_BUCKET).upload(storagePath, body, {
+        contentType: mimeType,
+        upsert: false,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      const { data } = supabase.storage.from(SUCCESS_STORY_BUCKET).getPublicUrl(storagePath);
+      return res.json({
+        success: true,
+        url: data.publicUrl,
+        path: storagePath,
+      });
+    } catch (err: any) {
+      console.error("[Tracker Route] POST /admin/success-stories/photo failed:", err);
+      return res.status(500).json({ error: err.message || "Could not upload story photo" });
+    }
+  },
+);
+
 router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const requester = req.user;
   const requestedUserId = typeof req.query.userId === "string" ? req.query.userId : undefined;
@@ -1237,6 +1568,29 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       return result;
     })();
 
+    const successStoriesPromise = (async () => {
+      if (hasUsableDatabaseUrl()) {
+        return { data: await getSuccessStoriesWithPostgres(), error: null };
+      }
+
+      const result = await supabase
+        .from("success_stories")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true })
+        .order("created_at", { ascending: false });
+
+      if (!result.error) {
+        return result;
+      }
+
+      if (isMissingRelationError(result.error)) {
+        return { data: await getLocalSuccessStories(), error: null };
+      }
+
+      return result;
+    })();
+
     const [
       profileResult,
       jobsResult,
@@ -1246,6 +1600,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       messagesResult,
       servicesResult,
       plansResult,
+      successStoriesResult,
       subscriptionResult,
       resumeScoreResult,
       systemSettingsResult,
@@ -1263,6 +1618,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       messagesPromise,
       supabase.from("services").select("*").order("created_at", { ascending: true }),
       supabase.from("pricing_plans").select("*").order("created_at", { ascending: true }),
+      successStoriesPromise,
       supabase.from("user_subscriptions").select("*").eq("user_id", targetUserId).maybeSingle(),
       supabase.from("resume_scores").select("*").eq("user_id", targetUserId).maybeSingle(),
       supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
@@ -1282,6 +1638,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       messagesResult,
       servicesResult,
       plansResult,
+      successStoriesResult,
       subscriptionResult,
       resumeScoreResult,
       systemSettingsResult,
@@ -1308,6 +1665,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       messages: messagesResult.data ?? [],
       services: servicesResult.data ?? [],
       pricingPlans: plansResult.data ?? [],
+      successStories: successStoriesResult.data ?? [],
       subscription: subscriptionResult.data,
       resumeScore: resumeScoreResult.data,
       systemSettings: systemSettingsResult.data,

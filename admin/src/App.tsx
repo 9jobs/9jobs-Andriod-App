@@ -16,6 +16,8 @@ const previewTrackerClient = {
   role: "client",
 };
 
+const SUCCESS_STORIES_LOCAL_KEY = "admin_success_stories_preview";
+
 const previewTrackerJobs = [
   {
     id: "job_resume_lead",
@@ -123,6 +125,150 @@ function getAustraliaLocationOptions(currentLocation?: string) {
     : [currentLocation, ...australianLocationOptions];
 }
 
+function readLocalSuccessStories() {
+  try {
+    const raw = localStorage.getItem(SUCCESS_STORIES_LOCAL_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalSuccessStories(stories: any[]) {
+  localStorage.setItem(SUCCESS_STORIES_LOCAL_KEY, JSON.stringify(stories));
+}
+
+async function createCompressedImageDataUrl(file: File) {
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string" || !reader.result) {
+        reject(new Error("Could not read selected image from device."));
+        return;
+      }
+
+      const image = new Image();
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxSize = 160;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+          reject(new Error("Could not process selected image."));
+          return;
+        }
+
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.55));
+      };
+      image.onerror = () => reject(new Error("Could not process selected image."));
+      image.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error("Could not read selected image from device."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function upsertLocalSuccessStoryRecord(story: any) {
+  const current = readLocalSuccessStories();
+  const nextStory = {
+    ...story,
+    id: story.id || `story_${Math.random().toString(36).slice(2, 10)}`,
+    updated_at: new Date().toISOString(),
+    created_at: story.created_at || new Date().toISOString(),
+  };
+  const existingIndex = current.findIndex((item: any) => item.id === nextStory.id);
+
+  if (existingIndex >= 0) {
+    current[existingIndex] = { ...current[existingIndex], ...nextStory };
+  } else {
+    current.push(nextStory);
+  }
+
+  current.sort((left: any, right: any) => {
+    const leftOrder = Number(left.display_order ?? 0);
+    const rightOrder = Number(right.display_order ?? 0);
+    if (leftOrder !== rightOrder) {
+      return leftOrder - rightOrder;
+    }
+
+    return String(right.created_at || "").localeCompare(String(left.created_at || ""));
+  });
+
+  try {
+    writeLocalSuccessStories(current);
+  } catch (error) {
+    const normalizedError = error instanceof Error ? error : new Error("Could not save story locally.");
+    const isQuotaError =
+      normalizedError.name === "QuotaExceededError" ||
+      normalizedError.message.toLowerCase().includes("quota");
+
+    if (!isQuotaError) {
+      throw normalizedError;
+    }
+
+    const trimmedStories = current.map((item: any) => ({
+      ...item,
+      photo_url: typeof item.photo_url === "string" && item.photo_url.startsWith("data:") ? "" : item.photo_url,
+    }));
+
+    writeLocalSuccessStories(trimmedStories);
+  }
+
+  return nextStory;
+}
+
+function deleteLocalSuccessStoryRecord(id: string) {
+  const current = readLocalSuccessStories();
+  const next = current.filter((item: any) => item.id !== id);
+  writeLocalSuccessStories(next);
+}
+
+async function syncLocalSuccessStoriesToBackend(
+  stories: any[],
+  ensureAdminTokenFn: () => Promise<string | null>,
+) {
+  if (stories.length === 0) {
+    return [];
+  }
+
+  const token = await ensureAdminTokenFn();
+  if (!token) {
+    throw new Error("Admin auth token missing. Please sign in again.");
+  }
+
+  const syncedStories: any[] = [];
+  for (const story of stories) {
+    const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ story }),
+    });
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+    }
+
+    const payload = await response.json();
+    syncedStories.push(payload.story ?? story);
+  }
+
+  writeLocalSuccessStories([]);
+  return syncedStories;
+}
+
 function connectAdminSocket(token: string, onEvent: (event: string, payload: any) => void) {
   if (adminSocket) {
     adminSocket.disconnect();
@@ -212,7 +358,8 @@ import {
   Loader2,
   FileText,
   Eye,
-  EyeOff
+  EyeOff,
+  Star
 } from "lucide-react";
 
 import { useUser, useAuth, useSignIn } from "@clerk/clerk-react";
@@ -223,6 +370,7 @@ type Tab =
   | "users"
   | "jobs"
   | "saved_jobs"
+  | "success_stories"
   | "applications"
   | "job_tracker"
   | "hiring_managers"
@@ -333,6 +481,7 @@ export default function App() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [applications, setApplications] = useState<any[]>([]);
   const [savedJobEntries, setSavedJobEntries] = useState<any[]>([]);
+  const [successStories, setSuccessStories] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
@@ -358,7 +507,7 @@ export default function App() {
 
   // Modal / Form states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<"user" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update">("job");
+  const [modalType, setModalType] = useState<"user" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story">("job");
   const [editItem, setEditItem] = useState<any>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -372,6 +521,7 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hiringManagersUploadRef = useRef<HTMLInputElement>(null);
+  const successStoryPhotoInputRef = useRef<HTMLInputElement>(null);
 
   // App Settings state
   const [appSettings, setAppSettings] = useState({
@@ -393,6 +543,8 @@ export default function App() {
   const [coldEmailForm, setColdEmailForm] = useState({ client_id: "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
   const [scoreForm, setScoreForm] = useState({ client_id: "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
   const [quickUpdateForm, setQuickUpdateForm] = useState({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "" });
+  const [successStoryForm, setSuccessStoryForm] = useState({ id: "", name: "", position: "", year: "", message: "", story_rate: 5, photo_url: "", display_order: 0, is_active: true });
+  const [successStoryPhotoUploading, setSuccessStoryPhotoUploading] = useState(false);
 
   const ensureAdminToken = async () => {
     const existingToken = localStorage.getItem("admin_auth_token");
@@ -844,6 +996,9 @@ export default function App() {
         case "saved_jobs":
           await Promise.all([fetchApplications(), fetchUsers(), fetchSavedJobs()]);
           break;
+        case "success_stories":
+          await fetchSuccessStories();
+          break;
         case "applications":
           await fetchApplications();
           break;
@@ -1088,6 +1243,117 @@ export default function App() {
 
     const payload = await response.json();
     setSavedJobEntries(payload.entries || []);
+  };
+
+  const fetchSuccessStories = async () => {
+    try {
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const backendStories = payload.stories || [];
+      const localStories = readLocalSuccessStories();
+
+      if (localStories.length > 0) {
+        try {
+          const migratedStories = await syncLocalSuccessStoriesToBackend(localStories, ensureAdminToken);
+          const mergedStories = [...backendStories];
+          for (const migratedStory of migratedStories) {
+            if (!mergedStories.some((item: any) => item.id === migratedStory.id)) {
+              mergedStories.push(migratedStory);
+            }
+          }
+
+          mergedStories.sort((left: any, right: any) => {
+            const leftOrder = Number(left.display_order ?? 0);
+            const rightOrder = Number(right.display_order ?? 0);
+            if (leftOrder !== rightOrder) {
+              return leftOrder - rightOrder;
+            }
+
+            return String(right.created_at || "").localeCompare(String(left.created_at || ""));
+          });
+
+          setSuccessStories(mergedStories);
+          return;
+        } catch (migrationError) {
+          console.warn("Local success stories migration to backend failed, keeping admin-only preview copy:", migrationError);
+        }
+      }
+
+      setSuccessStories(backendStories);
+      return;
+    } catch (backendError) {
+      console.warn("fetchSuccessStories backend call failed, falling back to Supabase direct query:", backendError);
+    }
+
+    const { data, error } = await supabase
+      .from("success_stories")
+      .select("*")
+      .order("display_order", { ascending: true })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      if (isMissingRelationError(error)) {
+        const localStories = readLocalSuccessStories();
+        setSuccessStories(localStories);
+        return;
+      }
+
+      throw error;
+    }
+
+    setSuccessStories(data || []);
+  };
+
+  const uploadSuccessStoryPhoto = async (file: File) => {
+    try {
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const buffer = await file.arrayBuffer();
+      const response = await fetch(`${BACKEND_URL}/api/admin/success-stories/photo`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": file.type || "image/jpeg",
+          "x-file-name": file.name,
+          "x-file-type": file.type || "image/jpeg",
+        },
+        body: buffer,
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+      }
+
+      const payload = await response.json();
+      if (!payload?.url) {
+        throw new Error("Story photo uploaded but URL was missing.");
+      }
+
+      return payload.url as string;
+    } catch (backendError) {
+      console.warn("uploadSuccessStoryPhoto backend upload failed, falling back to inline data URL:", backendError);
+    }
+
+    return await createCompressedImageDataUrl(file);
   };
 
   const fetchTrackerClientData = async (clientId: string) => {
@@ -1517,6 +1783,82 @@ export default function App() {
     }
   };
 
+  const handleSuccessStoryPhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setSuccessStoryPhotoUploading(true);
+      const photoUrl = await uploadSuccessStoryPhoto(file);
+      setSuccessStoryForm((current) => ({ ...current, photo_url: photoUrl }));
+    } catch (err: any) {
+      showError(err.message || "Failed to upload story photo.");
+    } finally {
+      setSuccessStoryPhotoUploading(false);
+    }
+  };
+
+  const handleSaveSuccessStory = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      const payload = {
+        id: editItem?.id || successStoryForm.id || "",
+        name: successStoryForm.name.trim(),
+        position: successStoryForm.position.trim(),
+        year: successStoryForm.year.trim() || "Recent",
+        message: successStoryForm.message.trim(),
+        story_rate: Number(successStoryForm.story_rate),
+        photo_url: successStoryForm.photo_url.trim(),
+        display_order: Number(successStoryForm.display_order) || 0,
+        is_active: successStoryForm.is_active,
+      };
+
+      try {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ story: payload }),
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+      } catch (backendError) {
+        console.warn("handleSaveSuccessStory backend save failed, falling back to Supabase upsert:", backendError);
+        const recordId = payload.id || `story_${Math.random().toString(36).slice(2, 10)}`;
+        const { error } = await supabase
+          .from("success_stories")
+          .upsert([{ ...payload, id: recordId, updated_at: new Date().toISOString() }], { onConflict: "id" });
+        if (error) {
+          if (isMissingRelationError(error)) {
+            upsertLocalSuccessStoryRecord({ ...payload, id: recordId });
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      showSuccess("Success story saved successfully!");
+      void fetchSuccessStories();
+    } catch (err: any) {
+      showError(err.message);
+    }
+  };
+
   const handleSavePlan = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -1940,6 +2282,41 @@ export default function App() {
   const handleDelete = async (table: string, id: string) => {
     if (!confirm("Are you sure you want to delete this item?")) return;
     try {
+      if (table === "success_stories") {
+        try {
+          const token = await ensureAdminToken();
+          if (!token) {
+            throw new Error("Admin auth token missing. Please sign in again.");
+          }
+
+          const res = await fetch(`${BACKEND_URL}/api/admin/success-stories/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!res.ok) {
+            const errorPayload = await res.json().catch(() => null);
+            throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+          }
+        } catch (backendError) {
+          console.warn("handleDelete success_stories backend delete failed, falling back to Supabase delete:", backendError);
+          const { error } = await supabase.from("success_stories").delete().eq("id", id);
+          if (error) {
+            if (isMissingRelationError(error)) {
+              deleteLocalSuccessStoryRecord(id);
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        showSuccess("Item deleted successfully.");
+        await fetchSuccessStories();
+        return;
+      }
+
       if (table === "recruiter_contacts") {
         const token = await ensureAdminToken();
         if (!token) {
@@ -2146,6 +2523,7 @@ export default function App() {
     setColdEmailForm({ client_id: selectedTrackerClientId || "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
     setScoreForm({ client_id: selectedTrackerClientId || "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
     setQuickUpdateForm({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "" });
+    setSuccessStoryForm({ id: "", name: "", position: "", year: "", message: "", story_rate: 5, photo_url: "", display_order: successStories.length, is_active: true });
     setIsModalOpen(true);
   };
 
@@ -2189,6 +2567,18 @@ export default function App() {
       setScoreForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", ats_score: item.ats_score || 0, ai_match_score: item.ai_match_score || 0, score_reason: item.score_reason || "", recommendations: item.recommendations?.join(", ") || "" });
     } else if (type === "quick_update") {
       setQuickUpdateForm({ application_id: String(item.id), status: item.status || "applied", current_stage: item.current_stage || item.status || "applied", next_action: item.next_action || "", next_action_date: item.next_action_date || "", notes: item.notes || "" });
+    } else if (type === "success_story") {
+      setSuccessStoryForm({
+        id: item.id || "",
+        name: item.name || "",
+        position: item.position || "",
+        year: item.year || "",
+        message: item.message || "",
+        story_rate: item.story_rate || 5,
+        photo_url: item.photo_url || "",
+        display_order: item.display_order || 0,
+        is_active: item.is_active !== false,
+      });
     }
   };
 
@@ -2238,6 +2628,16 @@ export default function App() {
     ].some((value) => String(value || "").toLowerCase().includes(query));
   });
 
+  const filteredSuccessStories = successStories.filter((story) => {
+    const query = searchQuery.toLowerCase();
+    if (!query) {
+      return true;
+    }
+
+    return [story.name, story.position, story.year, story.message]
+      .some((value) => String(value || "").toLowerCase().includes(query));
+  });
+
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
   const buildSavedJobModalItem = (item: any, title: string, company: string, location: string, salary: string, tags: string[], jobLink: string) => ({
     ...(item.jobs || {}),
@@ -2270,7 +2670,9 @@ export default function App() {
 
   const modalHeading = modalType === "contact"
     ? `${editItem ? "Edit" : "Create"} Hiring Manager`
-    : `${editItem ? "Edit " : "Create "}${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`;
+    : modalType === "success_story"
+      ? `${editItem ? "Edit" : "Create"} Success Story`
+      : `${editItem ? "Edit " : "Create "}${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`;
 
   // Protected Auth Screen
   if (!(isPreviewAuthenticated || (isSignedIn && isAdmin))) {
@@ -2358,6 +2760,10 @@ export default function App() {
             <Eye size={18} />
             <span>Saved Jobs</span>
           </a>
+          <a className={`sidebar-item ${activeTab === "success_stories" ? "active" : ""}`} onClick={() => setActiveTab("success_stories")}>
+            <Star size={18} />
+            <span>Success Stories</span>
+          </a>
           <a className={`sidebar-item ${activeTab === "applications" ? "active" : ""}`} onClick={() => setActiveTab("applications")}>
             <Layers size={18} />
             <span>Applications</span>
@@ -2418,13 +2824,14 @@ export default function App() {
       <main className="main-content">
         <header className="header">
           <div className="header-title">
-            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab === "saved_jobs" ? "Saved Jobs" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
+            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab === "saved_jobs" ? "Saved Jobs" : activeTab === "success_stories" ? "Success Stories" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
             <p>Welcome back to your 9Jobs administration console.</p>
           </div>
           <div className="header-actions">
             {activeTab === "users" && <button className="btn btn-primary" onClick={() => openAddModal("user")}><Plus size={16} /> Add Candidate</button>}
             {activeTab === "jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Opportunity</button>}
             {activeTab === "saved_jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Saved Job</button>}
+            {activeTab === "success_stories" && <button className="btn btn-primary" onClick={() => openAddModal("success_story")}><Plus size={16} /> Add Success Story</button>}
             {activeTab === "job_tracker" && <button className="btn btn-primary" onClick={() => openAddModal("tracker")}><Plus size={16} /> Add Tracker Entry</button>}
             {activeTab === "hiring_managers" && <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}><Plus size={16} /> Add Hiring Manager</button>}
             {activeTab === "interview_preparation" && <button className="btn btn-primary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}><Plus size={16} /> Refresh</button>}
@@ -2830,6 +3237,87 @@ export default function App() {
                     <tr>
                       <td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>
                         No saved jobs available in table view yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "success_stories" && (
+          <div className="card">
+            <div className="controls-row">
+              <div className="search-input-wrapper">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="Search stories by name, position, year, or message..."
+                  className="form-input search-input"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="stats-grid" style={{ marginBottom: "20px" }}>
+              <div className="stat-card">
+                <div className="stat-value">{successStories.length}</div>
+                <div className="stat-label">Total Stories</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{successStories.filter((story) => story.is_active !== false).length}</div>
+                <div className="stat-label">Active In App</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value">{filteredSuccessStories.length}</div>
+                <div className="stat-label">Visible In Current Filter</div>
+              </div>
+            </div>
+
+            <div className="table-responsive">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Photo</th>
+                    <th>Name</th>
+                    <th>Position</th>
+                    <th>Year</th>
+                    <th>Message</th>
+                    <th>Rate</th>
+                    <th>Status</th>
+                    <th>Order</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSuccessStories.map((story) => (
+                    <tr key={story.id}>
+                      <td><img src={story.photo_url || "https://placehold.co/52x52/F3F4F6/111111?text=SS"} alt="" className="chat-user-item-avatar" /></td>
+                      <td><strong>{story.name}</strong></td>
+                      <td>{story.position}</td>
+                      <td>{story.year}</td>
+                      <td style={{ maxWidth: "280px" }}>{story.message}</td>
+                      <td>{"★".repeat(Math.max(1, Math.min(5, Number(story.story_rate || 5))))}</td>
+                      <td>
+                        <span className={`badge ${story.is_active !== false ? "badge-success" : "badge-neutral"}`}>
+                          {story.is_active !== false ? "active" : "hidden"}
+                        </span>
+                      </td>
+                      <td>{story.display_order ?? 0}</td>
+                      <td>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("success_story", story)} title="Edit Story"><Edit size={14} /></button>
+                          <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("success_stories", story.id)} title="Delete Story"><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredSuccessStories.length === 0 && (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>
+                        No success stories available yet.
                       </td>
                     </tr>
                   )}
@@ -4175,6 +4663,65 @@ export default function App() {
                   <textarea rows={4} className="form-input" value={quickUpdateForm.notes} onChange={(e) => setQuickUpdateForm({ ...quickUpdateForm, notes: e.target.value })} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Quick Update</button>
+              </form>
+            )}
+
+            {modalType === "success_story" && (
+              <form onSubmit={handleSaveSuccessStory}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Client Name</label>
+                    <input type="text" className="form-input" required value={successStoryForm.name} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, name: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Position</label>
+                    <input type="text" className="form-input" required value={successStoryForm.position} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, position: e.target.value })} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Year / Time Label</label>
+                    <input type="text" className="form-input" required placeholder="e.g. 4 months" value={successStoryForm.year} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, year: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Story Rate (1 - 5)</label>
+                    <input type="number" min={1} max={5} className="form-input" required value={successStoryForm.story_rate} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, story_rate: Number(e.target.value) })} />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Display Order</label>
+                    <input type="number" min={0} className="form-input" value={successStoryForm.display_order} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, display_order: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select className="form-input" value={successStoryForm.is_active ? "active" : "hidden"} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, is_active: e.target.value === "active" })}>
+                      <option value="active">active</option>
+                      <option value="hidden">hidden</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Client Photo</label>
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                    {successStoryForm.photo_url ? (
+                      <img src={successStoryForm.photo_url} alt="" className="chat-user-item-avatar" />
+                    ) : (
+                      <div className="chat-user-item-avatar" style={{ display: "grid", placeItems: "center", background: "#F3F4F6", color: "#666" }}>+</div>
+                    )}
+                    <button type="button" className="btn btn-secondary" onClick={() => successStoryPhotoInputRef.current?.click()} disabled={successStoryPhotoUploading}>
+                      {successStoryPhotoUploading ? "Uploading..." : "Upload From Device"}
+                    </button>
+                    <input ref={successStoryPhotoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void handleSuccessStoryPhotoChange(e)} />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Message</label>
+                  <textarea rows={4} className="form-input" required value={successStoryForm.message} onChange={(e) => setSuccessStoryForm({ ...successStoryForm, message: e.target.value })} />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }} disabled={successStoryPhotoUploading}>
+                  Save Success Story
+                </button>
               </form>
             )}
 

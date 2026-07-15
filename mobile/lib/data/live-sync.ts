@@ -7,6 +7,7 @@ type JobRow = {
   company: string;
   location: string;
   salary: string;
+  job_link?: string | null;
   posted_at: string;
   match_score: number | null;
   tags: string[] | null;
@@ -281,6 +282,7 @@ export function mapJobsWithUserState(
       company: job.company,
       location: job.location,
       salary: job.salary,
+      jobLink: job.job_link ?? "",
       category: categoryName ?? categoryFallback,
       postedAt: job.posted_at,
       matchScore: job.match_score ?? 80,

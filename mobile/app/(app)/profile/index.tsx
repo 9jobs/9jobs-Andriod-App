@@ -30,7 +30,7 @@ const profileItems = [
   },
   {
     id: "certificates",
-    label: "Certificates",
+    label: "Hired Client",
     icon: "spark" as const,
     onPress: () => "/(app)/stories",
   },

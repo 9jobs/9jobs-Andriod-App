@@ -13,6 +13,7 @@ export type Job = {
   company: string;
   location: string;
   salary: string;
+  jobLink?: string;
   category: JobCategory;
   postedAt: string;
   matchScore: number;

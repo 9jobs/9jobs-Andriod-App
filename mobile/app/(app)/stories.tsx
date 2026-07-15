@@ -1,59 +1,29 @@
 import { Pressable, StyleSheet, Text, View, Image } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
+import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
-
-// Detailed mockup success stories for 5 clients with image avatars
-const stories = [
-  {
-    name: "Jasmine Park",
-    role: "Barista → UX Designer at Apple",
-    time: "4 months",
-    quote: '"9Jobs helped me land my dream role. The resume AI was a game-changer."',
-    avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&h=120&q=80",
-  },
-  {
-    name: "David Okonkwo",
-    role: "Marketing → PM at Stripe",
-    time: "6 months",
-    quote: '"The interview prep feature alone is worth 10x the subscription cost."',
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&h=120&q=80",
-  },
-  {
-    name: "Sarah Jenkins",
-    role: "Customer Support → CSM at Slack",
-    time: "3 months",
-    quote: '"The automated outreach saved me hundreds of hours. I got 5 interviews in 2 weeks!"',
-    avatar: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=120&h=120&q=80",
-  },
-  {
-    name: "Carlos Mendez",
-    role: "Bootcamp Grad → Dev at Figma",
-    time: "5 months",
-    quote: '"The tracking board kept me organized and motivated. Best tool for junior developers."',
-    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&h=120&q=80",
-  },
-  {
-    name: "Elena Rostova",
-    role: "QA Engineer → QA Lead at Vercel",
-    time: "2 months",
-    quote: '"Negotiation tips helped me boost my starting offer by 15%. Highly recommend!"',
-    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80",
-  },
-];
+import { useCallback } from "react";
 
 export default function StoriesScreen() {
+  const { data: stories = [], refetch } = usePreviewSyncQuery(true, {
+    select: (snapshot) => snapshot.successStories,
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
+
   return (
     <Screen contentStyle={styles.screenContent}>
-      {/* Header */}
       <BackHeader label="Back" />
       <Text style={styles.title}>Success Stories</Text>
 
-      {/* Hero Trophy Banner */}
       <View style={styles.heroCard}>
         <View style={styles.trophyWrap}>
-          {/* Detailed custom SVG trophy */}
           <Svg width={72} height={72} viewBox="0 0 24 24" fill="none">
             <Path
               d="M6 9H4.5A2.5 2.5 0 0 1 2 6.5v0A2.5 2.5 0 0 1 4.5 4H6"
@@ -86,7 +56,7 @@ export default function StoriesScreen() {
           </Svg>
           <Text style={styles.offerText}>OFFER RECEIVED</Text>
         </View>
-        
+
         <View style={styles.heroStats}>
           <Text style={styles.heroBig}>50K+</Text>
           <Text style={styles.heroSmall}>offers received</Text>
@@ -95,29 +65,24 @@ export default function StoriesScreen() {
         </View>
       </View>
 
-      {/* 5 Scrollable Client Story Cards */}
       <View style={styles.storyStack}>
         {stories.map((story) => (
-          <View key={story.name} style={styles.storyCard}>
+          <View key={story.id} style={styles.storyCard}>
             <View style={styles.storyTop}>
-              {/* Profile Photo with green outline border */}
-              <Image source={{ uri: story.avatar }} style={styles.storyAvatar} />
-              
+              <Image source={{ uri: story.photoUrl }} style={styles.storyAvatar} />
+
               <View style={styles.storyCopy}>
                 <Text style={styles.storyName}>{story.name}</Text>
-                <Text style={styles.storyRole}>{story.role}</Text>
+                <Text style={styles.storyRole}>{story.position}</Text>
               </View>
-              
-              {/* Soft Green Duration Badge */}
+
               <View style={styles.timeBadge}>
-                <Text style={styles.timeBadgeText}>{story.time}</Text>
+                <Text style={styles.timeBadgeText}>{story.year}</Text>
               </View>
             </View>
-            
-            <Text style={styles.quote}>{story.quote}</Text>
-            
-            {/* Custom Green Rating Stars */}
-            <Text style={styles.stars}>★★★★★</Text>
+
+            <Text style={styles.quote}>{story.message}</Text>
+            <Text style={styles.stars}>{"★".repeat(Math.max(1, Math.min(5, story.storyRate)))}</Text>
           </View>
         ))}
       </View>
@@ -146,7 +111,7 @@ const styles = StyleSheet.create({
   screenContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    paddingBottom: 110, // extra padding for bottom tab bar clearance
+    paddingBottom: 110,
     gap: spacing.lg,
   },
   backRow: {
