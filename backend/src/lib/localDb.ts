@@ -108,6 +108,26 @@ export interface LocalSuccessStory {
   updated_at: string;
 }
 
+export interface LocalProfile {
+  id: string;
+  full_name: string;
+  email: string;
+  phone_number: string;
+  location: string;
+  headline: string;
+  avatar_url: string;
+  linkedin_url: string;
+  facebook_url: string;
+  instagram_url: string;
+  twitter_url: string;
+  timezone: string;
+  role: string;
+  account_status: string;
+  subscription_plan: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface LocalDbSchema {
   messages: LocalMessage[];
   conversations: LocalConversation[];
@@ -115,12 +135,13 @@ interface LocalDbSchema {
   interview_prep_sessions: LocalInterviewPrepSession[];
   interview_prep_responses: LocalInterviewPrepResponse[];
   success_stories: LocalSuccessStory[];
+  profiles: LocalProfile[];
 }
 
 function readDb(): LocalDbSchema {
   try {
     if (!fs.existsSync(DB_FILE)) {
-      return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [] };
+      return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [], profiles: [] };
     }
     const data = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(data);
@@ -131,9 +152,10 @@ function readDb(): LocalDbSchema {
       interview_prep_sessions: Array.isArray(parsed.interview_prep_sessions) ? parsed.interview_prep_sessions : [],
       interview_prep_responses: Array.isArray(parsed.interview_prep_responses) ? parsed.interview_prep_responses : [],
       success_stories: Array.isArray(parsed.success_stories) ? parsed.success_stories : [],
+      profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
     };
   } catch (err) {
-    return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [] };
+    return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [], profiles: [] };
   }
 }
 
@@ -416,6 +438,74 @@ export async function deleteLocalSuccessStory(id: string): Promise<boolean> {
   const originalLength = db.success_stories.length;
   db.success_stories = db.success_stories.filter((item) => item.id !== id);
   if (db.success_stories.length === originalLength) {
+    return false;
+  }
+
+  writeDb(db);
+  return true;
+}
+
+export async function getLocalProfiles(): Promise<LocalProfile[]> {
+  const db = readDb();
+  return [...db.profiles].sort((a, b) => {
+    const aTime = new Date(a.updated_at || a.created_at).getTime();
+    const bTime = new Date(b.updated_at || b.created_at).getTime();
+    return bTime - aTime;
+  });
+}
+
+export async function getLocalProfile(id: string): Promise<LocalProfile | undefined> {
+  const db = readDb();
+  return db.profiles.find((profile) => profile.id === id);
+}
+
+export async function upsertLocalProfile(
+  profile: Partial<LocalProfile> & {
+    id: string;
+    full_name: string;
+    email: string;
+  },
+): Promise<LocalProfile> {
+  const db = readDb();
+  const existingIndex = db.profiles.findIndex((item) => item.id === profile.id);
+  const now = new Date().toISOString();
+
+  const normalizedProfile: LocalProfile = {
+    id: profile.id,
+    full_name: profile.full_name,
+    email: profile.email,
+    phone_number: profile.phone_number ?? "",
+    location: profile.location ?? "",
+    headline: profile.headline ?? "",
+    avatar_url: profile.avatar_url ?? "",
+    linkedin_url: profile.linkedin_url ?? "",
+    facebook_url: profile.facebook_url ?? "",
+    instagram_url: profile.instagram_url ?? "",
+    twitter_url: profile.twitter_url ?? "",
+    timezone: profile.timezone ?? "Australia/Melbourne",
+    role: profile.role ?? "client",
+    account_status: profile.account_status ?? "active",
+    subscription_plan: profile.subscription_plan ?? "free",
+    created_at: existingIndex >= 0 ? db.profiles[existingIndex].created_at : now,
+    updated_at: now,
+  };
+
+  if (existingIndex >= 0) {
+    db.profiles[existingIndex] = { ...db.profiles[existingIndex], ...normalizedProfile };
+  } else {
+    db.profiles.push(normalizedProfile);
+  }
+
+  writeDb(db);
+  return normalizedProfile;
+}
+
+export async function deleteLocalProfile(id: string): Promise<boolean> {
+  const db = readDb();
+  const originalLength = db.profiles.length;
+  db.profiles = db.profiles.filter((item) => item.id !== id);
+
+  if (db.profiles.length === originalLength) {
     return false;
   }
 

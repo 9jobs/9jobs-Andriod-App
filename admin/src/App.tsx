@@ -515,6 +515,9 @@ export default function App() {
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [selectedPersonalInfoUserId, setSelectedPersonalInfoUserId] = useState("all");
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
+  const [settingsSubsection, setSettingsSubsection] = useState<"general" | "personal-info">("general");
 
   // Chat state
   const [activeChatUser, setActiveChatUser] = useState<any>(null);
@@ -522,6 +525,7 @@ export default function App() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const hiringManagersUploadRef = useRef<HTMLInputElement>(null);
   const successStoryPhotoInputRef = useRef<HTMLInputElement>(null);
+  const personalInfoPhotoInputRef = useRef<HTMLInputElement>(null);
 
   // App Settings state
   const [appSettings, setAppSettings] = useState({
@@ -531,7 +535,20 @@ export default function App() {
   });
 
   // Form State Handlers
-  const [userForm, setUserForm] = useState({ id: "", full_name: "", email: "", phone_number: "", subscription_plan: "free" });
+  const [userForm, setUserForm] = useState({
+    id: "",
+    full_name: "",
+    email: "",
+    phone_number: "",
+    location: "",
+    headline: "",
+    avatar_url: "",
+    linkedin_url: "",
+    facebook_url: "",
+    instagram_url: "",
+    twitter_url: "",
+    subscription_plan: "free",
+  });
   const [jobForm, setJobForm] = useState({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: "", application_id: "" });
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "" });
@@ -1034,7 +1051,7 @@ export default function App() {
           await fetchNotifications();
           break;
         case "settings":
-          await fetchSystemSettings();
+          await Promise.all([fetchSystemSettings(), fetchUsers()]);
           break;
         default:
           break;
@@ -1104,12 +1121,28 @@ export default function App() {
   };
 
   const fetchUsers = async () => {
-    const [profilesResult, applicationsResult, interviewsResult, activityResult, conversationsResult] = await Promise.all([
+    const token = await ensureAdminToken();
+    const personalInfoPromise = token
+      ? fetch(`${BACKEND_URL}/api/admin/personal-info`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }).then(async (response) => {
+          if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            throw new Error(payload?.error || `HTTP error ${response.status}`);
+          }
+          return response.json();
+        })
+      : Promise.resolve({ profiles: [] as any[] });
+
+    const [profilesResult, applicationsResult, interviewsResult, activityResult, conversationsResult, personalInfoResult] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("applications").select("*"),
       supabase.from("interviews").select("*"),
       supabase.from("activity_logs").select("*").order("created_at", { ascending: false }),
       supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
+      personalInfoPromise,
     ]);
 
     if (profilesResult.error && !isRowLevelSecurityError(profilesResult.error) && !isMissingRelationError(profilesResult.error)) {
@@ -1129,6 +1162,9 @@ export default function App() {
     }
 
     const profiles = ((profilesResult.data || []) as any[]).filter((profile) => profile.role !== "admin" && profile.role !== "staff");
+    const backendProfiles = Array.isArray((personalInfoResult as any)?.profiles)
+      ? ((personalInfoResult as any).profiles as any[])
+      : [];
     const applicationsData = (applicationsResult.data || []) as any[];
     const interviewsData = (interviewsResult.data || []) as any[];
     const activityData = (activityResult.data || []) as any[];
@@ -1137,6 +1173,9 @@ export default function App() {
     const profileMap = new Map<string, any>();
     for (const profile of profiles) {
       profileMap.set(profile.id, profile);
+    }
+    for (const profile of backendProfiles) {
+      profileMap.set(profile.id, { ...profileMap.get(profile.id), ...profile });
     }
 
     if (!profileMap.has(previewTrackerClient.id)) {
@@ -1666,36 +1705,56 @@ export default function App() {
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const userId = editItem?.id || userForm.id || "user_" + Math.random().toString(36).substring(2, 10);
       const payload = {
+        id: userId,
         full_name: userForm.full_name,
         email: userForm.email,
         phone_number: userForm.phone_number,
+        location: userForm.location,
+        headline: userForm.headline,
+        avatar_url: userForm.avatar_url,
+        linkedin_url: userForm.linkedin_url,
+        facebook_url: userForm.facebook_url,
+        instagram_url: userForm.instagram_url,
+        twitter_url: userForm.twitter_url,
         subscription_plan: userForm.subscription_plan
       };
 
-      if (editItem) {
-        const { error } = await supabase.from("profiles").update(payload).eq("id", editItem.id);
-        if (error) throw error;
-        const { error: subscriptionError } = await supabase.from("user_subscriptions").upsert({
-          user_id: editItem.id,
-          plan_id: userForm.subscription_plan,
-          status: "active",
+      const token = await ensureAdminToken();
+      if (token) {
+        const backendResponse = await fetch(`${BACKEND_URL}/api/admin/personal-info`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ profile: payload }),
         });
-        if (subscriptionError) throw subscriptionError;
-      } else {
-        const userId = userForm.id || "user_" + Math.random().toString(36).substring(2, 10);
-        const { error } = await supabase.from("profiles").insert([{ id: userId, ...payload }]);
-        if (error) throw error;
-        const { error: subscriptionError } = await supabase.from("user_subscriptions").upsert({
-          user_id: userId,
-          plan_id: userForm.subscription_plan,
-          status: "active",
-        });
-        if (subscriptionError) throw subscriptionError;
+
+        if (!backendResponse.ok) {
+          const errorPayload = await backendResponse.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${backendResponse.status}`);
+        }
       }
 
+      if (editItem) {
+        const { error } = await supabase.from("profiles").update(payload).eq("id", editItem.id);
+        if (error && !isRowLevelSecurityError(error) && !isMissingRelationError(error)) throw error;
+      } else {
+        const { error } = await supabase.from("profiles").insert([payload]);
+        if (error && !isRowLevelSecurityError(error) && !isMissingRelationError(error)) throw error;
+      }
+
+      const { error: subscriptionError } = await supabase.from("user_subscriptions").upsert({
+        user_id: userId,
+        plan_id: userForm.subscription_plan,
+        status: "active",
+      });
+      if (subscriptionError && !isRowLevelSecurityError(subscriptionError) && !isMissingRelationError(subscriptionError)) throw subscriptionError;
+
       showSuccess("User saved successfully!");
-      fetchUsers();
+      await fetchUsers();
     } catch (err: any) {
       showError(err.message);
     }
@@ -1799,6 +1858,22 @@ export default function App() {
       showError(err.message || "Failed to upload story photo.");
     } finally {
       setSuccessStoryPhotoUploading(false);
+    }
+  };
+
+  const handlePersonalInfoPhotoChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const photoUrl = await createCompressedImageDataUrl(file);
+      setUserForm((current) => ({ ...current, avatar_url: photoUrl }));
+    } catch (err: any) {
+      showError(err.message || "Failed to process selected profile photo.");
     }
   };
 
@@ -2282,6 +2357,37 @@ export default function App() {
   const handleDelete = async (table: string, id: string) => {
     if (!confirm("Are you sure you want to delete this item?")) return;
     try {
+      if (table === "profiles") {
+        const token = await ensureAdminToken();
+        if (token) {
+          const response = await fetch(`${BACKEND_URL}/api/admin/personal-info/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!response.ok) {
+            const errorPayload = await response.json().catch(() => null);
+            throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+          }
+        }
+
+        const { error: profileError } = await supabase.from("profiles").delete().eq("id", id);
+        if (profileError && !isRowLevelSecurityError(profileError) && !isMissingRelationError(profileError)) {
+          throw profileError;
+        }
+
+        const { error: subscriptionError } = await supabase.from("user_subscriptions").delete().eq("user_id", id);
+        if (subscriptionError && !isRowLevelSecurityError(subscriptionError) && !isMissingRelationError(subscriptionError)) {
+          throw subscriptionError;
+        }
+
+        showSuccess("Item deleted successfully.");
+        await fetchUsers();
+        return;
+      }
+
       if (table === "success_stories") {
         try {
           const token = await ensureAdminToken();
@@ -2511,7 +2617,20 @@ export default function App() {
         ? selectedTrackerClientId || users[0]?.id || previewTrackerClient.id
         : "";
     // Clear forms
-    setUserForm({ id: "", full_name: "", email: "", phone_number: "", subscription_plan: "free" });
+    setUserForm({
+      id: "",
+      full_name: "",
+      email: "",
+      phone_number: "",
+      location: "",
+      headline: "",
+      avatar_url: "",
+      linkedin_url: "",
+      facebook_url: "",
+      instagram_url: "",
+      twitter_url: "",
+      subscription_plan: "free",
+    });
     setJobForm({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: defaultSavedJobUserId, application_id: "" });
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "" });
@@ -2534,7 +2653,20 @@ export default function App() {
     setIsModalOpen(true);
 
     if (type === "user") {
-      setUserForm({ id: item.id, full_name: item.full_name, email: item.email, phone_number: item.phone_number || "", subscription_plan: item.subscription_plan || "free" });
+      setUserForm({
+        id: item.id,
+        full_name: item.full_name || "",
+        email: item.email || "",
+        phone_number: item.phone_number || "",
+        location: item.location || "",
+        headline: item.headline || "",
+        avatar_url: item.avatar_url || "",
+        linkedin_url: item.linkedin_url || "",
+        facebook_url: item.facebook_url || "",
+        instagram_url: item.instagram_url || "",
+        twitter_url: item.twitter_url || "",
+        subscription_plan: item.subscription_plan || "free",
+      });
     } else if (type === "job") {
       setJobForm({
         id: item.id,
@@ -2638,6 +2770,14 @@ export default function App() {
       .some((value) => String(value || "").toLowerCase().includes(query));
   });
 
+  const filteredPersonalInfoUsers = filteredUsers.filter((userItem) => {
+    if (selectedPersonalInfoUserId === "all") {
+      return true;
+    }
+
+    return userItem.id === selectedPersonalInfoUserId;
+  });
+
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
   const buildSavedJobModalItem = (item: any, title: string, company: string, location: string, salary: string, tags: string[], jobLink: string) => ({
     ...(item.jobs || {}),
@@ -2658,6 +2798,14 @@ export default function App() {
     application_date: item.application_date || item.created_at,
     applied_at: item.applied_at || null,
   });
+  const openPersonalInformationFromSidebar = () => {
+    setSettingsSubsection("personal-info");
+    setSettingsMenuOpen(true);
+    setActiveTab("settings");
+    setTimeout(() => {
+      document.getElementById("admin-personal-information")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  };
   const selectedTrackerMetrics = calculateTrackerMetrics({
     applications,
     interviews: trackerInterviews,
@@ -2800,10 +2948,30 @@ export default function App() {
             <Bell size={18} />
             <span>Notifications</span>
           </a>
-          <a className={`sidebar-item ${activeTab === "settings" ? "active" : ""}`} onClick={() => setActiveTab("settings")}>
-            <Settings size={18} />
-            <span>Settings</span>
-          </a>
+          <div>
+            <a
+              className={`sidebar-item ${activeTab === "settings" ? "active" : ""}`}
+              onClick={() => {
+                setSettingsMenuOpen((current) => !current);
+                setSettingsSubsection("general");
+                setActiveTab("settings");
+              }}
+            >
+              <Settings size={18} />
+              <span style={{ flex: 1 }}>Settings</span>
+              <span style={{ fontSize: "12px", opacity: 0.8 }}>{settingsMenuOpen || activeTab === "settings" ? "▾" : "▸"}</span>
+            </a>
+            {(settingsMenuOpen || activeTab === "settings") && (
+              <button
+                type="button"
+                className={`sidebar-item sidebar-subitem ${activeTab === "settings" && settingsSubsection === "personal-info" ? "sidebar-subitem-active" : ""}`}
+                onClick={openPersonalInformationFromSidebar}
+              >
+                <User size={16} />
+                <span>Personal Information</span>
+              </button>
+            )}
+          </div>
         </nav>
 
         <div className="sidebar-footer">
@@ -3396,7 +3564,7 @@ export default function App() {
 
         {activeTab === "job_tracker" && (
           <div style={{ display: "grid", gap: "24px" }}>
-            <div className="card">
+            <div className="card" id="admin-personal-information">
               <div className="controls-row" style={{ marginBottom: 0 }}>
                 <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                   <label className="form-label">Select Client</label>
@@ -4178,115 +4346,260 @@ export default function App() {
 
         {/* Settings Tab */}
         {activeTab === "settings" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "30px" }}>
-            <div className="card">
-              <div className="card-header"><h3 className="card-title">Feature Flags</h3></div>
-              <div className="form-group" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid var(--border-color)" }}>
-                <div>
-                  <h4 style={{ fontSize: "14px", fontWeight: "600" }}>System Maintenance Mode</h4>
-                  <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Puts the mobile app in offline read-only mode.</p>
+          <div style={{ display: "grid", gap: "30px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: "30px" }}>
+              <div className="card">
+                <div className="card-header"><h3 className="card-title">Feature Flags</h3></div>
+                <div className="form-group" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid var(--border-color)" }}>
+                  <div>
+                    <h4 style={{ fontSize: "14px", fontWeight: "600" }}>System Maintenance Mode</h4>
+                    <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Puts the mobile app in offline read-only mode.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={appSettings.maintenanceMode}
+                      onChange={async (e) => {
+                        const val = e.target.checked;
+                        setAppSettings((prev) => ({ ...prev, maintenanceMode: val }));
+                        try {
+                          const { error } = await supabase
+                            .from("system_settings")
+                            .update({ maintenance_mode: val })
+                            .eq("id", 1);
+                          if (error) throw error;
+                        } catch (err: any) {
+                          showError(err.message);
+                        }
+                      }}
+                    />
+                    <span className="slider"></span>
+                  </label>
                 </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.maintenanceMode}
-                    onChange={async (e) => {
-                      const val = e.target.checked;
-                      setAppSettings((prev) => ({ ...prev, maintenanceMode: val }));
-                      try {
-                        const { error } = await supabase
-                          .from("system_settings")
-                          .update({ maintenance_mode: val })
-                          .eq("id", 1);
-                        if (error) throw error;
-                      } catch (err: any) {
-                        showError(err.message);
-                      }
-                    }}
-                  />
-                  <span className="slider"></span>
-                </label>
+
+                <div className="form-group" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border-color)" }}>
+                  <div>
+                    <h4 style={{ fontSize: "14px", fontWeight: "600" }}>Push Notifications Queue</h4>
+                    <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Process push notification events instantly.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={appSettings.pushNotificationsEnabled}
+                      onChange={async (e) => {
+                        const val = e.target.checked;
+                        setAppSettings((prev) => ({ ...prev, pushNotificationsEnabled: val }));
+                        try {
+                          const { error } = await supabase
+                            .from("system_settings")
+                            .update({ push_notifications_enabled: val })
+                            .eq("id", 1);
+                          if (error) throw error;
+                        } catch (err: any) {
+                          showError(err.message);
+                        }
+                      }}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+
+                <div className="form-group" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px" }}>
+                  <div>
+                    <h4 style={{ fontSize: "14px", fontWeight: "600" }}>Force Light Mode Default</h4>
+                    <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Override user local preference.</p>
+                  </div>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={appSettings.darkMode}
+                      onChange={async (e) => {
+                        const val = e.target.checked;
+                        setAppSettings((prev) => ({ ...prev, darkMode: val }));
+                        try {
+                          const { error } = await supabase
+                            .from("system_settings")
+                            .update({ dark_mode_override: val })
+                            .eq("id", 1);
+                          if (error) throw error;
+                        } catch (err: any) {
+                          showError(err.message);
+                        }
+                      }}
+                    />
+                    <span className="slider"></span>
+                  </label>
+                </div>
               </div>
 
-              <div className="form-group" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: "1px solid var(--border-color)" }}>
-                <div>
-                  <h4 style={{ fontSize: "14px", fontWeight: "600" }}>Push Notifications Queue</h4>
-                  <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Process push notification events instantly.</p>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.pushNotificationsEnabled}
-                    onChange={async (e) => {
-                      const val = e.target.checked;
-                      setAppSettings((prev) => ({ ...prev, pushNotificationsEnabled: val }));
-                      try {
-                        const { error } = await supabase
-                          .from("system_settings")
-                          .update({ push_notifications_enabled: val })
-                          .eq("id", 1);
-                        if (error) throw error;
-                      } catch (err: any) {
-                        showError(err.message);
-                      }
-                    }}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-
-              <div className="form-group" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px" }}>
-                <div>
-                  <h4 style={{ fontSize: "14px", fontWeight: "600" }}>Force Light Mode Default</h4>
-                  <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Override user local preference.</p>
-                </div>
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.darkMode}
-                    onChange={async (e) => {
-                      const val = e.target.checked;
-                      setAppSettings((prev) => ({ ...prev, darkMode: val }));
-                      try {
-                        const { error } = await supabase
-                          .from("system_settings")
-                          .update({ dark_mode_override: val })
-                          .eq("id", 1);
-                        if (error) throw error;
-                      } catch (err: any) {
-                        showError(err.message);
-                      }
-                    }}
-                  />
-                  <span className="slider"></span>
-                </label>
+              <div className="card">
+                <div className="card-header"><h3 className="card-title">Add / Remove Administrators</h3></div>
+                <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px" }}>Only emails registered in this list can authenticate into this admin panel dashboard.</p>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  const formElem = e.currentTarget as HTMLFormElement;
+                  const emailVal = (formElem.elements.namedItem("adminEmail") as HTMLInputElement).value;
+                  try {
+                    const { error } = await supabase.from("admins").insert([{ email: emailVal }]);
+                    if (error) throw error;
+                    showSuccess("Administrator added successfully!");
+                    formElem.reset();
+                  } catch (err: any) {
+                    showError(err.message);
+                  }
+                }}>
+                  <div className="form-group">
+                    <label className="form-label">New Admin Email</label>
+                    <div style={{ display: "flex", gap: "12px" }}>
+                      <input type="email" name="adminEmail" className="form-input" placeholder="name@9jobs.app" required />
+                      <button type="submit" className="btn btn-primary">Add Admin</button>
+                    </div>
+                  </div>
+                </form>
               </div>
             </div>
 
             <div className="card">
-              <div className="card-header"><h3 className="card-title">Add / Remove Administrators</h3></div>
-              <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px" }}>Only emails registered in this list can authenticate into this admin panel dashboard.</p>
-              <form onSubmit={async (e) => {
-                e.preventDefault();
-                const formElem = e.currentTarget as HTMLFormElement;
-                const emailVal = (formElem.elements.namedItem("adminEmail") as HTMLInputElement).value;
-                try {
-                  const { error } = await supabase.from("admins").insert([{ email: emailVal }]);
-                  if (error) throw error;
-                  showSuccess("Administrator added successfully!");
-                  formElem.reset();
-                } catch (err: any) {
-                  showError(err.message);
-                }
-              }}>
-                <div className="form-group">
-                  <label className="form-label">New Admin Email</label>
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <input type="email" name="adminEmail" className="form-input" placeholder="name@9jobs.app" required />
-                    <button type="submit" className="btn btn-primary">Add Admin</button>
-                  </div>
+              <div className="card-header" style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+                <h3 className="card-title">Personal Information</h3>
+                <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                  <select className="form-input" style={{ minWidth: "240px" }} value={selectedPersonalInfoUserId} onChange={(e) => setSelectedPersonalInfoUserId(e.target.value)}>
+                    <option value="all">Personal Information List</option>
+                    {users.map((userItem) => (
+                      <option key={userItem.id} value={userItem.id}>
+                        {userItem.full_name || userItem.email || userItem.id}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn btn-primary" onClick={() => openAddModal("user")}>
+                    <Plus size={16} /> Add Personal Information
+                  </button>
                 </div>
-              </form>
+              </div>
+
+              <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px" }}>
+                App settings → Personal Information se candidate jo data save karega, woh yahan table form me live show hoga.
+              </p>
+
+              <details open style={{ border: "1px solid var(--border-color)", borderRadius: "18px", padding: "18px", marginBottom: "22px", background: "#fff" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: "16px", marginBottom: "18px" }}>Personal Information Form</summary>
+                <form onSubmit={handleSaveUser}>
+                  {!editItem && (
+                    <div className="form-group">
+                      <label className="form-label">Optional Clerk User ID</label>
+                      <input type="text" className="form-input" placeholder="user_2d..." value={userForm.id} onChange={(e) => setUserForm({ ...userForm, id: e.target.value })} />
+                    </div>
+                  )}
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Name</label>
+                      <input type="text" className="form-input" required value={userForm.full_name} onChange={(e) => setUserForm({ ...userForm, full_name: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Email</label>
+                      <input type="email" className="form-input" required value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Phone</label>
+                      <input type="text" className="form-input" value={userForm.phone_number} onChange={(e) => setUserForm({ ...userForm, phone_number: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Address</label>
+                      <input type="text" className="form-input" value={userForm.location} onChange={(e) => setUserForm({ ...userForm, location: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Position</label>
+                      <input type="text" className="form-input" value={userForm.headline} onChange={(e) => setUserForm({ ...userForm, headline: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Subscription tier</label>
+                      <select className="form-input" value={userForm.subscription_plan} onChange={(e) => setUserForm({ ...userForm, subscription_plan: e.target.value })}>
+                        <option value="free">free</option>
+                        <option value="pro">pro</option>
+                        <option value="elite">elite</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">LinkedIn URL (Optional)</label>
+                      <input type="url" className="form-input" value={userForm.linkedin_url} onChange={(e) => setUserForm({ ...userForm, linkedin_url: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Facebook URL (Optional)</label>
+                      <input type="url" className="form-input" value={userForm.facebook_url} onChange={(e) => setUserForm({ ...userForm, facebook_url: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label className="form-label">Instagram URL (Optional)</label>
+                      <input type="url" className="form-input" value={userForm.instagram_url} onChange={(e) => setUserForm({ ...userForm, instagram_url: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Twitter URL (Optional)</label>
+                      <input type="url" className="form-input" value={userForm.twitter_url} onChange={(e) => setUserForm({ ...userForm, twitter_url: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Profile Photo</label>
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                      {userForm.avatar_url ? (
+                        <img src={userForm.avatar_url} alt="" className="chat-user-item-avatar" />
+                      ) : (
+                        <div className="chat-user-item-avatar" style={{ display: "grid", placeItems: "center", background: "#F3F4F6", color: "#666" }}>+</div>
+                      )}
+                      <button type="button" className="btn btn-secondary" onClick={() => personalInfoPhotoInputRef.current?.click()}>
+                        Choose Your Device
+                      </button>
+                      <input ref={personalInfoPhotoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void handlePersonalInfoPhotoChange(e)} />
+                    </div>
+                  </div>
+
+                  <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>
+                    {editItem ? "Update Personal Information" : "Save Personal Information"}
+                  </button>
+                </form>
+              </details>
+
+              <div className="table-responsive">
+                <table className="table">
+                  <thead>
+                    <tr><th>Photo</th><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Position</th><th>Plan</th><th>Actions</th></tr>
+                  </thead>
+                  <tbody>
+                    {filteredPersonalInfoUsers.map((u) => (
+                      <tr key={`personal-${u.id}`}>
+                        <td><img src={u.avatar_url || "https://randomuser.me/api/portraits/men/32.jpg"} alt="" className="chat-user-item-avatar" /></td>
+                        <td><strong>{u.full_name || "—"}</strong></td>
+                        <td>{u.email || "—"}</td>
+                        <td>{u.phone_number || "—"}</td>
+                        <td>{u.location || "—"}</td>
+                        <td>{u.headline || "—"}</td>
+                        <td><span className="badge badge-info">{u.subscription_plan || "free"}</span></td>
+                        <td>
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("user", u)} title="Edit personal information"><Edit size={14} /></button>
+                            <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("profiles", u.id)} title="Delete personal information"><Trash2 size={14} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredPersonalInfoUsers.length === 0 && (
+                      <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No personal information records available yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -4319,6 +4632,44 @@ export default function App() {
                 <div className="form-group">
                   <label className="form-label">Phone Number</label>
                   <input type="text" className="form-input" value={userForm.phone_number} onChange={(e) => setUserForm({ ...userForm, phone_number: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Address</label>
+                  <input type="text" className="form-input" value={userForm.location} onChange={(e) => setUserForm({ ...userForm, location: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Position</label>
+                  <input type="text" className="form-input" value={userForm.headline} onChange={(e) => setUserForm({ ...userForm, headline: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">LinkedIn URL (Optional)</label>
+                  <input type="url" className="form-input" value={userForm.linkedin_url} onChange={(e) => setUserForm({ ...userForm, linkedin_url: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Facebook URL (Optional)</label>
+                  <input type="url" className="form-input" value={userForm.facebook_url} onChange={(e) => setUserForm({ ...userForm, facebook_url: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Instagram URL (Optional)</label>
+                  <input type="url" className="form-input" value={userForm.instagram_url} onChange={(e) => setUserForm({ ...userForm, instagram_url: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Twitter URL (Optional)</label>
+                  <input type="url" className="form-input" value={userForm.twitter_url} onChange={(e) => setUserForm({ ...userForm, twitter_url: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Profile Photo</label>
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                    {userForm.avatar_url ? (
+                      <img src={userForm.avatar_url} alt="" className="chat-user-item-avatar" />
+                    ) : (
+                      <div className="chat-user-item-avatar" style={{ display: "grid", placeItems: "center", background: "#F3F4F6", color: "#666" }}>+</div>
+                    )}
+                    <button type="button" className="btn btn-secondary" onClick={() => personalInfoPhotoInputRef.current?.click()}>
+                      Choose Your Device
+                    </button>
+                    <input ref={personalInfoPhotoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void handlePersonalInfoPhotoChange(e)} />
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Subscription tier</label>

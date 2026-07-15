@@ -3,10 +3,14 @@ import { Pool } from "pg";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import {
   deleteLocalRecruiterContact,
+  deleteLocalProfile,
   getLocalRecruiterContacts,
+  getLocalProfile,
+  getLocalProfiles,
   getLocalSuccessStories,
   deleteLocalSuccessStory,
   upsertLocalRecruiterContact,
+  upsertLocalProfile,
   upsertLocalSuccessStory,
 } from "../lib/localDb";
 import { supabase } from "../lib/supabase";
@@ -346,6 +350,34 @@ function buildProfilePayload(application: any) {
     role: "client",
     account_status: "active",
     subscription_plan: "free",
+  };
+}
+
+function normalizePersonalInfoPayload(profile: any, fallbackUserId?: string, fallbackEmail?: string) {
+  const profileId = String(profile?.id || fallbackUserId || "").trim();
+  const email = String(profile?.email || fallbackEmail || "").trim();
+  const fullName = String(profile?.full_name || profile?.fullName || "").trim();
+
+  if (!profileId || !email || !fullName) {
+    return null;
+  }
+
+  return {
+    id: profileId,
+    full_name: fullName,
+    email,
+    phone_number: String(profile?.phone_number || profile?.phoneNumber || "").trim(),
+    location: String(profile?.location || "").trim(),
+    headline: String(profile?.headline || "").trim(),
+    avatar_url: String(profile?.avatar_url || profile?.avatarUrl || "").trim(),
+    linkedin_url: String(profile?.linkedin_url || profile?.linkedinUrl || "").trim(),
+    facebook_url: String(profile?.facebook_url || profile?.facebookUrl || "").trim(),
+    instagram_url: String(profile?.instagram_url || profile?.instagramUrl || "").trim(),
+    twitter_url: String(profile?.twitter_url || profile?.twitterUrl || "").trim(),
+    timezone: String(profile?.timezone || "Australia/Melbourne").trim(),
+    role: String(profile?.role || "client").trim(),
+    account_status: String(profile?.account_status || "active").trim(),
+    subscription_plan: String(profile?.subscription_plan || profile?.subscriptionPlan || "free").trim(),
   };
 }
 
@@ -956,6 +988,131 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/tracker/applications failed:", err);
     return res.status(500).json({ error: err.message || "Failed to create tracker application" });
+  }
+});
+
+router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const { data: profilesData, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .neq("role", "admin")
+      .neq("role", "staff")
+      .order("updated_at", { ascending: false });
+
+    if (error && !isMissingRelationError(error)) {
+      throw error;
+    }
+
+    const supabaseProfiles = (profilesData || []) as any[];
+    const localProfiles = await getLocalProfiles();
+    const mergedProfiles = new Map<string, any>();
+
+    for (const profile of supabaseProfiles) {
+      mergedProfiles.set(profile.id, profile);
+    }
+
+    for (const profile of localProfiles) {
+      mergedProfiles.set(profile.id, { ...mergedProfiles.get(profile.id), ...profile });
+    }
+
+    return res.json({
+      profiles: Array.from(mergedProfiles.values()).sort((left, right) =>
+        String(right.updated_at || right.created_at || "").localeCompare(String(left.updated_at || left.created_at || "")),
+      ),
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/personal-info failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch personal information" });
+  }
+});
+
+router.post("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const normalizedProfile = normalizePersonalInfoPayload(req.body?.profile);
+  if (!normalizedProfile) {
+    return res.status(400).json({ error: "Missing personal information payload" });
+  }
+
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { error } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
+      if (error) throw error;
+    }
+
+    const savedProfile = await upsertLocalProfile(normalizedProfile);
+    return res.json({
+      success: true,
+      profile: savedProfile,
+      mode: process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "local_preview",
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/personal-info failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save personal information" });
+  }
+});
+
+router.delete("/admin/personal-info/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const profileId = String(req.params.id || "").trim();
+  if (!profileId) {
+    return res.status(400).json({ error: "Missing personal information id" });
+  }
+
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { error } = await supabase.from("profiles").delete().eq("id", profileId);
+      if (error && !isMissingRelationError(error)) throw error;
+    }
+
+    await deleteLocalProfile(profileId);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/personal-info/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete personal information" });
+  }
+});
+
+router.post("/mobile/profile", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const requester = req.user;
+  if (!requester?.userId) {
+    return res.status(400).json({ error: "Missing authenticated user" });
+  }
+
+  const normalizedProfile = normalizePersonalInfoPayload(req.body?.profile, requester.userId, requester.email);
+  if (!normalizedProfile) {
+    return res.status(400).json({ error: "Missing personal information payload" });
+  }
+
+  if (normalizedProfile.id !== requester.userId && requester.role !== "admin" && requester.role !== "staff") {
+    return res.status(403).json({ error: "Forbidden: Cannot update another user's profile" });
+  }
+
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { error } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
+      if (error) throw error;
+    }
+
+    const savedProfile = await upsertLocalProfile(normalizedProfile);
+    return res.json({
+      success: true,
+      profile: savedProfile,
+      mode: process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "local_preview",
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /mobile/profile failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to update profile" });
   }
 });
 
@@ -1629,6 +1786,11 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       supabase.from("client_scores").select("*").eq("client_id", targetUserId).order("calculated_at", { ascending: false }),
     ]);
 
+    const localProfile = await getLocalProfile(targetUserId);
+    const resolvedProfile = localProfile
+      ? { ...(profileResult.data || {}), ...localProfile }
+      : profileResult.data;
+
     const results = [
       profileResult,
       jobsResult,
@@ -1657,7 +1819,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
 
     return res.json({
       userId: targetUserId,
-      profile: profileResult.data,
+      profile: resolvedProfile,
       jobs: jobsResult.data ?? [],
       applications: applicationsResult.data ?? [],
       savedJobs: savedJobsResult.data ?? [],

@@ -1541,9 +1541,50 @@ export async function updateProfile(
 ) {
   const activeUser = resolveActiveUser(sessionUser);
   try {
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
+    if (token) {
+      const backendResponse = await fetch(`${backendUrl}/api/mobile/profile`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          profile: {
+            id: activeUser.id,
+            full_name: typeof patch.fullName === "string" ? patch.fullName : undefined,
+            email: typeof patch.email === "string" ? patch.email : activeUser.email,
+            phone_number: typeof patch.phoneNumber === "string" ? patch.phoneNumber : undefined,
+            location: typeof patch.location === "string" ? patch.location : undefined,
+            headline: typeof patch.headline === "string" ? patch.headline : undefined,
+            avatar_url: typeof patch.avatarUrl === "string" ? patch.avatarUrl : undefined,
+            linkedin_url: typeof patch.linkedinUrl === "string" ? patch.linkedinUrl : undefined,
+            facebook_url: typeof patch.facebookUrl === "string" ? patch.facebookUrl : undefined,
+            instagram_url: typeof patch.instagramUrl === "string" ? patch.instagramUrl : undefined,
+            twitter_url: typeof patch.twitterUrl === "string" ? patch.twitterUrl : undefined,
+          },
+        }),
+      });
+
+      if (!backendResponse.ok) {
+        const errorPayload = await backendResponse.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${backendResponse.status}`);
+      }
+    }
+
     await ensurePreviewUserRecords(sessionUser);
     const client = requireSupabase();
     const dbPatch: Record<string, any> = {};
+    if (typeof patch.fullName === "string") dbPatch.full_name = patch.fullName;
+    if (typeof patch.headline === "string") dbPatch.headline = patch.headline;
+    if (typeof patch.location === "string") dbPatch.location = patch.location;
+    if (typeof patch.email === "string") dbPatch.email = patch.email;
+    if (typeof patch.phoneNumber === "string") dbPatch.phone_number = patch.phoneNumber;
+    if (typeof patch.linkedinUrl === "string") dbPatch.linkedin_url = patch.linkedinUrl;
+    if (typeof patch.facebookUrl === "string") dbPatch.facebook_url = patch.facebookUrl;
+    if (typeof patch.instagramUrl === "string") dbPatch.instagram_url = patch.instagramUrl;
+    if (typeof patch.twitterUrl === "string") dbPatch.twitter_url = patch.twitterUrl;
     if (typeof patch.darkMode === "boolean") dbPatch.dark_mode = patch.darkMode;
     if (typeof patch.biometric === "boolean") dbPatch.biometric = patch.biometric;
     if (typeof patch.pushNotifications === "boolean") dbPatch.push_notifications = patch.pushNotifications;
@@ -1556,6 +1597,15 @@ export async function updateProfile(
   }
 
   const current = await getLocalSyncSnapshot();
+  if (typeof patch.fullName === "string") current.profile.fullName = patch.fullName;
+  if (typeof patch.headline === "string") current.profile.headline = patch.headline;
+  if (typeof patch.location === "string") current.profile.location = patch.location;
+  if (typeof patch.email === "string") current.profile.email = patch.email;
+  if (typeof patch.phoneNumber === "string") current.profile.phoneNumber = patch.phoneNumber;
+  if (typeof patch.linkedinUrl === "string") current.profile.linkedinUrl = patch.linkedinUrl;
+  if (typeof patch.facebookUrl === "string") current.profile.facebookUrl = patch.facebookUrl;
+  if (typeof patch.instagramUrl === "string") current.profile.instagramUrl = patch.instagramUrl;
+  if (typeof patch.twitterUrl === "string") current.profile.twitterUrl = patch.twitterUrl;
   if (typeof patch.darkMode === "boolean") current.profile.darkMode = patch.darkMode;
   if (typeof patch.biometric === "boolean") current.profile.biometric = patch.biometric;
   if (typeof patch.pushNotifications === "boolean") current.profile.pushNotifications = patch.pushNotifications;

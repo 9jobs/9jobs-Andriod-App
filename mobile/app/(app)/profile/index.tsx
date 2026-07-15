@@ -1,7 +1,7 @@
 import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { useSession } from "@/providers/SessionProvider";
@@ -58,11 +58,28 @@ export default function ProfileScreen() {
   const { signOut } = useSession();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null);
+  const migratedAvatarUrlRef = useRef<string | null>(null);
   const { data: snapshot } = usePreviewSyncQuery();
   const profile = snapshot?.profile;
   const activePlanLabel =
     snapshot?.pricingContent.sections[0]?.items?.find((item) => item.badge === "Active")?.title ?? null;
   const { mutate: updateProfile } = useUpdateProfileMutation();
+
+  async function convertImageUriToDataUrl(uri: string) {
+    return await new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onerror = () => reject(new Error("Failed to read selected image."));
+      xhr.onload = () => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Failed to convert selected image."));
+        reader.onloadend = () => resolve(String(reader.result || ""));
+        reader.readAsDataURL(xhr.response);
+      };
+      xhr.responseType = "blob";
+      xhr.open("GET", uri, true);
+      xhr.send();
+    });
+  }
 
   async function handleAvatarPress() {
     let ImagePickerModule: any;
@@ -103,7 +120,8 @@ export default function ProfileScreen() {
 
               if (!result.canceled && result.assets && result.assets.length > 0) {
                 const selectedUri = result.assets[0].uri;
-                setPendingAvatarUrl(selectedUri);
+                const portableImageUrl = await convertImageUriToDataUrl(selectedUri);
+                setPendingAvatarUrl(portableImageUrl);
               }
             } catch (err) {
               console.error("Image pick error:", err);
@@ -144,6 +162,26 @@ export default function ProfileScreen() {
       setIsSigningOut(false);
     }
   }
+
+  useEffect(() => {
+    const currentAvatarUrl = profile?.avatarUrl || "";
+    if (!currentAvatarUrl || (!currentAvatarUrl.startsWith("file:") && !currentAvatarUrl.startsWith("content:"))) {
+      return;
+    }
+
+    if (migratedAvatarUrlRef.current === currentAvatarUrl) {
+      return;
+    }
+
+    migratedAvatarUrlRef.current = currentAvatarUrl;
+    void convertImageUriToDataUrl(currentAvatarUrl)
+      .then((portableImageUrl) => {
+        updateProfile({ avatarUrl: portableImageUrl } as any);
+      })
+      .catch((error) => {
+        console.warn("Profile avatar migration failed:", error);
+      });
+  }, [profile?.avatarUrl, updateProfile]);
 
   const isDark = colors.background === "#090A08";
 

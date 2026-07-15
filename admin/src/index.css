@@ -145,6 +145,29 @@ body {
   box-shadow: var(--shadow-lime);
 }
 
+.sidebar-subitem {
+  margin-top: 6px;
+  margin-left: 18px;
+  width: calc(100% - 18px);
+  min-height: 42px;
+  font-size: 13px;
+  border-radius: 14px;
+  background-color: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.sidebar-subitem:hover {
+  color: var(--text-light);
+  background-color: var(--bg-dark-hover);
+}
+
+.sidebar-subitem-active {
+  color: var(--text-light);
+  background-color: var(--bg-dark-hover);
+  font-weight: 600;
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding-top: 16px;

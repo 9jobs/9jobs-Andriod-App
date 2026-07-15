@@ -25,7 +25,7 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 // API Routes
 app.use("/api/auth", authRoutes);

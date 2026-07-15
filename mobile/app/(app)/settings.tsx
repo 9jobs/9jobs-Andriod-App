@@ -29,7 +29,7 @@ export default function SettingsScreen() {
         <Row
           icon="profile"
           title="Personal Information"
-          onPress={() => router.push("/(app)/profile")}
+          onPress={() => router.push("/(app)/personal-information")}
         />
         <Divider />
         <Row
