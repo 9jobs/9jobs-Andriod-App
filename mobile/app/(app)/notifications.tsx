@@ -1,134 +1,197 @@
-import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
 import { router } from "expo-router";
-import Svg, { Path, Circle } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
+import {
+  useMarkAllNotificationsAsReadMutation,
+  useMarkNotificationAsReadMutation,
+  usePreviewSyncQuery,
+} from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
-// Initial notification items matching mockup exactly
-const INITIAL_NOTIFICATIONS = [
-  {
-    id: "1",
-    title: "Application viewed",
-    desc: "Stripe viewed your profile · Sr. Frontend Engineer",
-    time: "2m ago",
-    icon: "check",
-    bg: "rgba(163, 230, 53, 0.15)",
-    unread: true,
-    accentColor: colors.accentDark,
-  },
-  {
-    id: "2",
-    title: "Interview scheduled",
-    desc: "Google confirmed Jul 14 at 2:00 PM PST",
-    time: "1h ago",
-    icon: "bell",
-    bg: "#E0F2FE",
-    unread: true,
-    accentColor: "#0284C7",
-  },
-  {
-    id: "3",
-    title: "New match (98%)",
-    desc: "Figma — Staff Product Designer · Remote · $160k",
-    time: "3h ago",
-    icon: "star",
-    bg: "#FEF3C7",
-    unread: false,
-  },
-  {
-    id: "4",
-    title: "Resume expiring",
-    desc: "Update your resume to keep your score current",
-    time: "1d ago",
-    icon: "alert",
-    bg: "#FEE2E2",
-    unread: false,
-  },
-  {
-    id: "5",
-    title: "Score improved!",
-    desc: "Your ATS score jumped to 97. You're in the top 3%.",
-    time: "2d ago",
-    icon: "trending-up",
-    bg: "rgba(163, 230, 53, 0.15)",
-    unread: false,
-  },
-  {
-    id: "6",
-    title: "Recruiter replied",
-    desc: "Sarah Chen replied to your outreach at Google",
-    time: "3d ago",
-    icon: "mail",
-    bg: "#EDE9FE",
-    unread: false,
-  },
-];
+type NotificationVisual = {
+  icon: "check" | "bell" | "star" | "alert" | "trending-up" | "mail";
+  bg: string;
+  accentColor: string;
+};
 
 export default function NotificationsScreen() {
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const { data: snapshot } = usePreviewSyncQuery();
+  const markOneReadMutation = useMarkNotificationAsReadMutation();
+  const markAllReadMutation = useMarkAllNotificationsAsReadMutation();
+  const [selectedNotificationId, setSelectedNotificationId] = useState<number | null>(null);
+  const notifications = (snapshot?.notifications ?? []).map((item) => {
+    const parts = splitNotificationBody(item.body);
+    return {
+      ...item,
+      ...resolveVisuals(item.title, item.body),
+      ...parts,
+    };
+  });
+  const selectedNotification = useMemo(
+    () => notifications.find((item) => item.id === selectedNotificationId) ?? null,
+    [notifications, selectedNotificationId],
+  );
 
   const markAllRead = () => {
-    setNotifications((prev) =>
-      prev.map((item) => ({ ...item, unread: false }))
-    );
+    if (!notifications.some((item) => item.unread) || markAllReadMutation.isPending) {
+      return;
+    }
+
+    markAllReadMutation.mutate();
   };
 
   return (
     <Screen contentStyle={styles.screenContent}>
-      {/* Header Back Button */}
-      <BackHeader label="Back" />
+      <BackHeader
+        label="Back"
+        onPress={() => {
+          if (selectedNotification) {
+            setSelectedNotificationId(null);
+            return;
+          }
+          router.back();
+        }}
+      />
 
-      {/* Title Row */}
       <View style={styles.titleRow}>
-        <Text style={styles.title}>Notifications</Text>
-        {notifications.some((n) => n.unread) && (
+        {!selectedNotification ? <Text style={styles.title}>Notifications</Text> : <View />}
+        {!selectedNotification && notifications.some((n) => n.unread) && (
           <Pressable onPress={markAllRead}>
             <Text style={styles.markReadText}>Mark all read</Text>
           </Pressable>
         )}
       </View>
 
-      {/* Notifications List */}
-      <View style={styles.listStack}>
-        {notifications.map((item) => (
-          <View
-            key={item.id}
-            style={item.unread ? styles.unreadWrapper : styles.flatWrapper}
-          >
-            {item.unread && (
-              <View style={[styles.accentBar, { backgroundColor: item.accentColor }]} />
-            )}
-            <View style={styles.contentRow}>
-              {/* Left Circular Icon Container */}
-              <View style={[styles.iconCircle, { backgroundColor: item.bg }]}>
-                {item.icon === "check" && <CheckIcon />}
-                {item.icon === "bell" && <BellIcon />}
-                {item.icon === "star" && <StarIcon />}
-                {item.icon === "alert" && <AlertIcon />}
-                {item.icon === "trending-up" && <TrendingUpIcon />}
-                {item.icon === "mail" && <MailIcon />}
+      {selectedNotification ? (
+        <Pressable
+          onPress={() => {
+            if (selectedNotification.unread && !markOneReadMutation.isPending) {
+              markOneReadMutation.mutate(selectedNotification.id);
+            }
+          }}
+          style={styles.detailBubbleWrapper}
+        >
+          <View style={[styles.detailQuoteIconCircle, { backgroundColor: selectedNotification.bg }]}>
+            <NotificationIcon icon={selectedNotification.icon} />
+          </View>
+          <View style={styles.detailQuoteCard}>
+            <Text style={styles.quoteText}>
+              {selectedNotification.quote || selectedNotification.summary}
+            </Text>
+          </View>
+        </Pressable>
+      ) : (
+        <View style={styles.listStack}>
+          {notifications.map((item) => (
+            <Pressable
+              key={item.id}
+              onPress={() => {
+                if (item.unread && !markOneReadMutation.isPending) {
+                  markOneReadMutation.mutate(item.id);
+                }
+                setSelectedNotificationId(item.id);
+              }}
+              style={styles.previewCard}
+            >
+              {item.unread ? <View style={[styles.previewAccentBar, { backgroundColor: item.accentColor }]} /> : null}
+              <View style={[styles.previewIconCircle, { backgroundColor: item.bg }]}>
+                <NotificationIcon icon={item.icon} />
               </View>
-
-              {/* Text Information column */}
-              <View style={styles.textContainer}>
+              <View style={styles.previewTextContainer}>
                 <View style={styles.itemTitleRow}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
-                  <Text style={styles.itemTime}>{item.time}</Text>
+                  <Text style={styles.previewTime}>{formatRelativeTime(item.sentAt)}</Text>
                 </View>
-                <Text style={styles.itemDesc}>{item.desc}</Text>
+                {item.summary ? (
+                  <Text style={styles.previewDesc} numberOfLines={2}>
+                    {item.summary}
+                  </Text>
+                ) : null}
               </View>
-            </View>
+            </Pressable>
+          ))}
+
+          {notifications.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No notifications yet</Text>
+            <Text style={styles.emptyText}>Admin panel se aane wali live updates yahan dikhengi.</Text>
           </View>
-        ))}
-      </View>
+          ) : null}
+        </View>
+      )}
     </Screen>
   );
 }
 
-function BackHeader({ label }: { label: string }) {
+function resolveVisuals(title: string, body: string): NotificationVisual {
+  const normalized = `${title} ${body}`.toLowerCase();
+
+  if (normalized.includes("viewed")) {
+    return { icon: "check", bg: "rgba(163, 230, 53, 0.15)", accentColor: colors.accentDark };
+  }
+  if (normalized.includes("interview")) {
+    return { icon: "bell", bg: "#E0F2FE", accentColor: "#0284C7" };
+  }
+  if (normalized.includes("match")) {
+    return { icon: "star", bg: "#FEF3C7", accentColor: "#D97706" };
+  }
+  if (normalized.includes("expire")) {
+    return { icon: "alert", bg: "#FEE2E2", accentColor: "#DC2626" };
+  }
+  if (normalized.includes("score")) {
+    return { icon: "trending-up", bg: "rgba(163, 230, 53, 0.15)", accentColor: colors.accentDark };
+  }
+
+  return { icon: "mail", bg: "#EDE9FE", accentColor: "#7C3AED" };
+}
+
+function formatRelativeTime(iso: string) {
+  const sentAt = new Date(iso).getTime();
+  const diffMs = Date.now() - sentAt;
+  const diffMinutes = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function splitNotificationBody(body: string) {
+  const normalized = body.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return { summary: "", quote: "" };
+  }
+
+  const segments = normalized
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (segments.length > 1) {
+    return {
+      summary: segments.slice(0, -1).join("\n\n"),
+      quote: segments[segments.length - 1],
+    };
+  }
+
+  const quoteMatch = normalized.match(/(["'].*["'])\s*$/s);
+  if (quoteMatch) {
+    const quote = quoteMatch[1].trim();
+    const summary = normalized.slice(0, quoteMatch.index).trim();
+    return { summary, quote };
+  }
+
+  return { summary: normalized, quote: "" };
+}
+
+function BackHeader({ label, onPress }: { label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={() => router.back()} style={styles.backRow}>
+    <Pressable onPress={onPress} style={styles.backRow}>
       <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
         <Path
           d="M19 12H5M5 12L12 19M5 12L12 5"
@@ -143,7 +206,15 @@ function BackHeader({ label }: { label: string }) {
   );
 }
 
-// Icon Components
+function NotificationIcon({ icon }: { icon: NotificationVisual["icon"] }) {
+  if (icon === "check") return <CheckIcon />;
+  if (icon === "bell") return <BellIcon />;
+  if (icon === "star") return <StarIcon />;
+  if (icon === "alert") return <AlertIcon />;
+  if (icon === "trending-up") return <TrendingUpIcon />;
+  return <MailIcon />;
+}
+
 function CheckIcon() {
   return (
     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
@@ -238,98 +309,189 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: 80,
-    gap: spacing.lg,
   },
   backRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    marginTop: spacing.xs,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
   backText: {
-    ...typography.title,
+    ...typography.body,
+    fontWeight: "700",
     color: colors.text,
-    fontSize: 16,
   },
   titleRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 4,
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
   },
   title: {
     ...typography.display,
+    fontSize: 24,
     color: colors.text,
-    fontSize: 28,
-    fontWeight: "800",
-    letterSpacing: -0.5,
   },
   markReadText: {
-    fontSize: 14,
+    ...typography.body,
     fontWeight: "700",
     color: colors.text,
   },
   listStack: {
-    gap: 12,
+    gap: spacing.md,
+  },
+  previewCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    minHeight: 78,
+    borderRadius: 24,
+    backgroundColor: colors.surfaceRaised,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: "rgba(15, 23, 42, 0.05)",
+    ...shadows.card,
+  },
+  previewAccentBar: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+  },
+  previewIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  previewTextContainer: {
+    flex: 1,
+    gap: 2,
+  },
+  previewTime: {
+    ...typography.body,
+    color: colors.mutedText,
+    fontSize: 13,
+    flexShrink: 0,
+  },
+  previewDesc: {
+    ...typography.body,
+    color: colors.mutedText,
+    lineHeight: 20,
   },
   unreadWrapper: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
     overflow: "hidden",
-    position: "relative",
-    paddingVertical: 18,
-    paddingLeft: 22,
-    paddingRight: 18,
+    borderRadius: 28,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: "rgba(15, 23, 42, 0.06)",
     ...shadows.card,
-    marginHorizontal: 2,
   },
   flatWrapper: {
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    position: "relative",
+    borderRadius: 28,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: "rgba(15, 23, 42, 0.06)",
+    ...shadows.card,
   },
   accentBar: {
     position: "absolute",
     left: 0,
     top: 0,
     bottom: 0,
-    width: 5,
+    width: 4,
   },
   contentRow: {
     flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
     alignItems: "center",
-    gap: 14,
   },
   iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  textContainer: {
+    flex: 1,
+    gap: 8,
+  },
+  itemTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  itemTitle: {
+    ...typography.title,
+    fontSize: 17,
+    flex: 1,
+  },
+  itemTime: {
+    ...typography.body,
+    color: colors.mutedText,
+    flexShrink: 0,
+  },
+  itemDesc: {
+    ...typography.body,
+    color: colors.mutedText,
+    lineHeight: 22,
+    fontStyle: "italic",
+  },
+  detailBubbleWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  detailQuoteIconCircle: {
     width: 44,
     height: 44,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  textContainer: {
+  detailQuoteCard: {
     flex: 1,
-    gap: 3,
+    backgroundColor: "#F3EEDF",
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    ...shadows.card,
   },
-  itemTitleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "baseline",
+  quoteText: {
+    ...typography.body,
+    color: "#6B6457",
+    fontStyle: "italic",
+    lineHeight: 24,
+    fontSize: 15,
   },
-  itemTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
+  emptyCard: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radii.xl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+    alignItems: "center",
+    ...shadows.card,
   },
-  itemTime: {
-    fontSize: 11,
+  emptyTitle: {
+    ...typography.title,
+    fontSize: 18,
+    marginBottom: spacing.xs,
+  },
+  emptyText: {
+    ...typography.body,
     color: colors.mutedText,
-    fontWeight: "600",
-  },
-  itemDesc: {
-    fontSize: 13,
-    color: colors.mutedText,
-    fontWeight: "500",
-    lineHeight: 18,
+    textAlign: "center",
   },
 });
