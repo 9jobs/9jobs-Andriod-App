@@ -4,7 +4,6 @@ import type { SignUpPayload } from "@/types/auth";
 const previewFallbackPassword = "Akash@#1234";
 const previewFallbackEmails = new Set([
   "preview-user-9jobs@9jobs.app",
-  "9jobsapplicationservice@gmail.com",
 ]);
 
 export function validateEmail(email: string) {

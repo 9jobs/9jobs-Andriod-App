@@ -5,6 +5,7 @@ import { DarkHeroCard, PremiumScaffold, SoftPanel } from "@/components/premium/P
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { useUpdateApplicationStatusMutation } from "@/features/jobs/hooks";
 import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
+import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing, typography, radii, shadows } from "@/theme";
 import { AppIcon } from "@/components/ui/AppIcon";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -569,7 +570,10 @@ export default function TrackerScreen() {
               </View>
               <Text style={styles.modalMeta}>{selectedJob.company} • {selectedJob.location}</Text>
 
-              <ScrollView contentContainerStyle={styles.modalScroll}>
+              <ScrollView
+                {...verticalScrollProps}
+                contentContainerStyle={styles.modalScroll}
+              >
                 {/* Status and Details */}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Application Stage</Text>

@@ -3,8 +3,66 @@ jest.mock(
   () => require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
 );
 
+type MockQueryResult = {
+  data: any;
+  error: any;
+  select: (...args: any[]) => MockQueryResult;
+  eq: (...args: any[]) => MockQueryResult;
+  or: (...args: any[]) => MockQueryResult;
+  order: (...args: any[]) => MockQueryResult;
+  update: (...args: any[]) => MockQueryResult;
+  delete: (...args: any[]) => MockQueryResult;
+  neq: (...args: any[]) => MockQueryResult;
+  is: (...args: any[]) => MockQueryResult;
+  single: () => MockQueryResult;
+  maybeSingle: () => MockQueryResult;
+  upsert: (...args: any[]) => Promise<{ data: any; error: any }>;
+  insert: (...args: any[]) => Promise<{ data: any; error: any }>;
+};
+
+function createQuery(initialData: any): MockQueryResult {
+  const query: MockQueryResult = {
+    data: initialData,
+    error: null,
+    select: () => query,
+    eq: () => query,
+    or: () => query,
+    order: () => query,
+    update: () => query,
+    delete: () => query,
+    neq: () => query,
+    is: () => query,
+    single: () => {
+      query.data = Array.isArray(query.data) ? query.data[0] ?? null : query.data;
+      return query;
+    },
+    maybeSingle: () => {
+      query.data = Array.isArray(query.data) ? query.data[0] ?? null : query.data;
+      return query;
+    },
+    upsert: async () => ({ data: null, error: null }),
+    insert: async () => ({ data: null, error: null }),
+  };
+
+  return query;
+}
+
+const mockSupabase = {
+  from: (table: string) => {
+    switch (table) {
+      case "profiles":
+      case "user_subscriptions":
+      case "resume_scores":
+      case "system_settings":
+        return createQuery([]);
+      default:
+        return createQuery([]);
+    }
+  },
+};
+
 jest.mock("@/lib/supabase/client", () => ({
-  supabase: null,
+  supabase: mockSupabase,
 }));
 
 jest.mock("@/theme", () => ({
@@ -54,7 +112,7 @@ describe("mobile chat repository fallbacks", () => {
     expect(snapshot.messages).toHaveLength(3);
     expect(snapshot.messages[1].content).toBe("hi");
     expect(snapshot.messages[2].content).toBe(
-      "Thanks for contacting 9Jobs. Your message has been received and shared with our support team. An admin will respond shortly.",
+      "Hello! Welcome to 9Jobs support. How can I help you with your job search today?",
     );
   });
 
@@ -143,5 +201,74 @@ describe("mobile chat repository fallbacks", () => {
     const adminReply = snapshot.messages.find((message: any) => message.content === "Admin reply");
     expect(adminReply?.content).toBe("Admin reply");
     expect(adminReply?.direction).toBe("incoming");
+  });
+
+  test("reconciles a stale backend profile with the currently signed-in user identity", async () => {
+    const { fetchMobileSyncSnapshot } = loadRepository();
+
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token: "session-token" }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          profile: {
+            id: "preview-user-9jobs",
+            full_name: "Karan",
+            headline: "Old preview profile",
+            location: "Remote",
+            email: "preview-user-9jobs@9jobs.app",
+            phone_number: "",
+            avatar_url: null,
+            linkedin_url: "",
+            facebook_url: "",
+            instagram_url: "",
+            twitter_url: "",
+            dark_mode: false,
+            biometric: false,
+            push_notifications: true,
+            weekly_goal: "",
+            subscription_plan: "free",
+            role: "client",
+            account_status: "active",
+            timezone: "Australia/Melbourne",
+          },
+          jobs: [],
+          applications: [],
+          savedJobs: [],
+          categories: [],
+          messages: [],
+          services: [],
+          pricingPlans: [],
+          successStories: [],
+          subscription: null,
+          resumeScore: null,
+          systemSettings: null,
+          interviews: [],
+          followUps: [],
+          recruiterContacts: [],
+          coldEmails: [],
+          clientScores: [],
+          notifications: [],
+        }),
+      } as Response) as jest.Mock;
+
+    const snapshot = await fetchMobileSyncSnapshot({
+      id: "local-akash@9jobs.app",
+      email: "Akash@9jobs.app",
+      fullName: "Akash",
+      phoneNumber: "9999999999",
+    });
+
+    expect(snapshot.profile.id).toBe("local-akash@9jobs.app");
+    expect(snapshot.profile.email).toBe("Akash@9jobs.app");
+    expect(snapshot.profile.fullName).toBe("Akash");
+
+    const storage = require("@react-native-async-storage/async-storage");
+    const rawSnapshot = await storage.getItem("mobile_sync_snapshot_cache:local-akash@9jobs.app");
+    expect(rawSnapshot).toContain("\"fullName\":\"Akash\"");
   });
 });

@@ -1,18 +1,18 @@
 {
   "expo": {
+    "owner": "9jobs",
     "name": "9Jobs",
     "slug": "9jobs-premium-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/branding/9jobs-logo.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#090A08"
-    },
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
+      }
     },
     "android": {
       "package": "com.ninejobs.mobile",
@@ -22,7 +22,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "scheme": "ninejobs",
     "experiments": {
@@ -33,12 +36,28 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#090A08"
+        }
+      ],
       "expo-font",
       "expo-secure-store",
       "@clerk/expo",
       "expo-web-browser",
-      "expo-speech-recognition"
-    ]
+      "expo-speech-recognition",
+      "expo-status-bar"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0dd173d0-df0b-4c54-8204-11b83c680ede"
+      }
+    }
   }
 }

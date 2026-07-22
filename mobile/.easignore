@@ -1,0 +1,17 @@
+.expo/
+.kotlin/
+android/
+node_modules/
+artifacts/
+web-dist/
+android-captures/
+android-captures-reloaded/
+scratch/
+metro.log
+*.png
+window_dump*.xml
+interview_voice_dump.xml
+.env*.local
+npm-debug.*
+yarn-debug.*
+yarn-error.*

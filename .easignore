@@ -1,0 +1,24 @@
+# Keep the mobile Expo project, skip unrelated or heavy local folders.
+backend/
+.agents/
+.codex/
+.git/
+
+# Mobile local artifacts that should never be uploaded to EAS.
+mobile/.expo/
+mobile/.kotlin/
+mobile/android/
+mobile/node_modules/
+mobile/artifacts/
+mobile/web-dist/
+mobile/android-captures/
+mobile/android-captures-reloaded/
+mobile/scratch/
+mobile/metro.log
+mobile/*.png
+mobile/window_dump*.xml
+mobile/interview_voice_dump.xml
+mobile/.env*.local
+mobile/npm-debug.*
+mobile/yarn-debug.*
+mobile/yarn-error.*

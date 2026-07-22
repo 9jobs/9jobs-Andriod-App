@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
 import { router } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery, useSendMessageToAdminMutation } from "@/features/mobile-sync/hooks";
 import { useMarkMessagesAsSeenMutation, useMarkMessagesAsDeliveredMutation } from "@/features/jobs/hooks";
+import { isNearBottom, verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { joinSocketConversation, leaveSocketConversation } from "@/lib/socket/socketService";
@@ -70,6 +71,7 @@ export default function AdminThreadScreen() {
   const [isAttachmentMenuVisible, setIsAttachmentMenuVisible] = useState(false);
   const messages = snapshot?.messages ?? [];
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const stickToBottomRef = useRef(true);
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
 
@@ -87,6 +89,20 @@ export default function AdminThreadScreen() {
     markDelivered.mutate();
     markSeen.mutate();
   }, [messages.length]);
+
+  const handleChatScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    stickToBottomRef.current = isNearBottom(event.nativeEvent);
+  }, []);
+
+  const handleContentSizeChange = useCallback(() => {
+    if (!stickToBottomRef.current) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
 
   const deleteMessage = async (messageId: number) => {
     try {
@@ -480,13 +496,14 @@ export default function AdminThreadScreen() {
 
         <ScrollView
           ref={scrollViewRef}
+          {...verticalScrollProps}
           style={styles.messageScroller}
           contentContainerStyle={[
             styles.messageStack,
             { paddingBottom: 122 + insets.bottom },
           ]}
-          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-          showsVerticalScrollIndicator={false}
+          onScroll={handleChatScroll}
+          onContentSizeChange={handleContentSizeChange}
         >
           <View style={styles.dayChip}>
             <Text style={styles.dayChipText}>Today</Text>

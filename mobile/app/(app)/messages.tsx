@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing } from "@/theme";
 
 type FilterKey = "All" | "Unread" | "Open" | "Resolved";
@@ -138,9 +139,9 @@ export default function MessagesScreen() {
       </View>
 
       <ScrollView
+        {...verticalScrollProps}
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
       >
         {filteredChats.map((chat) => (
           <Pressable key={chat.name} style={styles.row} onPress={openSupportChat}>

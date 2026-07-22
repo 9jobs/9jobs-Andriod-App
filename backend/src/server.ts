@@ -1,42 +1,15 @@
-import express from "express";
 import http from "http";
 import { Server, Socket } from "socket.io";
-import cors from "cors";
 import dotenv from "dotenv";
-import authRoutes from "./routes/auth";
-import chatRoutes from "./routes/chat";
-import interviewPrepRoutes from "./routes/interviewPrep";
-import trackerRoutes from "./routes/tracker";
 import { socketAuthMiddleware } from "./middleware/auth";
 import { sendMessage, setMessageServiceIo } from "./services/messageService";
 import { supabase, hasNewSchema } from "./lib/supabase";
+import { createApp } from "./app";
 
 dotenv.config();
 
-const app = express();
+const app = createApp();
 const port = process.env.PORT || 3000;
-
-// Enable CORS
-app.use(
-  cors({
-    origin: "*", // Adjust for production environments as needed
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
-app.use(express.json({ limit: "10mb" }));
-
-// API Routes
-app.use("/api/auth", authRoutes);
-app.use("/api", chatRoutes);
-app.use("/api", interviewPrepRoutes);
-app.use("/api", trackerRoutes);
-
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "healthy", time: new Date().toISOString() });
-});
 
 // Create HTTP server and Socket.IO server
 const server = http.createServer(app);

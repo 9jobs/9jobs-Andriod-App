@@ -126,6 +126,7 @@ export default function AppLayout() {
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="personal-information" options={{ href: null }} />
       <Tabs.Screen name="about" options={{ href: null }} />
+      <Tabs.Screen name="about-detail" options={{ href: null }} />
       <Tabs.Screen name="contact" options={{ href: null }} />
       <Tabs.Screen name="security" options={{ href: null }} />
       <Tabs.Screen name="tracker-details" options={{ href: null }} />

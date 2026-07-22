@@ -23,8 +23,30 @@ function Test-PortListening {
   )
 
   try {
-    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop | Out-Null
-    return $true
+    $client = [System.Net.Sockets.TcpClient]::new()
+    $connectTask = $client.ConnectAsync([System.Net.IPAddress]::Loopback, $Port)
+    $connected = $connectTask.Wait(500)
+    $isListening = $connected -and $client.Connected
+    $client.Dispose()
+    return $isListening
+  } catch {
+    return $false
+  }
+}
+
+function Test-MetroEndpoint {
+  param(
+    [int]$Port
+  )
+
+  try {
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/status" -UseBasicParsing -TimeoutSec 2
+    if ($response.Content -is [byte[]]) {
+      $content = [System.Text.Encoding]::UTF8.GetString($response.Content).Trim()
+    } else {
+      $content = ($response.Content | Out-String).Trim()
+    }
+    return $response.StatusCode -eq 200 -and $content -eq "packager-status:running"
   } catch {
     return $false
   }
@@ -32,7 +54,7 @@ function Test-PortListening {
 
 function Get-ActiveMetroPort {
   foreach ($port in $MetroPortCandidates) {
-    if (Test-PortListening -Port $port) {
+    if (Test-MetroEndpoint -Port $port) {
       return $port
     }
   }
@@ -42,8 +64,17 @@ function Get-ActiveMetroPort {
 
 function Get-FreeMetroPort {
   foreach ($port in $MetroPortCandidates) {
-    if (-not (Test-PortListening -Port $port)) {
+    $listener = $null
+
+    try {
+      $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+      $listener.Start()
       return $port
+    } catch {
+    } finally {
+      if ($listener) {
+        $listener.Stop()
+      }
     }
   }
 
@@ -97,16 +128,12 @@ function Wait-For-MetroReady {
     [int]$Port
   )
 
-  Write-Host "Waiting for Metro bundle endpoint on port $Port..." -ForegroundColor Cyan
+  Write-Host "Waiting for Metro endpoint on port $Port..." -ForegroundColor Cyan
 
   $attempts = 0
   while ($true) {
-    try {
-      $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port" -UseBasicParsing -TimeoutSec 2
-      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
-        return
-      }
-    } catch {
+    if (Test-MetroEndpoint -Port $Port) {
+      return
     }
 
     Start-Sleep -Seconds 2
@@ -191,15 +218,7 @@ if (-not $MetroPort) {
     -ArgumentList "-NoExit", "-Command", "Set-Location '$ProjectRoot'; npx expo start --dev-client --clear --port $MetroPort" `
     -WorkingDirectory $ProjectRoot | Out-Null
 
-  $attempts = 0
-  while (-not (Test-PortListening -Port $MetroPort)) {
-    Start-Sleep -Seconds 2
-    $attempts += 1
-
-    if ($attempts -ge 45) {
-      throw "Metro did not start on port $MetroPort within the expected time."
-    }
-  }
+  Wait-For-MetroReady -Port $MetroPort
 }
 
 Ensure-EmulatorReady
@@ -210,6 +229,7 @@ Wait-For-MetroReady -Port $MetroPort
 Write-Host "Using Metro port $MetroPort." -ForegroundColor Cyan
 Write-Host "Reversing Metro port to the emulator..." -ForegroundColor Cyan
 & $AdbPath reverse "tcp:$MetroPort" "tcp:$MetroPort" | Out-Null
+& $AdbPath reverse "tcp:8082" "tcp:8082" | Out-Null
 
 Write-Host "Stopping Expo Go if it is running..." -ForegroundColor Cyan
 & $AdbPath shell am force-stop $ExpoGoPackage | Out-Null

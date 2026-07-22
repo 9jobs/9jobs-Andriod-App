@@ -3,6 +3,7 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View 
 import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import { useProfileQuery, useUpdateProfileMutation } from "@/features/jobs/hooks";
 
@@ -130,7 +131,7 @@ export default function PersonalInformationScreen() {
   const inputBackground = colors.background === "#090A08" ? "#2A2B27" : "#EFEAE0";
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <View style={styles.topRow}>
         <Pressable onPress={() => router.back()} style={styles.backRow}>
           <Text style={styles.backArrow}>←</Text>
@@ -139,7 +140,10 @@ export default function PersonalInformationScreen() {
         <Text style={styles.title}>Personal Information</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        {...verticalScrollProps}
+        contentContainerStyle={styles.content}
+      >
         <View style={[styles.card, { backgroundColor: colors.surface }]}>
           <Text style={styles.sectionTitle}>Profile Photo</Text>
           <View style={styles.photoRow}>

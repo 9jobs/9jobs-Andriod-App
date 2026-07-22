@@ -11,12 +11,12 @@ import {
 import { isClerkConfigured } from "@/lib/clerk/config";
 import { previewMobileUser } from "@/lib/data/preview-user";
 import { connectSocket } from "@/lib/socket/socketService";
+import { supabase } from "@/lib/supabase/client";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
 
 const previewCompatibleEmails = new Set([
   previewMobileUser.email.toLowerCase(),
-  "9jobsapplicationservice@gmail.com",
 ]);
 
 type SessionContextValue = {
@@ -41,7 +41,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
 async function syncBackendToken(sessionUser: SessionUser | null) {
   if (!sessionUser) {
-    await AsyncStorage.removeItem("auth_token");
+    await AsyncStorage.multiRemove([storageKeys.authToken, storageKeys.authTokenUserId]);
     return;
   }
   try {
@@ -53,12 +53,16 @@ async function syncBackendToken(sessionUser: SessionUser | null) {
         userId: sessionUser.id,
         email: sessionUser.email,
         fullName: sessionUser.fullName,
+        phoneNumber: sessionUser.phoneNumber,
         role: "client",
       }),
     });
     if (res.ok) {
       const data = await res.json();
-      await AsyncStorage.setItem("auth_token", data.token);
+      await AsyncStorage.multiSet([
+        [storageKeys.authToken, data.token],
+        [storageKeys.authTokenUserId, sessionUser.id],
+      ]);
       await connectSocket();
       console.log("[SessionProvider] Sync: Backend JWT token saved successfully.");
     } else {
@@ -69,8 +73,54 @@ async function syncBackendToken(sessionUser: SessionUser | null) {
   }
 }
 
+async function syncSupabaseProfile(sessionUser: SessionUser | null) {
+  if (!sessionUser || !supabase) {
+    return;
+  }
+
+  try {
+    const profilePayload = {
+      id: sessionUser.id,
+      email: sessionUser.email,
+      full_name: sessionUser.fullName,
+      phone_number: sessionUser.phoneNumber || "",
+      role: "client",
+      account_status: "active",
+      subscription_plan: "free",
+    };
+
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .upsert([profilePayload], { onConflict: "id" });
+
+    if (profileError) {
+      throw profileError;
+    }
+
+    const { error: subscriptionError } = await supabase
+      .from("user_subscriptions")
+      .upsert([{ user_id: sessionUser.id, plan_id: "free", status: "active" }], { onConflict: "user_id" });
+
+    if (subscriptionError) {
+      throw subscriptionError;
+    }
+  } catch (err) {
+    console.warn("[SessionProvider] Sync: Error syncing profile to Supabase:", err);
+  }
+}
+
 async function clearPreviewSnapshotCache() {
-  await AsyncStorage.removeItem("mobile_sync_snapshot_cache");
+  const keys = await AsyncStorage.getAllKeys();
+  const removableKeys = keys.filter(
+    (key) =>
+      key === storageKeys.snapshotCache ||
+      key.startsWith(`${storageKeys.snapshotCache}:`) ||
+      key === storageKeys.authToken ||
+      key === storageKeys.authTokenUserId,
+  );
+  if (removableKeys.length > 0) {
+    await AsyncStorage.multiRemove(removableKeys);
+  }
 }
 
 function resolvePreviewCompatibleUser(user: SessionUser | null) {
@@ -82,11 +132,12 @@ function resolvePreviewCompatibleUser(user: SessionUser | null) {
     return user;
   }
 
-  return {
-    id: previewMobileUser.id,
-    email: previewMobileUser.email,
-    fullName: previewMobileUser.fullName,
-  } satisfies SessionUser;
+      return {
+        id: previewMobileUser.id,
+        email: previewMobileUser.email,
+        fullName: previewMobileUser.fullName,
+        phoneNumber: user.phoneNumber,
+      } satisfies SessionUser;
 }
 
 function MissingClerkSessionProvider({ children }: PropsWithChildren) {
@@ -108,6 +159,7 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     syncBackendToken(user);
+    syncSupabaseProfile(user);
   }, [user]);
 
   const value = useMemo<SessionContextValue>(
@@ -125,6 +177,7 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
           id: payload?.id ?? previewMobileUser.id,
           email: payload?.email ?? previewMobileUser.email,
           fullName: payload?.fullName ?? previewMobileUser.fullName,
+          phoneNumber: payload?.phoneNumber,
         };
 
         await clearPreviewSnapshotCache();
@@ -203,11 +256,17 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
         [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
         email.split("@")[0] ||
         "9Jobs Candidate",
+      phoneNumber:
+        user.primaryPhoneNumber?.phoneNumber ||
+        (typeof user.unsafeMetadata?.phoneNumber === "string"
+          ? user.unsafeMetadata.phoneNumber
+          : undefined),
     });
   }, [isLocallySignedOut, isSignedIn, localFallbackUser, user]);
 
   useEffect(() => {
     syncBackendToken(sessionUser);
+    syncSupabaseProfile(sessionUser);
   }, [sessionUser]);
 
   const value = useMemo<SessionContextValue>(
@@ -226,6 +285,7 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
           id: payload?.id ?? previewMobileUser.id,
           email: payload?.email ?? previewMobileUser.email,
           fullName: payload?.fullName ?? previewMobileUser.fullName,
+          phoneNumber: payload?.phoneNumber,
         };
 
         await clearPreviewSnapshotCache();

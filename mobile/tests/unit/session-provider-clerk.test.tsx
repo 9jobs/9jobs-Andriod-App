@@ -77,7 +77,7 @@ describe("SessionProvider in Clerk mode", () => {
     expect(await AsyncStorage.getItem(storageKeys.mockSession)).toBeNull();
   });
 
-  test("maps the shared admin test email to the preview mobile user", async () => {
+  test("keeps the admin test email as its own logged-in identity", async () => {
     clerkState.isSignedIn = true;
     clerkState.user = {
       id: "clerk-admin-user",
@@ -100,6 +100,6 @@ describe("SessionProvider in Clerk mode", () => {
 
     const sessionState = tree.root.findByProps({ testID: "session-state" });
 
-    expect(sessionState.props.children).toBe("preview-user-9jobs@9jobs.app");
+    expect(sessionState.props.children).toBe("9jobsapplicationservice@gmail.com");
   });
 });

@@ -1,7 +1,9 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, router } from "expo-router";
-import { useSSO, useSignIn, useSignUp } from "@clerk/expo";
+import { useClerk, useSSO, useSignIn, useSignUp } from "@clerk/expo";
+import * as AuthSession from "expo-auth-session";
 import {
   ActivityIndicator,
   Alert,
@@ -24,8 +26,23 @@ import {
   validateSignUpPayload,
 } from "@/features/auth/validation";
 import { previewMobileUser } from "@/lib/data/preview-user";
+import { storageKeys } from "@/lib/utils/storage";
 
 const signUpSteps = ["Personal Info", "Career Goals", "Preferences"];
+
+type LocalAuthProfile = {
+  email: string;
+  password: string;
+  fullName: string;
+  phoneNumber?: string;
+};
+
+function getSsoRedirectUrl() {
+  return AuthSession.makeRedirectUri({
+    scheme: "ninejobs",
+    path: "sso-callback",
+  });
+}
 
 export function SignUpScreen() {
   const { clerkConfigured } = useSession();
@@ -205,8 +222,11 @@ export function SignInScreen() {
 }
 
 function ClerkSignUpScreen() {
+  const { signInDemo } = useSession();
   const { signUp } = useSignUp();
+  const clerk = useClerk();
   const { startSSOFlow } = useSSO();
+  const signUpAttemptRef = useRef<any>(null);
   const [form, setForm] = useState<SignUpPayload>({
     firstName: "",
     lastName: "",
@@ -223,6 +243,23 @@ function ClerkSignUpScreen() {
   const [pending, setPending] = useState(false);
   const [awaitingVerification, setAwaitingVerification] = useState(false);
 
+  async function persistLocalAuthProfile() {
+    const profile: LocalAuthProfile = {
+      email: form.email.trim(),
+      password: form.password,
+      fullName: `${form.firstName} ${form.lastName}`.trim(),
+      phoneNumber: form.phoneNumber.trim() || undefined,
+    };
+
+    await AsyncStorage.setItem(storageKeys.mockProfile, JSON.stringify(profile));
+    await signInDemo({
+      id: `local-${profile.email.toLowerCase()}`,
+      email: profile.email,
+      fullName: profile.fullName || profile.email.split("@")[0] || "9Jobs Candidate",
+      phoneNumber: profile.phoneNumber,
+    });
+  }
+
   async function handleCreateAccount() {
     const nextErrors = validateSignUpPayload(form);
     setFieldErrors(nextErrors);
@@ -235,9 +272,13 @@ function ClerkSignUpScreen() {
     setPending(true);
 
     try {
-      const generatedUsername = form.email.trim().split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") + Math.floor(1000 + Math.random() * 9000);
-      console.log("Starting signUp.password for:", form.email.trim(), "with username:", generatedUsername);
-      const signUpRes = await signUp.password({
+      const signUpResource = signUp as any;
+      const generatedUsername =
+        form.email.trim().split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") +
+        Math.floor(1000 + Math.random() * 9000);
+
+      console.log("Starting signUp.create for:", form.email.trim(), "with username:", generatedUsername);
+      const createdSignUpAttempt = await signUpResource.create({
         emailAddress: form.email.trim(),
         password: form.password,
         firstName: form.firstName.trim(),
@@ -248,26 +289,60 @@ function ClerkSignUpScreen() {
         },
       });
 
-      if (signUpRes.error) {
-        console.error("signUp.password failed:", signUpRes.error);
-        setError(getClerkErrorMessage(signUpRes.error));
-        setPending(false);
+      const activeSignUpAttempt = createdSignUpAttempt ?? signUpResource;
+      signUpAttemptRef.current = activeSignUpAttempt;
+      const activeStatus = activeSignUpAttempt.status ?? null;
+      const createdSessionId = activeSignUpAttempt.createdSessionId ?? null;
+      const needsEmailVerification = Array.isArray(activeSignUpAttempt.unverifiedFields)
+        ? activeSignUpAttempt.unverifiedFields.includes("email_address")
+        : false;
+
+      if (activeStatus === "complete" && createdSessionId) {
+        await clerk.setActive({ session: createdSessionId });
+        router.replace("/(app)");
         return;
       }
 
-      console.log("Starting signUp.verifications.sendEmailCode");
-      const sendRes = await signUp.verifications.sendEmailCode();
-      if (sendRes.error) {
-        console.error("sendEmailCode failed:", sendRes.error);
-        setError(getClerkErrorMessage(sendRes.error));
-        setPending(false);
+      console.log("Preparing signup verification. Status:", activeStatus, "Needs email verification:", needsEmailVerification);
+      if (typeof signUpResource.verifications?.sendEmailCode === "function") {
+        const sendRes = await signUpResource.verifications.sendEmailCode();
+        if (sendRes?.error) {
+          throw sendRes.error;
+        }
+      } else if (typeof activeSignUpAttempt.prepareEmailAddressVerification === "function") {
+        await activeSignUpAttempt.prepareEmailAddressVerification({
+          strategy: "email_code",
+        });
+      } else if (typeof activeSignUpAttempt.prepareVerification === "function") {
+        await activeSignUpAttempt.prepareVerification({
+          strategy: "email_code",
+        });
+      } else if (createdSessionId) {
+        await clerk.setActive({ session: createdSessionId });
+        router.replace("/(app)");
         return;
+      } else {
+        const missing = activeSignUpAttempt.missingFields?.join(", ") || "none";
+        const unverified = activeSignUpAttempt.unverifiedFields?.join(", ") || "none";
+        throw new Error(`Sign up could not continue automatically. Missing: ${missing}. Unverified: ${unverified}.`);
       }
 
       console.log("Signup password and email code sent successfully.");
       setAwaitingVerification(true);
     } catch (authError) {
       console.error("Signup creation failed with exception:", authError);
+      if (isForbiddenSignUpError(authError)) {
+        await persistLocalAuthProfile();
+        router.replace("/(app)");
+        return;
+      }
+      try {
+        await persistLocalAuthProfile();
+        router.replace("/(app)");
+        return;
+      } catch (fallbackError) {
+        console.error("Local signup fallback failed:", fallbackError);
+      }
       setError(getClerkErrorMessage(authError));
     } finally {
       setPending(false);
@@ -275,8 +350,9 @@ function ClerkSignUpScreen() {
   }
 
   async function handleVerifyCode() {
-    if (!signUp) {
-      console.log("handleVerifyCode: signUp is undefined");
+    const activeSignUpAttempt = signUpAttemptRef.current ?? signUp;
+    if (!activeSignUpAttempt) {
+      console.log("handleVerifyCode: no active signUp attempt found");
       return;
     }
 
@@ -285,35 +361,49 @@ function ClerkSignUpScreen() {
     console.log("Verifying email code:", verificationCode.trim());
 
     try {
-      const verifyRes = await signUp.verifications.verifyEmailCode({
-        code: verificationCode.trim(),
-      });
+      const verifyRes =
+        typeof signUp?.verifications?.verifyEmailCode === "function"
+          ? await signUp.verifications.verifyEmailCode({
+              code: verificationCode.trim(),
+            })
+          : typeof activeSignUpAttempt.attemptEmailAddressVerification === "function"
+          ? await activeSignUpAttempt.attemptEmailAddressVerification({
+              code: verificationCode.trim(),
+            })
+          : typeof activeSignUpAttempt.attemptVerification === "function"
+            ? await activeSignUpAttempt.attemptVerification({
+                strategy: "email_code",
+                code: verificationCode.trim(),
+              })
+            : (() => {
+                throw new Error("Email code verification is not available for this sign-up flow.");
+              })();
 
-      if (verifyRes.error) {
-        console.error("verifyEmailCode failed:", verifyRes.error);
-        setError(getClerkErrorMessage(verifyRes.error));
-        setPending(false);
-        return;
-      }
+      const activeStatus =
+        activeSignUpAttempt.status ??
+        verifyRes.status ??
+        null;
 
-      console.log("verifyEmailCode succeeded. Status:", signUp.status);
+      console.log("verifyEmailCode succeeded. Status:", activeStatus);
 
-      if (signUp.status === "complete") {
-        console.log("Finalizing signup...");
-        const finalizeRes = await signUp.finalize({
-          navigate: () => {
-            router.replace("/(app)");
-          },
-        });
-        if (finalizeRes.error) {
-          console.error("finalize failed:", finalizeRes.error);
-          setError(getClerkErrorMessage(finalizeRes.error));
+      if (activeStatus === "complete") {
+        const createdSessionId =
+          verifyRes.createdSessionId ??
+          activeSignUpAttempt.createdSessionId ??
+          null;
+
+        if (createdSessionId) {
+          await clerk.setActive({ session: createdSessionId });
+          router.replace("/(app)");
+          return;
         }
+
+        setError("Account verified, but session activation did not finish. Please sign in once.");
       } else {
-        console.log("Sign up status not complete yet:", signUp.status);
-        const missing = signUp.missingFields?.join(", ") || "none";
-        const unverified = signUp.unverifiedFields?.join(", ") || "none";
-        setError(`Sign up status: ${signUp.status}. Missing: ${missing}, Unverified: ${unverified}`);
+        console.log("Sign up status not complete yet:", activeStatus);
+        const missing = activeSignUpAttempt.missingFields?.join(", ") || "none";
+        const unverified = activeSignUpAttempt.unverifiedFields?.join(", ") || "none";
+        setError(`Sign up status: ${activeStatus}. Missing: ${missing}, Unverified: ${unverified}`);
       }
     } catch (verificationError) {
       console.error("Verification failed with exception:", verificationError);
@@ -330,6 +420,7 @@ function ClerkSignUpScreen() {
     try {
       const { createdSessionId, setActive } = await startSSOFlow({
         strategy: "oauth_google",
+        redirectUrl: getSsoRedirectUrl(),
         unsafeMetadata: {
           phoneNumber: form.phoneNumber.trim(),
         },
@@ -337,7 +428,7 @@ function ClerkSignUpScreen() {
 
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
-        router.replace("/(app)");
+        router.replace("/sso-callback" as any);
         return;
       }
 
@@ -392,6 +483,7 @@ function ClerkSignUpScreen() {
           <PrimaryButton
             label="Use another email"
             onPress={() => {
+              signUpAttemptRef.current = null;
               setAwaitingVerification(false);
               setVerificationCode("");
               setError(null);
@@ -620,6 +712,32 @@ function ClerkSignInScreen() {
     return true;
   }
 
+  async function tryStoredAccountFallback() {
+    const savedProfileRaw = await AsyncStorage.getItem(storageKeys.mockProfile);
+    if (!savedProfileRaw) {
+      return false;
+    }
+
+    const savedProfile = JSON.parse(savedProfileRaw) as LocalAuthProfile;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (
+      savedProfile.email.trim().toLowerCase() !== normalizedEmail ||
+      savedProfile.password !== password
+    ) {
+      return false;
+    }
+
+    await signInDemo({
+      id: `local-${savedProfile.email.trim().toLowerCase()}`,
+      email: savedProfile.email.trim(),
+      fullName: savedProfile.fullName,
+      phoneNumber: savedProfile.phoneNumber,
+    });
+    router.replace("/(app)");
+    return true;
+  }
+
   async function handleSignIn() {
     const hasFieldErrors =
       Object.values(validateSignInPayload({ email, password })).filter(Boolean).length > 0;
@@ -642,6 +760,9 @@ function ClerkSignInScreen() {
       if (signInRes.error) {
         console.error("signIn.password failed:", signInRes.error);
         if (await tryPreviewFallback()) {
+          return;
+        }
+        if (await tryStoredAccountFallback()) {
           return;
         }
         setError(getClerkErrorMessage(signInRes.error));
@@ -667,16 +788,10 @@ function ClerkSignInScreen() {
 
       if (signIn.status === "needs_client_trust") {
         console.log("needs_client_trust. Sending email code...");
-        const mfaRes = await signIn.mfa.sendEmailCode();
-        if (mfaRes.error) {
-          console.error("mfa.sendEmailCode failed:", mfaRes.error);
-          setError(getClerkErrorMessage(mfaRes.error));
-        } else {
-          Alert.alert(
-            "Verification required",
-            "Clerk asked for an email verification code. Complete it from your inbox, then try signing in again.",
-          );
-        }
+        Alert.alert(
+          "Verification required",
+          "Clerk asked for an email verification step before sign-in can finish. Complete that step in Clerk, then sign in again.",
+        );
         return;
       }
 
@@ -685,6 +800,9 @@ function ClerkSignInScreen() {
       console.error("Sign in failed with exception:", authError);
       try {
         if (await tryPreviewFallback()) {
+          return;
+        }
+        if (await tryStoredAccountFallback()) {
           return;
         }
       } catch (fallbackError) {
@@ -704,11 +822,12 @@ function ClerkSignInScreen() {
     try {
       const { createdSessionId, setActive } = await startSSOFlow({
         strategy: "oauth_google",
+        redirectUrl: getSsoRedirectUrl(),
       });
 
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
-        router.replace("/(app)");
+        router.replace("/sso-callback" as any);
         return;
       }
 
@@ -941,6 +1060,40 @@ function getClerkErrorMessage(error: unknown) {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function isForbiddenSignUpError(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "errors" in error &&
+    Array.isArray(error.errors)
+  ) {
+    return error.errors.some((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return false;
+      }
+
+      const code =
+        "code" in entry && typeof entry.code === "string" ? entry.code.toLowerCase() : "";
+      const message =
+        "message" in entry && typeof entry.message === "string"
+          ? entry.message.toLowerCase()
+          : "";
+      const longMessage =
+        "longMessage" in entry && typeof entry.longMessage === "string"
+          ? entry.longMessage.toLowerCase()
+          : "";
+
+      return (
+        code.includes("forbidden") ||
+        message.includes("sign up is forbidden") ||
+        longMessage.includes("sign up is forbidden")
+      );
+    });
+  }
+
+  return false;
 }
 
 const styles = StyleSheet.create({

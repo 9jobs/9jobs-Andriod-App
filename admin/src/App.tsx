@@ -6,7 +6,7 @@ import { parseHiringManagersCsv } from "./lib/hiringManagers";
 import { io } from "socket.io-client";
 
 let adminSocket: any = null;
-const BACKEND_URL = "http://localhost:3000";
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000" : "");
 const previewTrackerClient = {
   id: "preview-user-9jobs",
   full_name: "Test User",
@@ -328,6 +328,92 @@ function mergePreviewJobs(existingJobs: any[]) {
   return Array.from(jobMap.values());
 }
 
+function mergeSavedJobEntriesFromRows({
+  savedJobsData,
+  applicationsData,
+  profilesData,
+  jobsData,
+}: {
+  savedJobsData: any[];
+  applicationsData: any[];
+  profilesData: any[];
+  jobsData: any[];
+}) {
+  const profileMap = new Map(profilesData.map((profile) => [profile.id, profile]));
+  const jobMap = new Map(jobsData.map((job) => [job.id, job]));
+  const entryMap = new Map<string, any>();
+
+  for (const row of savedJobsData) {
+    const compositeKey = `${row.user_id}:${row.job_id}`;
+    const job = jobMap.get(row.job_id) || null;
+    const profile = profileMap.get(row.user_id) || null;
+    const linkedApplication =
+      applicationsData.find((application) => (application.user_id || application.client_id) === row.user_id && application.job_id === row.job_id) || null;
+
+    entryMap.set(compositeKey, {
+      id: linkedApplication?.id ? String(linkedApplication.id) : compositeKey,
+      application_id: linkedApplication?.id ? String(linkedApplication.id) : null,
+      user_id: row.user_id,
+      client_id: row.user_id,
+      job_id: row.job_id,
+      status: linkedApplication?.status || "saved",
+      current_stage: linkedApplication?.current_stage || linkedApplication?.status || "saved",
+      is_saved: true,
+      application_date: linkedApplication?.application_date || null,
+      applied_at: linkedApplication?.applied_at || null,
+      created_at: row.created_at || linkedApplication?.created_at,
+      profiles: profile,
+      jobs: job,
+      job_title: linkedApplication?.job_title || job?.title || "",
+      company_name: linkedApplication?.company_name || job?.company || "",
+      job_location: linkedApplication?.job_location || job?.location || "",
+      salary_range: linkedApplication?.salary_range || job?.salary || "",
+      employment_type: linkedApplication?.employment_type || job?.job_type || "Full-time",
+      job_description: linkedApplication?.job_description || job?.description || "",
+      source_url: linkedApplication?.source_url || job?.job_link || "",
+    });
+  }
+
+  for (const application of applicationsData) {
+    const isSaved = Boolean(application.is_saved) || application.status === "saved";
+    if (!isSaved) continue;
+
+    const compositeKey = `${application.user_id || application.client_id}:${application.job_id}`;
+    if (entryMap.has(compositeKey)) continue;
+
+    const job = jobMap.get(application.job_id) || null;
+    const profile = profileMap.get(application.user_id || application.client_id) || null;
+    entryMap.set(compositeKey, {
+      id: String(application.id),
+      application_id: String(application.id),
+      user_id: application.user_id || application.client_id,
+      client_id: application.client_id || application.user_id,
+      job_id: application.job_id,
+      status: application.status || "saved",
+      current_stage: application.current_stage || application.status || "saved",
+      is_saved: Boolean(application.is_saved) || application.status === "saved",
+      application_date: application.application_date || null,
+      applied_at: application.applied_at || null,
+      created_at: application.created_at,
+      profiles: profile,
+      jobs: job,
+      job_title: application.job_title || job?.title || "",
+      company_name: application.company_name || job?.company || "",
+      job_location: application.job_location || job?.location || "",
+      salary_range: application.salary_range || job?.salary || "",
+      employment_type: application.employment_type || job?.job_type || "Full-time",
+      job_description: application.job_description || job?.description || "",
+      source_url: application.source_url || job?.job_link || "",
+    });
+  }
+
+  return Array.from(entryMap.values()).sort((a, b) => {
+    const aTime = new Date(a.created_at || 0).getTime();
+    const bTime = new Date(b.created_at || 0).getTime();
+    return bTime - aTime;
+  });
+}
+
 function disconnectAdminSocket() {
   if (adminSocket) {
     console.log("[Admin Socket] Disconnecting socket.");
@@ -632,7 +718,7 @@ export default function App() {
     async function exchangeClerkToken() {
       if (isSignedIn && user) {
         try {
-          const res = await fetch("http://localhost:3000/api/auth/token", {
+          const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -862,7 +948,7 @@ export default function App() {
       if (validatePreviewAdminLogin(emailInput, passwordInput)) {
         // Exchange credentials for JWT token on backend
         try {
-          const res = await fetch("http://localhost:3000/api/auth/token", {
+          const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -978,6 +1064,69 @@ export default function App() {
     if (fallbackResult.error) {
       throw fallbackResult.error;
     }
+  };
+
+  const syncSavedJobFlag = async (userId: string, jobId: string, isSaved: boolean) => {
+    if (isSaved) {
+      const { error } = await supabase.from("saved_jobs").upsert([{ user_id: userId, job_id: jobId }], { onConflict: "user_id,job_id" });
+      if (error && !isRowLevelSecurityError(error) && !isMissingRelationError(error)) {
+        throw error;
+      }
+      return;
+    }
+
+    const { error } = await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", jobId);
+    if (error && !isRowLevelSecurityError(error) && !isMissingRelationError(error)) {
+      throw error;
+    }
+  };
+
+  const saveTrackerApplicationDirectly = async (
+    application: any,
+    jobRecord?: any,
+    options?: { skipJobUpsert?: boolean },
+  ) => {
+    if (jobRecord?.id && !options?.skipJobUpsert) {
+      await upsertJobRecord(jobRecord);
+    }
+
+    const payload = {
+      ...application,
+      current_stage: application.current_stage || application.status,
+      is_saved: Boolean(application.is_saved),
+      is_active:
+        application.is_active === undefined
+          ? !["saved", "hired", "rejected", "withdrawn", "closed"].includes(String(application.status || ""))
+          : Boolean(application.is_active),
+    };
+
+    let query;
+    if (application.id) {
+      query = supabase.from("applications").update(payload).eq("id", Number(application.id)).select().single();
+    } else {
+      const { data: existingApplication, error: existingReadError } = await supabase
+        .from("applications")
+        .select("id")
+        .eq("user_id", payload.user_id)
+        .eq("job_id", payload.job_id)
+        .maybeSingle();
+
+      if (existingReadError) {
+        throw existingReadError;
+      }
+
+      query = existingApplication?.id
+        ? supabase.from("applications").update(payload).eq("id", Number(existingApplication.id)).select().single()
+        : supabase.from("applications").insert([payload]).select().single();
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      throw error;
+    }
+
+    await syncSavedJobFlag(payload.user_id, payload.job_id, Boolean(payload.is_saved));
+    return data;
   };
 
   const toAdminErrorMessage = (error: unknown) => {
@@ -1129,6 +1278,9 @@ export default function App() {
             throw new Error(payload?.error || `HTTP error ${response.status}`);
           }
           return response.json();
+        }).catch((error) => {
+          console.warn("Admin personal-info backend fetch failed, continuing with Supabase data:", error);
+          return { profiles: [] as any[] };
         })
       : Promise.resolve({ profiles: [] as any[] });
 
@@ -1174,7 +1326,7 @@ export default function App() {
       profileMap.set(profile.id, { ...profileMap.get(profile.id), ...profile });
     }
 
-    if (!profileMap.has(previewTrackerClient.id)) {
+    if (import.meta.env.DEV && !profileMap.has(previewTrackerClient.id)) {
       profileMap.set(previewTrackerClient.id, previewTrackerClient);
     }
 
@@ -1260,24 +1412,49 @@ export default function App() {
   };
 
   const fetchSavedJobs = async () => {
-    const token = await ensureAdminToken();
-    if (!token) {
-      throw new Error("Admin auth token missing. Please sign in again.");
+    try {
+      const token = await ensureAdminToken();
+      if (token && BACKEND_URL) {
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/saved-jobs`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        setSavedJobEntries(payload.entries || []);
+        return;
+      }
+    } catch (backendError) {
+      console.warn("fetchSavedJobs backend call failed, falling back to Supabase direct query:", backendError);
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/admin/tracker/saved-jobs`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const [savedJobsResult, applicationsResult, profilesResult, jobsResult] = await Promise.all([
+      supabase.from("saved_jobs").select("*").order("created_at", { ascending: false }),
+      supabase.from("applications").select("*").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("*"),
+      supabase.from("jobs").select("*"),
+    ]);
 
-    if (!response.ok) {
-      const errorPayload = await response.json().catch(() => null);
-      throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+    const results = [savedJobsResult, applicationsResult, profilesResult, jobsResult];
+    const firstError = results.find((result) => result.error && !isRowLevelSecurityError(result.error) && !isMissingRelationError(result.error))?.error;
+    if (firstError) {
+      throw firstError;
     }
 
-    const payload = await response.json();
-    setSavedJobEntries(payload.entries || []);
+    setSavedJobEntries(
+      mergeSavedJobEntriesFromRows({
+        savedJobsData: (savedJobsResult.data || []) as any[],
+        applicationsData: (applicationsResult.data || []) as any[],
+        profilesData: (profilesResult.data || []) as any[],
+        jobsData: (jobsResult.data || []) as any[],
+      }),
+    );
   };
 
   const fetchSuccessStories = async () => {
@@ -1456,7 +1633,7 @@ export default function App() {
   const fetchChatUsers = async () => {
     try {
       const token = localStorage.getItem("admin_auth_token");
-      const res = await fetch("http://localhost:3000/api/admin/conversations", {
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations`, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -1597,7 +1774,7 @@ export default function App() {
       const token = localStorage.getItem("admin_auth_token");
       
       // 1. Mark messages seen on backend
-      await fetch(`http://localhost:3000/api/admin/conversations/${userId}/seen`, {
+      await fetch(`${BACKEND_URL}/api/admin/conversations/${userId}/seen`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`
@@ -1605,7 +1782,7 @@ export default function App() {
       });
 
       // 2. Fetch messages from backend
-      const res = await fetch(`http://localhost:3000/api/admin/conversations/${userId}/messages`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${userId}/messages`, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -1819,26 +1996,31 @@ export default function App() {
           job_description: payload.description,
           created_by_admin_id: user?.id || "admin",
         };
-        const token = await ensureAdminToken();
-        if (!token) {
-          throw new Error("Admin auth token missing. Please sign in again.");
-        }
+        try {
+          const token = await ensureAdminToken();
+          if (!token || !BACKEND_URL) {
+            throw new Error("Backend tracker route unavailable.");
+          }
 
-        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/applications`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            application: trackerPayload,
-            job: jobRecord,
-          }),
-        });
+          const response = await fetch(`${BACKEND_URL}/api/admin/tracker/applications`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              application: trackerPayload,
+              job: jobRecord,
+            }),
+          });
 
-        if (!response.ok) {
-          const errorPayload = await response.json().catch(() => null);
-          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+          if (!response.ok) {
+            const errorPayload = await response.json().catch(() => null);
+            throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+          }
+        } catch (backendError) {
+          console.warn("handleSaveJob backend tracker save failed, falling back to direct Supabase upsert:", backendError);
+          await saveTrackerApplicationDirectly(trackerPayload, jobRecord);
         }
       } else if (editItem) {
         await upsertJobRecord({ id: editItem.id, ...payload, posted_at: editItem.posted_at || "Just now" });
@@ -2064,26 +2246,31 @@ export default function App() {
         job_description: selectedJob.description || "",
         created_by_admin_id: user?.id || "admin",
       };
-      const token = await ensureAdminToken();
-      if (!token) {
-        throw new Error("Admin auth token missing. Please sign in again.");
-      }
+      try {
+        const token = await ensureAdminToken();
+        if (!token || !BACKEND_URL) {
+          throw new Error("Backend tracker route unavailable.");
+        }
 
-      const res = await fetch(`${BACKEND_URL}/api/admin/tracker/applications`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          application: payload,
-          job: selectedJob,
-        }),
-      });
+        const res = await fetch(`${BACKEND_URL}/api/admin/tracker/applications`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            application: payload,
+            job: selectedJob,
+          }),
+        });
 
-      if (!res.ok) {
-        const errorPayload = await res.json().catch(() => null);
-        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        }
+      } catch (backendError) {
+        console.warn("handleSaveTracker backend tracker save failed, falling back to direct Supabase upsert:", backendError);
+        await saveTrackerApplicationDirectly(payload, selectedJob, { skipJobUpsert: true });
       }
 
       await logActivity(payload.user_id, editItem?.id ?? null, "application_saved", "Application saved", "Application tracker entry created or updated from admin panel.", editItem ?? null, payload);
@@ -2520,28 +2707,40 @@ export default function App() {
     if (!confirm("Are you sure you want to delete this saved job?")) return;
 
     try {
-      const token = await ensureAdminToken();
-      if (!token) {
-        throw new Error("Admin auth token missing. Please sign in again.");
-      }
+      try {
+        const token = await ensureAdminToken();
+        if (!token || !BACKEND_URL) {
+          throw new Error("Backend saved-jobs route unavailable.");
+        }
 
-      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/saved-jobs`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          applicationId: entry.application_id || null,
-          jobId: entry.job_id,
-          userId: entry.user_id,
-          status: entry.status || "saved",
-        }),
-      });
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/saved-jobs`, {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            applicationId: entry.application_id || null,
+            jobId: entry.job_id,
+            userId: entry.user_id,
+            status: entry.status || "saved",
+          }),
+        });
 
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => null);
-        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+      } catch (backendError) {
+        console.warn("handleDeleteSavedJob backend delete failed, falling back to direct Supabase mutation:", backendError);
+        await syncSavedJobFlag(entry.user_id, entry.job_id, false);
+        if (entry.application_id && String(entry.status || "").toLowerCase() === "saved") {
+          const { error: deleteApplicationError } = await supabase.from("applications").delete().eq("id", Number(entry.application_id));
+          if (deleteApplicationError) throw deleteApplicationError;
+        } else if (entry.application_id) {
+          const { error: updateApplicationError } = await supabase.from("applications").update({ is_saved: false }).eq("id", Number(entry.application_id));
+          if (updateApplicationError) throw updateApplicationError;
+        }
       }
 
       showSuccess("Saved job deleted successfully.");
@@ -2564,6 +2763,9 @@ export default function App() {
       const targetApplication = applications.find((application) => application.id === appId);
       const { error } = await supabase.from("applications").update(patch).eq("id", appId);
       if (error) throw error;
+      if (targetApplication?.user_id && targetApplication?.job_id) {
+        await syncSavedJobFlag(targetApplication.user_id, targetApplication.job_id, status === "saved");
+      }
       if (targetApplication) {
         await logActivity(targetApplication.user_id, appId, "status_changed", "Application status changed", `Application moved to ${status}.`, targetApplication, patch);
       }
@@ -2598,7 +2800,7 @@ export default function App() {
 
     try {
       const token = localStorage.getItem("admin_auth_token");
-      const res = await fetch(`http://localhost:3000/api/admin/conversations/${activeChatUser.id}/messages`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${activeChatUser.id}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2619,6 +2821,32 @@ export default function App() {
     } catch (err: any) {
       console.warn("handleSendChatMessage backend call failed, falling back to direct Supabase insert:", err);
       try {
+        const now = new Date().toISOString();
+        const { data: existingConversation } = await supabase
+          .from("conversations")
+          .select("*")
+          .eq("id", activeChatUser.id)
+          .maybeSingle();
+
+        const clientUnreadCount = Number(existingConversation?.client_unread_count ?? 0) + 1;
+
+        const { error: conversationError } = await supabase.from("conversations").upsert([
+          {
+            id: activeChatUser.id,
+            client_id: activeChatUser.id,
+            status: existingConversation?.status || "open",
+            type: existingConversation?.type || "support",
+            chatbot_enabled: existingConversation?.chatbot_enabled ?? true,
+            last_message_text: trimmedText,
+            last_message_at: now,
+            last_message_sender_id: "admin",
+            admin_unread_count: Number(existingConversation?.admin_unread_count ?? 0),
+            client_unread_count: clientUnreadCount,
+            updated_at: now,
+          }
+        ], { onConflict: "id" });
+        if (conversationError) throw conversationError;
+
         const { error } = await supabase.from("messages").insert([
           {
             conversation_id: activeChatUser.id,
@@ -2627,7 +2855,8 @@ export default function App() {
             recipient_id: activeChatUser.id,
             message_type: "text",
             text: trimmedText,
-            status: "sent"
+            status: "sent",
+            created_at: now,
           }
         ]);
         if (error) throw error;
@@ -2673,7 +2902,7 @@ export default function App() {
     setErrorMsg("");
     const defaultSavedJobUserId =
       type === "job" && activeTab === "saved_jobs"
-        ? selectedTrackerClientId || users[0]?.id || previewTrackerClient.id
+        ? selectedTrackerClientId || users[0]?.id || (import.meta.env.DEV ? previewTrackerClient.id : "")
         : "";
     // Clear forms
     setUserForm({

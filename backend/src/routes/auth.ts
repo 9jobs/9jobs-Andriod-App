@@ -14,12 +14,14 @@ async function persistAuthenticatedProfile(payload: {
   userId: string;
   email: string;
   fullName: string;
+  phoneNumber?: string;
   role: "admin" | "client";
 }) {
   const profileRow = {
     id: payload.userId,
     email: payload.email,
     full_name: payload.fullName,
+    phone_number: payload.phoneNumber || "",
     role: payload.role,
     account_status: "active",
     subscription_plan: payload.role === "admin" ? "internal" : "free",
@@ -45,7 +47,7 @@ async function persistAuthenticatedProfile(payload: {
 }
 
 router.post("/token", async (req: Request, res: Response) => {
-  const { email, password, fullName, role, userId } = req.body;
+  const { email, password, fullName, role, userId, phoneNumber } = req.body;
 
   console.log(`[Auth Route] /token request: email=${email}, role=${role}`);
 
@@ -60,6 +62,7 @@ router.post("/token", async (req: Request, res: Response) => {
             userId: String(userId),
             email: normalizedEmail,
             fullName: "9Jobs Administrator",
+            phoneNumber,
             role: "admin",
           });
         } catch (persistError) {
@@ -98,6 +101,7 @@ router.post("/token", async (req: Request, res: Response) => {
           userId: "admin",
           email: ADMIN_EMAIL,
           fullName: "9Jobs Administrator",
+          phoneNumber,
           role: "admin",
         });
       } catch (persistError) {
@@ -131,6 +135,7 @@ router.post("/token", async (req: Request, res: Response) => {
         userId: clientUserId,
         email: clientEmail,
         fullName: clientFullName,
+        phoneNumber,
         role: "client",
       });
     } catch (persistError) {

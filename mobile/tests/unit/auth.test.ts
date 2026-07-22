@@ -47,8 +47,12 @@ describe("auth validation", () => {
     });
   });
 
-  test("allows preview fallback for the shared admin test email", () => {
-    expect(canUsePreviewFallback("9jobsapplicationservice@gmail.com", "Akash@#1234")).toBe(true);
+  test("allows preview fallback only for the preview test user email", () => {
+    expect(canUsePreviewFallback("preview-user-9jobs@9jobs.app", "Akash@#1234")).toBe(true);
+  });
+
+  test("rejects preview fallback for the admin email", () => {
+    expect(canUsePreviewFallback("9jobsapplicationservice@gmail.com", "Akash@#1234")).toBe(false);
   });
 
   test("rejects preview fallback for a wrong password", () => {

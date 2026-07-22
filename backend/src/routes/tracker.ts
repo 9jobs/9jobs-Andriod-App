@@ -14,6 +14,7 @@ import {
   upsertLocalSuccessStory,
 } from "../lib/localDb";
 import { supabase } from "../lib/supabase";
+import { getMessagesHistory } from "../services/messageService";
 
 const router = Router();
 const SUCCESS_STORY_BUCKET = "assets";
@@ -376,6 +377,22 @@ function buildProfilePayload(application: any) {
     account_status: "active",
     subscription_plan: "free",
   };
+}
+
+async function findLatestSupabaseApplicationId(userId: string, jobId: string) {
+  const { data, error } = await supabase
+    .from("applications")
+    .select("id, created_at")
+    .eq("user_id", userId)
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.[0]?.id ? Number(data[0].id) : null;
 }
 
 function normalizePersonalInfoPayload(profile: any, fallbackUserId?: string, fallbackEmail?: string) {
@@ -1042,6 +1059,13 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
     }
 
     for (const profile of localProfiles) {
+      const isPreviewSeed = profile.id === "preview-user-9jobs";
+      const hasSupabaseProfile = mergedProfiles.has(profile.id);
+
+      if (isPreviewSeed && !hasSupabaseProfile) {
+        continue;
+      }
+
       mergedProfiles.set(profile.id, { ...mergedProfiles.get(profile.id), ...profile });
     }
 
@@ -1375,6 +1399,92 @@ router.post("/mobile/saved-jobs/toggle", authMiddleware, async (req: Authenticat
   } catch (err: any) {
     console.error("[Tracker Route] POST /mobile/saved-jobs/toggle failed:", err);
     return res.status(500).json({ error: err.message || "Failed to toggle saved job" });
+  }
+});
+
+router.post("/mobile/tracker/applications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const requester = req.user;
+  const requestedJobId = String(req.body?.jobId || "").trim();
+  const requestedStatus = String(req.body?.status || "applied").trim().toLowerCase();
+
+  if (!requester?.userId || !requestedJobId) {
+    return res.status(400).json({ error: "Missing tracker application payload" });
+  }
+
+  const userId = requester.userId;
+  const normalizedStatus =
+    requestedStatus === "offer"
+      ? "offer_received"
+      : requestedStatus === "contacted"
+      ? "recruiter_contacted"
+      : requestedStatus === "interviewing"
+      ? "interview_scheduled"
+      : requestedStatus;
+
+  const applicationPatch = {
+    user_id: userId,
+    client_id: userId,
+    job_id: requestedJobId,
+    status: normalizedStatus,
+    current_stage: normalizedStatus,
+    is_saved: normalizedStatus === "saved",
+    is_active: !["saved", "hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus),
+    application_date: new Date().toISOString(),
+    applied_at: normalizedStatus === "saved" ? null : new Date().toISOString(),
+    offer_received_at: normalizedStatus === "offer_received" ? new Date().toISOString() : null,
+    hired_at: normalizedStatus === "hired" ? new Date().toISOString() : null,
+  };
+
+  try {
+    if (hasUsableDatabaseUrl()) {
+      const existingApplication = await getApplicationByUserAndJobWithPostgres(userId, requestedJobId);
+      const saved = existingApplication?.id
+        ? await updateApplicationWithPostgres(Number(existingApplication.id), applicationPatch)
+        : await createApplicationWithPostgres(applicationPatch);
+
+      if (normalizedStatus === "saved") {
+        await upsertSavedJobWithPostgres(userId, requestedJobId);
+      } else {
+        await deleteSavedJobWithPostgres(userId, requestedJobId);
+      }
+
+      return res.json({
+        success: true,
+        application: saved,
+        isSaved: normalizedStatus === "saved",
+      });
+    }
+
+    const existingApplicationId = await findLatestSupabaseApplicationId(userId, requestedJobId);
+
+    const query = existingApplicationId
+      ? supabase.from("applications").update(applicationPatch).eq("id", existingApplicationId).select().single()
+      : supabase.from("applications").insert([applicationPatch]).select().single();
+    const { data, error } = await query;
+    if (error) throw error;
+
+    if (normalizedStatus === "saved") {
+      const { error: savedJobError } = await supabase
+        .from("saved_jobs")
+        .upsert([{ user_id: userId, job_id: requestedJobId }], { onConflict: "user_id,job_id" });
+      if (savedJobError) throw savedJobError;
+    } else {
+      const { error: deleteSavedJobError } = await supabase
+        .from("saved_jobs")
+        .delete()
+        .eq("user_id", userId)
+        .eq("job_id", requestedJobId);
+      if (deleteSavedJobError) throw deleteSavedJobError;
+    }
+
+    return res.json({
+      success: true,
+      application: data,
+      isSaved: normalizedStatus === "saved",
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /mobile/tracker/applications failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save tracker application" });
   }
 });
 
@@ -1842,21 +1952,28 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
 
   try {
     const messagesPromise = (async () => {
-      const newerQuery = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", targetUserId)
-        .order("created_at", { ascending: true });
+      try {
+        const data = await getMessagesHistory(targetUserId);
+        return { data, error: null };
+      } catch (messageError) {
+        console.warn("[Tracker Route] mobile snapshot merged message history failed:", messageError);
 
-      if (!newerQuery.error) {
-        return newerQuery;
+        const newerQuery = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", targetUserId)
+          .order("created_at", { ascending: true });
+
+        if (!newerQuery.error) {
+          return newerQuery;
+        }
+
+        return await supabase
+          .from("messages")
+          .select("*")
+          .or(`sender_id.eq.${targetUserId},recipient_id.eq.${targetUserId}`)
+          .order("created_at", { ascending: true });
       }
-
-      return await supabase
-        .from("messages")
-        .select("*")
-        .or(`sender_id.eq.${targetUserId},recipient_id.eq.${targetUserId}`)
-        .order("created_at", { ascending: true });
     })();
 
     const recruiterContactsPromise = (async () => {

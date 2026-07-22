@@ -35,24 +35,300 @@ export const australiaMarkets: PremiumListItem[] = [
     subtitle: "Tech, operations, and commercial opportunities with localized resume targeting.",
     badge: "VIC",
     detail: "Explore",
+    href: "/(app)/about-detail?type=city&id=melbourne",
   },
   {
     title: "Sydney",
     subtitle: "Finance, enterprise, and product roles aligned to NSW recruiter expectations.",
     badge: "NSW",
     detail: "Top market",
+    href: "/(app)/about-detail?type=city&id=sydney",
   },
   {
     title: "Brisbane",
     subtitle: "Growth across infrastructure, tourism, and technology hiring pipelines.",
     badge: "QLD",
     detail: "Growing",
+    href: "/(app)/about-detail?type=city&id=brisbane",
   },
   {
     title: "Perth",
     subtitle: "Mining, engineering, and logistics-focused opportunity targeting.",
     badge: "WA",
     detail: "Regional",
+    href: "/(app)/about-detail?type=city&id=perth",
+  },
+  {
+    title: "Adelaide",
+    subtitle: "Health care, administration, and government-friendly applications for SA roles.",
+    badge: "SA",
+    detail: "Steady market",
+    href: "/(app)/about-detail?type=city&id=adelaide",
+  },
+  {
+    title: "Geelong",
+    subtitle: "Regional Victoria targeting for operations, support, and logistics hiring demand.",
+    badge: "VIC",
+    detail: "Local opportunities",
+    href: "/(app)/about-detail?type=city&id=geelong",
+  },
+  {
+    title: "Australia Wide",
+    subtitle: "Remote and all-major-city coverage for candidates targeting flexible opportunities.",
+    badge: "AU",
+    detail: "Remote friendly",
+    href: "/(app)/about-detail?type=city&id=australia-wide",
+  },
+];
+
+export const aboutServicePillars: PremiumListItem[] = [
+  {
+    title: "ATS Resume Writing",
+    subtitle: "Get ATS-friendly resumes that pass ATS screening systems.",
+    detail: "Resume strategy, keyword alignment, and recruiter-ready formatting.",
+    href: "/(app)/about-detail?type=service&id=ats-resume-writing",
+  },
+  {
+    title: "LinkedIn Optimization",
+    subtitle: "Boost your profile and attract the right recruiters faster.",
+    detail: "Headline, about section, keywords, and positioning for stronger discoverability.",
+    href: "/(app)/about-detail?type=service&id=linkedin-optimization",
+  },
+  {
+    title: "Job Applications",
+    subtitle: "We apply to 20+ relevant jobs daily on your behalf.",
+    detail: "Targeted sourcing, tailored submissions, and daily pipeline momentum.",
+    href: "/(app)/about-detail?type=service&id=job-applications",
+  },
+  {
+    title: "Interview Support",
+    subtitle: "Prepare with coaching, mock interviews, and expert tips.",
+    detail: "Practice, answer refinement, and confidence building for AU hiring rounds.",
+    href: "/(app)/about-detail?type=service&id=interview-support",
+  },
+  {
+    title: "Weekly Tracking",
+    subtitle: "Track applications, responses, and interview updates.",
+    detail: "Clean reporting across submissions, recruiter replies, and next-step planning.",
+    href: "/(app)/about-detail?type=service&id=weekly-tracking",
+  },
+];
+
+export const aboutWhyChooseItems: PremiumListItem[] = [
+  {
+    title: "Proven Results",
+    subtitle: "Helping job seekers land interviews faster.",
+    detail: "Structured resume, profile, and application support focused on measurable outcomes.",
+  },
+  {
+    title: "Expert Team",
+    subtitle: "Experienced professionals who care.",
+    detail: "Resume writers, application specialists, and career support working together.",
+  },
+  {
+    title: "Time-Saving",
+    subtitle: "We handle the job search, you focus on prep.",
+    detail: "Less admin work for you, more consistent action across your pipeline.",
+  },
+  {
+    title: "Australia Focused",
+    subtitle: "Specialized strategies for the AU job market.",
+    detail: "Localized positioning for recruiters, platforms, and application expectations.",
+  },
+];
+
+export type AboutDetailContent = {
+  id: string;
+  type: "service" | "city";
+  title: string;
+  kicker: string;
+  subtitle: string;
+  overview: string;
+  points: string[];
+  ctaLabel: string;
+  ctaHref: string;
+};
+
+const aboutDetailEntries: AboutDetailContent[] = [
+  {
+    id: "ats-resume-writing",
+    type: "service",
+    title: "ATS Resume Writing",
+    kicker: "SERVICE DETAIL",
+    subtitle: "A resume built to pass automated screening and still read strongly for Australian recruiters.",
+    overview: "We strengthen structure, keywords, measurable achievements, and role fit so your resume clears ATS filters and feels sharper to hiring teams.",
+    points: [
+      "Resume sections are rebuilt for cleaner ATS parsing and recruiter scanning.",
+      "Role keywords are aligned to the target market and job family.",
+      "Bullet points are rewritten around outcomes, impact, and relevance.",
+    ],
+    ctaLabel: "Open Resume Service",
+    ctaHref: "/(app)/resume",
+  },
+  {
+    id: "linkedin-optimization",
+    type: "service",
+    title: "LinkedIn Optimization",
+    kicker: "SERVICE DETAIL",
+    subtitle: "A stronger LinkedIn presence designed to improve recruiter visibility and credibility.",
+    overview: "We refine your headline, summary, experience, and search-facing keywords so your profile better supports your resume and attracts the right attention.",
+    points: [
+      "Headline and summary positioning are matched to your target roles.",
+      "Experience entries are upgraded for clarity, impact, and discoverability.",
+      "Platform keywords are improved for local search relevance.",
+    ],
+    ctaLabel: "Open Outreach Tools",
+    ctaHref: "/(app)/outreach",
+  },
+  {
+    id: "job-applications",
+    type: "service",
+    title: "Job Applications",
+    kicker: "SERVICE DETAIL",
+    subtitle: "Hands-on application support that keeps your job-search pipeline active every day.",
+    overview: "We source suitable roles, manage submissions, and keep your application flow moving so your search stays consistent instead of stopping after a few attempts.",
+    points: [
+      "Relevant openings are shortlisted from the platforms you are targeting.",
+      "Applications are submitted in a structured, trackable workflow.",
+      "Daily activity helps build stronger momentum across the week.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "interview-support",
+    type: "service",
+    title: "Interview Support",
+    kicker: "SERVICE DETAIL",
+    subtitle: "Coaching and practice that helps you answer with more confidence and structure.",
+    overview: "We help you prepare for common interview formats, sharpen your examples, and walk in with clearer stories for behavioral and role-specific questions.",
+    points: [
+      "Mock questions help you rehearse concise and relevant responses.",
+      "Answer structure is improved through practice and feedback.",
+      "Follow-up preparation keeps momentum strong after the interview.",
+    ],
+    ctaLabel: "Open Interview Prep",
+    ctaHref: "/(app)/interview",
+  },
+  {
+    id: "weekly-tracking",
+    type: "service",
+    title: "Weekly Tracking",
+    kicker: "SERVICE DETAIL",
+    subtitle: "Clear weekly visibility into applications, responses, and next actions.",
+    overview: "We keep your progress organized so you can quickly understand what has been applied, where responses are coming from, and what needs follow-up next.",
+    points: [
+      "Applications and updates are captured in one simple workflow.",
+      "Response tracking reduces missed follow-ups and duplicated effort.",
+      "Weekly visibility makes decision-making easier and faster.",
+    ],
+    ctaLabel: "Open Tracker",
+    ctaHref: "/(app)/tracker",
+  },
+  {
+    id: "melbourne",
+    type: "city",
+    title: "Melbourne",
+    kicker: "CITY DETAIL",
+    subtitle: "VIC market coverage focused on tech, operations, and commercial roles.",
+    overview: "Melbourne hiring often rewards tailored positioning, a clear value story, and polished resume presentation across professional, operational, and growth teams.",
+    points: [
+      "Targeting is adjusted for local recruiter expectations and role language.",
+      "Applications are positioned around relevant city-based demand.",
+      "Resume alignment helps support both corporate and scaling-company roles.",
+    ],
+    ctaLabel: "Explore Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "sydney",
+    type: "city",
+    title: "Sydney",
+    kicker: "CITY DETAIL",
+    subtitle: "NSW role targeting for finance, enterprise, product, and high-competition hiring tracks.",
+    overview: "Sydney applications benefit from sharper positioning and strong market fit because the competition is often faster-moving and more expectation-heavy across white-collar roles.",
+    points: [
+      "Applications are tuned for enterprise and recruiter-led search patterns.",
+      "Profile strength matters more when multiple strong candidates are competing.",
+      "Role fit and career story need to be communicated quickly and clearly.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "brisbane",
+    type: "city",
+    title: "Brisbane",
+    kicker: "CITY DETAIL",
+    subtitle: "QLD support across infrastructure, tourism, and technology hiring pipelines.",
+    overview: "Brisbane offers a broad mix of practical, service, and growth-sector opportunities where clean positioning and consistent activity can create strong momentum.",
+    points: [
+      "Targeting is balanced across stable industries and expanding teams.",
+      "Resume messaging is matched to practical role requirements and outcomes.",
+      "Application consistency helps unlock faster pipeline movement.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "perth",
+    type: "city",
+    title: "Perth",
+    kicker: "CITY DETAIL",
+    subtitle: "WA coverage for mining, engineering, logistics, and regional opportunity pathways.",
+    overview: "Perth roles often reward clear technical relevance, operational credibility, and direct communication around experience, safety, and role readiness.",
+    points: [
+      "Applications are tuned for industry-specific experience and job expectations.",
+      "Practical fit and role readiness are emphasized in the positioning.",
+      "Regional and logistics-heavy opportunities are supported with targeted messaging.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "adelaide",
+    type: "city",
+    title: "Adelaide",
+    kicker: "CITY DETAIL",
+    subtitle: "SA support for health care, administration, public-sector, and steady-growth hiring lanes.",
+    overview: "Adelaide opportunities often value clarity, trust, and well-structured experience, especially for support, public-facing, and stable-sector roles.",
+    points: [
+      "Resume and profile alignment focus on reliability and relevance.",
+      "Applications are shaped for sectors with process-driven expectations.",
+      "Support extends across both private and government-adjacent opportunities.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "geelong",
+    type: "city",
+    title: "Geelong",
+    kicker: "CITY DETAIL",
+    subtitle: "Regional VIC support for logistics, support, operations, and local opportunity clusters.",
+    overview: "Geelong applications benefit from practical relevance, local-fit messaging, and a clear explanation of how your experience transfers into regional demand.",
+    points: [
+      "Local-fit positioning improves visibility for regional opportunities.",
+      "Operations and support experience are highlighted more directly.",
+      "Applications are shaped for smaller-market competition and accessibility.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
+  },
+  {
+    id: "australia-wide",
+    type: "city",
+    title: "Australia Wide",
+    kicker: "CITY DETAIL",
+    subtitle: "National support for remote, hybrid, and all-major-city opportunities across Australia.",
+    overview: "For candidates applying broadly, we help create a consistent story that travels well across cities while still staying relevant to different market needs.",
+    points: [
+      "Applications are managed across multiple cities without losing consistency.",
+      "Remote and hybrid opportunities are included where relevant.",
+      "Your resume and profile are positioned to stay flexible across broader search targets.",
+    ],
+    ctaLabel: "Open Services",
+    ctaHref: "/(app)/services",
   },
 ];
 
@@ -484,6 +760,10 @@ const premiumScreens: Record<string, PremiumScreenContent> = {
 
 export function getPremiumScreenContent(key: string) {
   return premiumScreens[key] ?? null;
+}
+
+export function getAboutDetailContent(type: string, id: string) {
+  return aboutDetailEntries.find((entry) => entry.type === type && entry.id === id) ?? null;
 }
 
 export function getQuickActionRoutes() {

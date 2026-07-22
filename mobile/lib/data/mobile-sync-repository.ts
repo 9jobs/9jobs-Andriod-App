@@ -7,6 +7,7 @@ import type { PremiumScreenContent } from "@/lib/data/premium-content";
 import type { Job } from "@/types/jobs";
 import type { CandidateProfile } from "@/types/profile";
 import type { SessionUser } from "@/types/auth";
+import { storageKeys } from "@/lib/utils/storage";
 
 type ProfileRow = {
   id: string;
@@ -419,6 +420,10 @@ function requireSupabase() {
   return supabase;
 }
 
+function getSnapshotCacheKey(userId: string) {
+  return `${storageKeys.snapshotCache}:${userId}`;
+}
+
 async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
   const client = requireSupabase();
   const activeUser = resolveActiveUser(sessionUser);
@@ -672,6 +677,58 @@ function mapProfile(profile: ProfileRow, activePlanId: string | null): MobileSyn
   };
 }
 
+function buildFallbackProfileRow(activeUser: ReturnType<typeof resolveActiveUser>): ProfileRow {
+  return {
+    id: activeUser.id,
+    full_name: activeUser.fullName,
+    headline: activeUser.headline,
+    location: activeUser.location,
+    email: activeUser.email,
+    phone_number: "",
+    avatar_url: activeUser.avatarUrl,
+    linkedin_url: "",
+    facebook_url: "",
+    instagram_url: "",
+    twitter_url: "",
+    dark_mode: false,
+    biometric: false,
+    push_notifications: true,
+    weekly_goal: activeUser.weeklyGoal,
+    subscription_plan: activeUser.subscriptionPlan,
+    role: "client",
+    account_status: "active",
+    timezone: "Australia/Melbourne",
+  };
+}
+
+function reconcileProfileRowWithActiveUser(
+  profileRow: ProfileRow | null | undefined,
+  activeUser: ReturnType<typeof resolveActiveUser>,
+): ProfileRow {
+  if (!profileRow) {
+    return buildFallbackProfileRow(activeUser);
+  }
+
+  const normalizedProfileEmail = profileRow.email.trim().toLowerCase();
+  const normalizedActiveEmail = activeUser.email.trim().toLowerCase();
+  const shouldRefreshIdentity =
+    profileRow.id !== activeUser.id ||
+    normalizedProfileEmail !== normalizedActiveEmail ||
+    profileRow.id === previewMobileUser.id;
+
+  if (!shouldRefreshIdentity) {
+    return profileRow;
+  }
+
+  return {
+    ...profileRow,
+    id: activeUser.id,
+    full_name: activeUser.fullName,
+    email: activeUser.email,
+    avatar_url: profileRow.avatar_url ?? activeUser.avatarUrl,
+  };
+}
+
 function mapServices(services: ServiceRow[]): LiveServiceCard[] {
   const metadata: Record<string, Omit<LiveServiceCard, "id">> = {
     "job-tracker": {
@@ -904,30 +961,7 @@ function buildSnapshotFromSource({
 
   const activePlanId = subscriptionRow?.plan_id ?? null;
   const resumeScore = resumeScoreRow?.score ?? 0;
-  const profile = mapProfile(
-    profileRow ?? {
-      id: activeUser.id,
-      full_name: activeUser.fullName,
-      headline: activeUser.headline,
-      location: activeUser.location,
-      email: activeUser.email,
-      phone_number: "",
-      avatar_url: activeUser.avatarUrl,
-      linkedin_url: "",
-      facebook_url: "",
-      instagram_url: "",
-      twitter_url: "",
-      dark_mode: false,
-      biometric: false,
-      push_notifications: true,
-      weekly_goal: activeUser.weeklyGoal,
-      subscription_plan: activeUser.subscriptionPlan,
-      role: "client",
-      account_status: "active",
-      timezone: "Australia/Melbourne",
-    },
-    activePlanId,
-  );
+  const profile = mapProfile(reconcileProfileRowWithActiveUser(profileRow, activeUser), activePlanId);
   const messages = mapMessages(messagesRows, activeUser.id);
   const notifications = mapNotifications(notificationRows);
   const systemSettings = {
@@ -1013,10 +1047,17 @@ async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiv
     return null;
   }
 
-  let token = await AsyncStorage.getItem("auth_token");
-  if (token) {
+  const [[, storedToken], [, storedTokenUserId]] = await AsyncStorage.multiGet([
+    storageKeys.authToken,
+    storageKeys.authTokenUserId,
+  ]);
+
+  let token = storedToken;
+  if (token && storedTokenUserId === activeUser.id) {
     return token;
   }
+
+  await AsyncStorage.multiRemove([storageKeys.authToken, storageKeys.authTokenUserId]);
 
   const tokenRes = await fetch(`${resolvedBackendUrl}/api/auth/token`, {
     method: "POST",
@@ -1036,25 +1077,43 @@ async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiv
   const tokenData = await tokenRes.json();
   token = tokenData?.token ?? null;
   if (token) {
-    await AsyncStorage.setItem("auth_token", token);
+    await AsyncStorage.multiSet([
+      [storageKeys.authToken, token],
+      [storageKeys.authTokenUserId, activeUser.id],
+    ]);
   }
 
   return token;
 }
 
 async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
+  const activeUser = resolveActiveUser(sessionUser);
+
+  if (inMemoryStore?.profile?.id === activeUser.id) {
+    return inMemoryStore;
+  }
+
+  inMemoryStore = null;
+
   if (inMemoryStore) {
     return inMemoryStore;
   }
 
   try {
-    const cached = await AsyncStorage.getItem("mobile_sync_snapshot_cache");
+    const cached =
+      (await AsyncStorage.getItem(getSnapshotCacheKey(activeUser.id))) ??
+      (await AsyncStorage.getItem(storageKeys.snapshotCache));
     if (cached) {
-      inMemoryStore = JSON.parse(cached);
-      if (!Array.isArray(inMemoryStore.notifications)) {
+      const parsed = JSON.parse(cached);
+      if (parsed?.profile?.id === activeUser.id) {
+        inMemoryStore = parsed;
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.notifications)) {
         inMemoryStore.notifications = [];
       }
-      return inMemoryStore;
+      if (inMemoryStore) {
+        return inMemoryStore;
+      }
     }
   } catch (err) {
     console.error("Failed to read from AsyncStorage cache:", err);
@@ -1062,7 +1121,6 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
 
   const activePlanId = "free";
   const resumeScore = 97;
-  const activeUser = resolveActiveUser(sessionUser);
 
   const seedProfile: ProfileRow = {
     id: activeUser.id,
@@ -1259,7 +1317,11 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
         const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
         setTheme(isDarkMode);
         inMemoryStore = snapshot;
-        void AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(snapshot));
+        const cachePayload = JSON.stringify(snapshot);
+        void AsyncStorage.multiSet([
+          [getSnapshotCacheKey(activeUser.id), cachePayload],
+          [storageKeys.snapshotCache, cachePayload],
+        ]);
         return snapshot;
       }
     } catch (backendErr) {
@@ -1380,7 +1442,11 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
     setTheme(isDarkMode);
 
     inMemoryStore = snapshot;
-    void AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(snapshot));
+    const cachePayload = JSON.stringify(snapshot);
+    void AsyncStorage.multiSet([
+      [getSnapshotCacheKey(activeUser.id), cachePayload],
+      [storageKeys.snapshotCache, cachePayload],
+    ]);
 
     return snapshot;
   } catch (err) {
@@ -1439,38 +1505,76 @@ export async function applyToJob(jobId: string, sessionUser?: SessionUser | null
   let appId = 0;
   const activeUser = resolveActiveUser(sessionUser);
   try {
-    await ensurePreviewUserRecords(sessionUser);
-    const client = requireSupabase();
-    const { data: existing, error: readError } = await client
-      .from("applications")
-      .select("id")
-      .eq("user_id", activeUser.id)
-      .eq("job_id", jobId)
-      .maybeSingle();
-
-    if (readError) throw readError;
-
-    if (existing?.id) {
-      const { error } = await client.from("applications").update({ status: "applied" }).eq("id", existing.id);
-      if (error) throw error;
-      appId = existing.id;
-    } else {
-      const { data, error } = await client
-        .from("applications")
-        .insert([{ user_id: activeUser.id, client_id: activeUser.id, job_id: jobId, status: "applied", current_stage: "applied", application_date: new Date().toISOString(), applied_at: new Date().toISOString(), is_active: true }])
-        .select("id")
-        .single();
-      if (error) throw error;
-      appId = data.id;
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
+    if (!token) {
+      throw new Error("Backend auth token missing.");
     }
+
+    const res = await fetch(`${backendUrl}/api/mobile/tracker/applications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ jobId, status: "applied" }),
+    });
+
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+    }
+
+    const payload = await res.json();
+    appId = Number(payload?.application?.id ?? 0);
   } catch (err) {
-    console.warn("Supabase applyToJob failed, updating local store:", err);
-    appId = Math.floor(Math.random() * 1000000);
+    console.warn("Backend applyToJob failed, falling back to direct Supabase/local update:", err);
+    try {
+      await ensurePreviewUserRecords(sessionUser);
+      const client = requireSupabase();
+      const { data: existing, error: readError } = await client
+        .from("applications")
+        .select("id")
+        .eq("user_id", activeUser.id)
+        .eq("job_id", jobId)
+        .maybeSingle();
+
+      if (readError) throw readError;
+
+      if (existing?.id) {
+        const { error } = await client
+          .from("applications")
+          .update({ status: "applied", current_stage: "applied", is_saved: false, is_active: true })
+          .eq("id", existing.id);
+        if (error) throw error;
+        appId = existing.id;
+      } else {
+        const { data, error } = await client
+          .from("applications")
+          .insert([{ user_id: activeUser.id, client_id: activeUser.id, job_id: jobId, status: "applied", current_stage: "applied", application_date: new Date().toISOString(), applied_at: new Date().toISOString(), is_saved: false, is_active: true }])
+          .select("id")
+          .single();
+        if (error) throw error;
+        appId = data.id;
+      }
+    } catch (fallbackErr) {
+      console.warn("Supabase applyToJob failed, updating local store:", fallbackErr);
+      appId = Math.floor(Math.random() * 1000000);
+    }
   }
 
-  const current = await getLocalSyncSnapshot();
-  current.jobs = current.jobs.map((j) => (j.id === jobId ? { ...j, isApplied: true, status: "applied" } : j));
-  if (!current.rawApplications.find((app) => app.job_id === jobId)) {
+  const current = await getLocalSyncSnapshot(sessionUser);
+  current.jobs = current.jobs.map((j) => (j.id === jobId ? { ...j, isApplied: true, isSaved: false, status: "applied" } : j));
+  const existingIndex = current.rawApplications.findIndex((app) => app.job_id === jobId);
+  if (existingIndex >= 0) {
+    current.rawApplications[existingIndex] = {
+      ...current.rawApplications[existingIndex],
+      status: "applied",
+      current_stage: "applied",
+      applied_at: new Date().toISOString(),
+      application_date: current.rawApplications[existingIndex].application_date ?? new Date().toISOString(),
+    };
+  } else {
     current.rawApplications.push({
       id: appId,
       user_id: activeUser.id,
@@ -1494,61 +1598,92 @@ export async function updateApplicationStatus(jobId: string, status: Application
   const normalizedStatus = status === "offer" ? "offer_received" : status === "contacted" ? "recruiter_contacted" : status === "interviewing" ? "interview_scheduled" : status;
 
   try {
-    await ensurePreviewUserRecords(sessionUser);
-    const client = requireSupabase();
-    const { data: existing, error: readError } = await client
-      .from("applications")
-      .select("id")
-      .eq("user_id", activeUser.id)
-      .eq("job_id", jobId)
-      .maybeSingle();
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
+    if (!token) {
+      throw new Error("Backend auth token missing.");
+    }
 
-    if (readError) throw readError;
+    const res = await fetch(`${backendUrl}/api/mobile/tracker/applications`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ jobId, status }),
+    });
 
-    if (existing?.id) {
-      const patch: Record<string, unknown> = {
-        status: normalizedStatus,
-        current_stage: normalizedStatus,
-        is_saved: normalizedStatus === "saved",
-        is_active: !["hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus),
-      };
-      if (normalizedStatus === "offer_received") patch.offer_received_at = new Date().toISOString();
-      if (normalizedStatus === "hired") patch.hired_at = new Date().toISOString();
-      const { error } = await client.from("applications").update(patch).eq("id", existing.id);
-      if (error) throw error;
-      applicationId = existing.id;
-    } else {
-      const { data, error } = await client
+    if (!res.ok) {
+      const errorPayload = await res.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+    }
+
+    const payload = await res.json();
+    applicationId = Number(payload?.application?.id ?? 0);
+  } catch (err) {
+    console.warn("Backend updateApplicationStatus failed, falling back to direct Supabase/local update:", err);
+    try {
+      await ensurePreviewUserRecords(sessionUser);
+      const client = requireSupabase();
+      const { data: existing, error: readError } = await client
         .from("applications")
-        .insert([{
-          user_id: activeUser.id,
-          client_id: activeUser.id,
-          job_id: jobId,
+        .select("id")
+        .eq("user_id", activeUser.id)
+        .eq("job_id", jobId)
+        .maybeSingle();
+
+      if (readError) throw readError;
+
+      if (existing?.id) {
+        const patch: Record<string, unknown> = {
           status: normalizedStatus,
           current_stage: normalizedStatus,
           is_saved: normalizedStatus === "saved",
-          is_active: !["hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus),
-          application_date: new Date().toISOString(),
-          applied_at: new Date().toISOString(),
-          offer_received_at: normalizedStatus === "offer_received" ? new Date().toISOString() : null,
-          hired_at: normalizedStatus === "hired" ? new Date().toISOString() : null,
-        }])
-        .select("id")
-        .single();
-      if (error) throw error;
-      applicationId = data.id;
+          is_active: !["saved", "hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus),
+        };
+        if (normalizedStatus !== "saved") {
+          patch.applied_at = new Date().toISOString();
+        }
+        if (normalizedStatus === "offer_received") patch.offer_received_at = new Date().toISOString();
+        if (normalizedStatus === "hired") patch.hired_at = new Date().toISOString();
+        const { error } = await client.from("applications").update(patch).eq("id", existing.id);
+        if (error) throw error;
+        applicationId = existing.id;
+      } else {
+        const { data, error } = await client
+          .from("applications")
+          .insert([{
+            user_id: activeUser.id,
+            client_id: activeUser.id,
+            job_id: jobId,
+            status: normalizedStatus,
+            current_stage: normalizedStatus,
+            is_saved: normalizedStatus === "saved",
+            is_active: !["saved", "hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus),
+            application_date: new Date().toISOString(),
+            applied_at: normalizedStatus === "saved" ? null : new Date().toISOString(),
+            offer_received_at: normalizedStatus === "offer_received" ? new Date().toISOString() : null,
+            hired_at: normalizedStatus === "hired" ? new Date().toISOString() : null,
+          }])
+          .select("id")
+          .single();
+        if (error) throw error;
+        applicationId = data.id;
+      }
+    } catch (fallbackErr) {
+      console.warn("Supabase updateApplicationStatus failed, updating local store:", fallbackErr);
+      applicationId = Math.floor(Math.random() * 1000000);
     }
-  } catch (err) {
-    console.warn("Supabase updateApplicationStatus failed, updating local store:", err);
-    applicationId = Math.floor(Math.random() * 1000000);
   }
 
-  const current = await getLocalSyncSnapshot();
+  const current = await getLocalSyncSnapshot(sessionUser);
   const existingIndex = current.rawApplications.findIndex((app) => app.job_id === jobId);
   if (existingIndex >= 0) {
     current.rawApplications[existingIndex] = {
       ...current.rawApplications[existingIndex],
-      status,
+      status: normalizedStatus,
+      current_stage: normalizedStatus,
+      applied_at: normalizedStatus === "saved" ? current.rawApplications[existingIndex].applied_at ?? null : new Date().toISOString(),
     };
   } else {
     current.rawApplications.push({
@@ -1569,7 +1704,7 @@ export async function updateApplicationStatus(jobId: string, status: Application
       ? {
           ...job,
           isApplied: normalizedStatus !== "saved",
-          isSaved: normalizedStatus === "saved" ? true : job.isSaved,
+          isSaved: normalizedStatus === "saved",
           status: status as any,
         }
       : job,
@@ -1764,7 +1899,11 @@ export async function markAllNotificationsAsRead(sessionUser?: SessionUser | nul
 
 async function persistLocalSnapshot(snapshot: MobileSyncSnapshot) {
   inMemoryStore = { ...snapshot };
-  await AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(inMemoryStore));
+  const cacheKey = getSnapshotCacheKey(snapshot.profile.id);
+  await AsyncStorage.multiSet([
+    [cacheKey, JSON.stringify(inMemoryStore)],
+    [storageKeys.snapshotCache, JSON.stringify(inMemoryStore)],
+  ]);
 }
 
 function normalizeLiveMessageFromSocketEvent(
@@ -2141,8 +2280,30 @@ async function sendChatPayloadToAdmin(
     try {
       await ensurePreviewUserRecords(sessionUser);
       const client = requireSupabase();
+      const { data: existingConversation } = await client
+        .from("conversations")
+        .select("*")
+        .eq("id", activeUser.id)
+        .maybeSingle();
+
+      const adminUnreadCount =
+        Number(existingConversation?.admin_unread_count ?? 0) + 1;
+      const now = new Date().toISOString();
+
       await client.from("conversations").upsert([
-        { id: activeUser.id, client_id: activeUser.id, status: "open", type: "support" }
+        {
+          id: activeUser.id,
+          client_id: activeUser.id,
+          status: existingConversation?.status || "open",
+          type: existingConversation?.type || "support",
+          chatbot_enabled: existingConversation?.chatbot_enabled ?? true,
+          last_message_text: content,
+          last_message_at: now,
+          last_message_sender_id: activeUser.id,
+          admin_unread_count: adminUnreadCount,
+          client_unread_count: Number(existingConversation?.client_unread_count ?? 0),
+          updated_at: now,
+        }
       ], { onConflict: "id" });
       await client.from("messages").insert([
         {
@@ -2158,6 +2319,7 @@ async function sendChatPayloadToAdmin(
           attachment_size: payload.attachmentSize,
           client_message_id: clientMessageId,
           status: "sent",
+          created_at: now,
         }
       ]);
     } catch (fallbackErr) {
