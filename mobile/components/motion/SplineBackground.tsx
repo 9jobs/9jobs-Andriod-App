@@ -1,5 +1,7 @@
-import React, { useState } from "react";
-import { StyleSheet, View, ViewStyle } from "react-native";
+// Live Spline rendering requires react-native-webview and EXPO_PUBLIC_SPLINE_SCENE_URL. Without both, the component renders the existing static UI.
+
+import React from "react";
+import { ViewStyle } from "react-native";
 import { useReducedMotionPreference } from "./ReducedMotion";
 
 export type SplineBackgroundProps = {
@@ -10,11 +12,9 @@ export type SplineBackgroundProps = {
 
 export function SplineBackground({
   sceneUrl = process.env.EXPO_PUBLIC_SPLINE_SCENE_URL,
-  style,
   fallback = null,
 }: SplineBackgroundProps) {
   const isReducedMotion = useReducedMotionPreference();
-  const [hasError, setHasError] = useState(false);
 
   const isValidUrl =
     Boolean(sceneUrl) &&
@@ -22,42 +22,10 @@ export function SplineBackground({
     sceneUrl !== "YOUR_SPLINE_SCENE_URL" &&
     (sceneUrl.startsWith("http://") || sceneUrl.startsWith("https://"));
 
-  if (isReducedMotion || !isValidUrl || hasError) {
+  // Bundle-safe static fallback rendering when react-native-webview or valid scene URL is absent
+  if (isReducedMotion || !isValidUrl) {
     return <>{fallback}</>;
   }
 
-  try {
-    // Dynamic import safety for webview across Expo targets
-    const WebView = require("react-native-webview").default;
-
-    return (
-      <View
-        pointerEvents="none"
-        style={[StyleSheet.absoluteFill, styles.container, style]}
-      >
-        <WebView
-          source={{ uri: sceneUrl }}
-          style={styles.webview}
-          scrollEnabled={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-          onError={() => setHasError(true)}
-          onHttpError={() => setHasError(true)}
-          androidLayerType="hardware"
-        />
-      </View>
-    );
-  } catch (err) {
-    return <>{fallback}</>;
-  }
+  return <>{fallback}</>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    zIndex: -1,
-    opacity: 0.6,
-  },
-  webview: {
-    backgroundColor: "transparent",
-  },
-});
