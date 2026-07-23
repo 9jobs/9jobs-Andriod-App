@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "expo-router";
-import { useSignIn, useSignUp } from "@clerk/expo";
+import { useClerk, useSignIn, useSignUp } from "@clerk/expo";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetCard } from "@/components/ui/BottomSheetCard";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
@@ -21,6 +21,7 @@ export function AuthCard() {
 
 function ClerkAuthCard() {
   const router = useRouter();
+  const clerk = useClerk();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -62,44 +63,22 @@ function ClerkAuthCard() {
     try {
       if (mode === "signin") {
         console.log("Signing in with Clerk for:", email.trim());
-        const signInRes = await signIn.password({
-          emailAddress: email.trim(),
+        const signInRes = await signIn.create({
+          identifier: email.trim(),
           password,
         });
 
-        if (signInRes.error) {
-          console.error("signIn.password failed:", signInRes.error);
-          setError(getClerkErrorMessage(signInRes.error));
+        console.log("signIn.create succeeded. Status:", signInRes.status);
+
+        if (signInRes.status === "complete" && signInRes.createdSessionId) {
+          await clerk.setActive({ session: signInRes.createdSessionId });
+          router.replace("/(app)");
           setPending(false);
           return;
         }
 
-        console.log("signIn.password succeeded. Status:", signIn.status);
-
-        if (signIn.status === "complete") {
-          console.log("Finalizing sign-in...");
-          const finalizeRes = await signIn.finalize({
-            navigate: () => {
-              router.replace("/(app)");
-            },
-          });
-          if (finalizeRes.error) {
-            console.error("finalize failed:", finalizeRes.error);
-            setError(getClerkErrorMessage(finalizeRes.error));
-          }
-          setPending(false);
-          return;
-        }
-
-        if (signIn.status === "needs_client_trust") {
-          console.log("needs_client_trust. Sending email code...");
-          const mfaRes = await signIn.mfa.sendEmailCode();
-          if (mfaRes.error) {
-            console.error("mfa.sendEmailCode failed:", mfaRes.error);
-            setError(getClerkErrorMessage(mfaRes.error));
-          } else {
-            setVerificationMode("signin");
-          }
+        if (signInRes.status === "needs_first_factor" || signInRes.status === "needs_second_factor") {
+          setError("Your account needs one more Clerk verification step before sign-in can finish.");
           setPending(false);
           return;
         }

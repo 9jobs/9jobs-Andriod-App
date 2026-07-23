@@ -51,12 +51,24 @@ export default function TrackerScreen() {
   const [activeFilter, setActiveFilter] = useState<string>("Applied");
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [screenshotMap, setScreenshotMap] = useState<Record<string, string>>({});
+  const [beforeScreenshotMap, setBeforeScreenshotMap] = useState<Record<string, string>>({});
+  const [afterScreenshotMap, setAfterScreenshotMap] = useState<Record<string, string>>({});
 
   // Load saved screenshots from AsyncStorage
   React.useEffect(() => {
     AsyncStorage.getItem("job_screenshots_cache").then((data) => {
       if (data) {
         setScreenshotMap(JSON.parse(data));
+      }
+    });
+    AsyncStorage.getItem("job_screenshots_before_cache").then((data) => {
+      if (data) {
+        setBeforeScreenshotMap(JSON.parse(data));
+      }
+    });
+    AsyncStorage.getItem("job_screenshots_after_cache").then((data) => {
+      if (data) {
+        setAfterScreenshotMap(JSON.parse(data));
       }
     });
   }, []);
@@ -86,12 +98,15 @@ export default function TrackerScreen() {
 
   const applicationsByJobId = useMemo(() => {
     const mapped = new Map<string, {
+      id?: number;
       status?: string | null;
       application_date?: string | null;
       applied_at?: string | null;
       created_at: string;
       offer_received_at?: string | null;
       hired_at?: string | null;
+      before_screenshot_url?: string | null;
+      after_screenshot_url?: string | null;
     }>();
     (snapshot?.rawApplications ?? []).forEach((application) => {
       mapped.set(application.job_id, application);
@@ -120,7 +135,7 @@ export default function TrackerScreen() {
     );
   }, [snapshot?.rawApplications, toTimezoneDateKey]);
 
-  const handleUploadScreenshot = async (jobId: string) => {
+  const handleUploadScreenshot = async (jobId: string, kind: "before" | "after") => {
     let ImagePickerModule: any;
     try {
       ImagePickerModule = require("expo-image-picker");
@@ -148,11 +163,21 @@ export default function TrackerScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedUri = result.assets[0].uri;
-        const newMap = { ...screenshotMap, [jobId]: selectedUri };
-        setScreenshotMap(newMap);
-        await AsyncStorage.setItem("job_screenshots_cache", JSON.stringify(newMap));
+        const targetMap = kind === "before" ? beforeScreenshotMap : afterScreenshotMap;
+        const newMap = { ...targetMap, [jobId]: selectedUri };
+        if (kind === "before") {
+          setBeforeScreenshotMap(newMap);
+          await AsyncStorage.setItem("job_screenshots_before_cache", JSON.stringify(newMap));
+        } else {
+          setAfterScreenshotMap(newMap);
+          await AsyncStorage.setItem("job_screenshots_after_cache", JSON.stringify(newMap));
+        }
         if (selectedJob && selectedJob.id === jobId) {
-          setSelectedJob({ ...selectedJob, screenshotUri: selectedUri });
+          setSelectedJob({
+            ...selectedJob,
+            beforeScreenshotUri: kind === "before" ? selectedUri : selectedJob.beforeScreenshotUri,
+            afterScreenshotUri: kind === "after" ? selectedUri : selectedJob.afterScreenshotUri,
+          });
         }
       }
     } catch (err) {
@@ -170,7 +195,7 @@ export default function TrackerScreen() {
 
   // Filtering logic
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
+    const matchingJobs = jobs.filter((job) => {
       const rawApplication = applicationsByJobId.get(job.id);
       const normalizedStatus = rawApplication?.status?.trim().toLowerCase() ?? "";
 
@@ -204,6 +229,14 @@ export default function TrackerScreen() {
         default:
           return job.isApplied;
       }
+    });
+
+    return matchingJobs.sort((left, right) => {
+      const leftApplication = applicationsByJobId.get(left.id);
+      const rightApplication = applicationsByJobId.get(right.id);
+      const leftDate = new Date(leftApplication?.application_date ?? leftApplication?.applied_at ?? leftApplication?.created_at ?? 0).getTime();
+      const rightDate = new Date(rightApplication?.application_date ?? rightApplication?.applied_at ?? rightApplication?.created_at ?? 0).getTime();
+      return rightDate - leftDate;
     });
   }, [jobs, activeFilter, applicationsByJobId, todayApplicationJobIds]);
 
@@ -471,14 +504,27 @@ export default function TrackerScreen() {
       <View style={styles.stack}>
         {filteredJobs.length > 0 ? (
           filteredJobs.map((job) => {
-            const hasScreenshot = Boolean(screenshotMap[job.id]);
+            const rawApplication = applicationsByJobId.get(job.id);
+            const syncedBeforeScreenshot = rawApplication?.before_screenshot_url?.trim() || "";
+            const syncedAfterScreenshot = rawApplication?.after_screenshot_url?.trim() || "";
+            const resolvedBeforeScreenshot = syncedBeforeScreenshot || beforeScreenshotMap[job.id] || null;
+            const resolvedAfterScreenshot =
+              syncedAfterScreenshot || afterScreenshotMap[job.id] || screenshotMap[job.id] || null;
+            const hasBeforeScreenshot = Boolean(resolvedBeforeScreenshot);
+            const hasAfterScreenshot = Boolean(resolvedAfterScreenshot);
             return (
               <SoftPanel key={job.id}>
                 <Pressable
                   onPress={() =>
                     setSelectedJob({
                       ...job,
-                      screenshotUri: screenshotMap[job.id] || null,
+                      appliedDate:
+                        rawApplication?.application_date ??
+                        rawApplication?.applied_at ??
+                        rawApplication?.created_at ??
+                        null,
+                      beforeScreenshotUri: resolvedBeforeScreenshot,
+                      afterScreenshotUri: resolvedAfterScreenshot,
                     })
                   }
                   style={styles.row}
@@ -488,10 +534,12 @@ export default function TrackerScreen() {
                     <Text style={styles.meta}>
                       {job.company} • {job.location}
                     </Text>
-                    {hasScreenshot && (
+                    {(hasBeforeScreenshot || hasAfterScreenshot) && (
                       <View style={styles.screenshotIndicator}>
                         <AppIcon name="resume" size={12} color={colors.accent} />
-                        <Text style={styles.screenshotIndicatorText}>Screenshot Attached</Text>
+                        <Text style={styles.screenshotIndicatorText}>
+                          {hasBeforeScreenshot && hasAfterScreenshot ? "Before & After Attached" : hasBeforeScreenshot ? "Before Attached" : "After Attached"}
+                        </Text>
                       </View>
                     )}
                   </View>
@@ -617,42 +665,87 @@ export default function TrackerScreen() {
                 ) : null}
 
                 <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Applied Date</Text>
+                  <Text style={[styles.detailValue, { color: colors.text }]}>
+                    {selectedJob.appliedDate ? toTimezoneDateKey(selectedJob.appliedDate) : "Not available"}
+                  </Text>
+                </View>
+
+                <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Compensation</Text>
                   <Text style={[styles.detailValue, { color: colors.text }]}>{selectedJob.salary || "Not Specified"}</Text>
                 </View>
 
-                {/* Screenshot Section */}
-                <Text style={styles.sectionHeading}>APPLICATION SCREENSHOT</Text>
-                {selectedJob.screenshotUri ? (
+                <Text style={styles.sectionHeading}>BEFORE SCREENSHOT</Text>
+                {selectedJob.beforeScreenshotUri ? (
                   <View style={styles.screenshotContainer}>
                     <Image
-                      source={{ uri: selectedJob.screenshotUri }}
+                      source={{ uri: selectedJob.beforeScreenshotUri }}
                       style={styles.screenshotImage}
                       resizeMode="contain"
                     />
                     <TouchableOpacity
                       style={styles.removeScreenshotButton}
                       onPress={async () => {
-                        const newMap = { ...screenshotMap };
+                        const newMap = { ...beforeScreenshotMap };
                         delete newMap[selectedJob.id];
-                        setScreenshotMap(newMap);
-                        await AsyncStorage.setItem("job_screenshots_cache", JSON.stringify(newMap));
-                        setSelectedJob({ ...selectedJob, screenshotUri: null });
+                        setBeforeScreenshotMap(newMap);
+                        await AsyncStorage.setItem("job_screenshots_before_cache", JSON.stringify(newMap));
+                        setSelectedJob({ ...selectedJob, beforeScreenshotUri: null });
                       }}
                     >
-                      <Text style={styles.removeScreenshotText}>Remove Screenshot</Text>
+                      <Text style={styles.removeScreenshotText}>Remove Before Screenshot</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   <View style={[styles.uploadBox, { borderColor: colors.border }]}>
                     <AppIcon name="resume" size={32} color={colors.subtleText} />
-                    <Text style={styles.uploadBoxTitle}>No screenshot uploaded</Text>
-                    <Text style={styles.uploadBoxBody}>Attach confirmation email, portal submission status, or offer letter screenshot.</Text>
+                    <Text style={styles.uploadBoxTitle}>No before screenshot uploaded</Text>
+                    <Text style={styles.uploadBoxBody}>Attach portal state, draft step, or form-start screenshot.</Text>
                     <TouchableOpacity
                       style={styles.uploadButton}
-                      onPress={() => handleUploadScreenshot(selectedJob.id)}
+                      onPress={() => handleUploadScreenshot(selectedJob.id, "before")}
                     >
-                      <Text style={styles.uploadButtonText}>Upload Screenshot</Text>
+                      <Text style={styles.uploadButtonText}>Upload Before Screenshot</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <Text style={styles.sectionHeading}>AFTER SCREENSHOT</Text>
+                {selectedJob.afterScreenshotUri ? (
+                  <View style={styles.screenshotContainer}>
+                    <Image
+                      source={{ uri: selectedJob.afterScreenshotUri }}
+                      style={styles.screenshotImage}
+                      resizeMode="contain"
+                    />
+                    <TouchableOpacity
+                      style={styles.removeScreenshotButton}
+                      onPress={async () => {
+                        const newMap = { ...afterScreenshotMap };
+                        delete newMap[selectedJob.id];
+                        setAfterScreenshotMap(newMap);
+                        await AsyncStorage.setItem("job_screenshots_after_cache", JSON.stringify(newMap));
+                        const legacyMap = { ...screenshotMap };
+                        delete legacyMap[selectedJob.id];
+                        setScreenshotMap(legacyMap);
+                        await AsyncStorage.setItem("job_screenshots_cache", JSON.stringify(legacyMap));
+                        setSelectedJob({ ...selectedJob, afterScreenshotUri: null });
+                      }}
+                    >
+                      <Text style={styles.removeScreenshotText}>Remove After Screenshot</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={[styles.uploadBox, { borderColor: colors.border }]}>
+                    <AppIcon name="resume" size={32} color={colors.subtleText} />
+                    <Text style={styles.uploadBoxTitle}>No after screenshot uploaded</Text>
+                    <Text style={styles.uploadBoxBody}>Attach confirmation screen, sent email, or final applied proof screenshot.</Text>
+                    <TouchableOpacity
+                      style={styles.uploadButton}
+                      onPress={() => handleUploadScreenshot(selectedJob.id, "after")}
+                    >
+                      <Text style={styles.uploadButtonText}>Upload After Screenshot</Text>
                     </TouchableOpacity>
                   </View>
                 )}

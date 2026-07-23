@@ -963,25 +963,49 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
     const normalizedJob = normalizeJobPayload(job);
     const normalizedProfile = buildProfilePayload(application);
 
-    if (hasUsableDatabaseUrl()) {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       if (normalizedProfile?.id) {
-        await ensureProfileWithPostgres(application);
+        const { error: profileError } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
+        if (profileError) throw profileError;
       }
+
       if (normalizedJob?.id) {
-        await upsertJobWithPostgres(normalizedJob);
+        const { error: jobError } = await supabase.from("jobs").upsert([normalizedJob], { onConflict: "id" });
+        if (jobError) {
+          if (!canRetryJobWithoutLink(jobError)) {
+            throw jobError;
+          }
+
+          const { job_link: _jobLink, ...legacyJobPayload } = normalizedJob;
+          const { error: legacyJobError } = await supabase.from("jobs").upsert([legacyJobPayload], { onConflict: "id" });
+          if (legacyJobError) throw legacyJobError;
+        }
       }
-      const saved = application.id
-        ? await updateApplicationWithPostgres(Number(application.id), normalizedApplication)
-        : await createApplicationWithPostgres(normalizedApplication);
+
+      const query = application.id
+        ? supabase.from("applications").update(normalizedApplication).eq("id", Number(application.id)).select().single()
+        : supabase.from("applications").insert([normalizedApplication]).select().single();
+      const { data, error } = await query;
+      if (error) throw error;
+
       if (normalizedApplication.is_saved) {
-        await upsertSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
+        const { error: savedJobError } = await supabase
+          .from("saved_jobs")
+          .upsert([{ user_id: normalizedApplication.user_id, job_id: normalizedApplication.job_id }], { onConflict: "user_id,job_id" });
+        if (savedJobError) throw savedJobError;
       } else {
-        await deleteSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
+        const { error: savedJobDeleteError } = await supabase
+          .from("saved_jobs")
+          .delete()
+          .eq("user_id", normalizedApplication.user_id)
+          .eq("job_id", normalizedApplication.job_id);
+        if (savedJobDeleteError) throw savedJobDeleteError;
       }
-      return res.json({ success: true, application: saved });
+
+      return res.json({ success: true, application: data });
     }
 
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!hasUsableDatabaseUrl()) {
       return res.status(500).json({
         error:
           "Backend write credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY or a real DATABASE_URL in backend/.env to create tracker records without RLS errors.",
@@ -989,44 +1013,22 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
     }
 
     if (normalizedProfile?.id) {
-      const { error: profileError } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
-      if (profileError) throw profileError;
+      await ensureProfileWithPostgres(application);
     }
 
     if (normalizedJob?.id) {
-      const { error: jobError } = await supabase.from("jobs").upsert([normalizedJob], { onConflict: "id" });
-      if (jobError) {
-        if (!canRetryJobWithoutLink(jobError)) {
-          throw jobError;
-        }
-
-        const { job_link: _jobLink, ...legacyJobPayload } = normalizedJob;
-        const { error: legacyJobError } = await supabase.from("jobs").upsert([legacyJobPayload], { onConflict: "id" });
-        if (legacyJobError) throw legacyJobError;
-      }
+      await upsertJobWithPostgres(normalizedJob);
     }
 
-    const query = application.id
-      ? supabase.from("applications").update(normalizedApplication).eq("id", Number(application.id)).select().single()
-      : supabase.from("applications").insert([normalizedApplication]).select().single();
-    const { data, error } = await query;
-    if (error) throw error;
-
+    const saved = application.id
+      ? await updateApplicationWithPostgres(Number(application.id), normalizedApplication)
+      : await createApplicationWithPostgres(normalizedApplication);
     if (normalizedApplication.is_saved) {
-      const { error: savedJobError } = await supabase
-        .from("saved_jobs")
-        .upsert([{ user_id: normalizedApplication.user_id, job_id: normalizedApplication.job_id }], { onConflict: "user_id,job_id" });
-      if (savedJobError) throw savedJobError;
+      await upsertSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
     } else {
-      const { error: savedJobDeleteError } = await supabase
-        .from("saved_jobs")
-        .delete()
-        .eq("user_id", normalizedApplication.user_id)
-        .eq("job_id", normalizedApplication.job_id);
-      if (savedJobDeleteError) throw savedJobDeleteError;
+      await deleteSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
     }
-
-    return res.json({ success: true, application: data });
+    return res.json({ success: true, application: saved });
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/tracker/applications failed:", err);
     return res.status(500).json({ error: err.message || "Failed to create tracker application" });
@@ -1436,50 +1438,57 @@ router.post("/mobile/tracker/applications", authMiddleware, async (req: Authenti
   };
 
   try {
-    if (hasUsableDatabaseUrl()) {
-      const existingApplication = await getApplicationByUserAndJobWithPostgres(userId, requestedJobId);
-      const saved = existingApplication?.id
-        ? await updateApplicationWithPostgres(Number(existingApplication.id), applicationPatch)
-        : await createApplicationWithPostgres(applicationPatch);
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const existingApplicationId = await findLatestSupabaseApplicationId(userId, requestedJobId);
+
+      const query = existingApplicationId
+        ? supabase.from("applications").update(applicationPatch).eq("id", existingApplicationId).select().single()
+        : supabase.from("applications").insert([applicationPatch]).select().single();
+      const { data, error } = await query;
+      if (error) throw error;
 
       if (normalizedStatus === "saved") {
-        await upsertSavedJobWithPostgres(userId, requestedJobId);
+        const { error: savedJobError } = await supabase
+          .from("saved_jobs")
+          .upsert([{ user_id: userId, job_id: requestedJobId }], { onConflict: "user_id,job_id" });
+        if (savedJobError) throw savedJobError;
       } else {
-        await deleteSavedJobWithPostgres(userId, requestedJobId);
+        const { error: deleteSavedJobError } = await supabase
+          .from("saved_jobs")
+          .delete()
+          .eq("user_id", userId)
+          .eq("job_id", requestedJobId);
+        if (deleteSavedJobError) throw deleteSavedJobError;
       }
 
       return res.json({
         success: true,
-        application: saved,
+        application: data,
         isSaved: normalizedStatus === "saved",
       });
     }
 
-    const existingApplicationId = await findLatestSupabaseApplicationId(userId, requestedJobId);
+    if (!hasUsableDatabaseUrl()) {
+      return res.status(500).json({
+        error:
+          "Backend write credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY or a real DATABASE_URL in backend/.env to save tracker records without RLS errors.",
+      });
+    }
 
-    const query = existingApplicationId
-      ? supabase.from("applications").update(applicationPatch).eq("id", existingApplicationId).select().single()
-      : supabase.from("applications").insert([applicationPatch]).select().single();
-    const { data, error } = await query;
-    if (error) throw error;
+    const existingApplication = await getApplicationByUserAndJobWithPostgres(userId, requestedJobId);
+    const saved = existingApplication?.id
+      ? await updateApplicationWithPostgres(Number(existingApplication.id), applicationPatch)
+      : await createApplicationWithPostgres(applicationPatch);
 
     if (normalizedStatus === "saved") {
-      const { error: savedJobError } = await supabase
-        .from("saved_jobs")
-        .upsert([{ user_id: userId, job_id: requestedJobId }], { onConflict: "user_id,job_id" });
-      if (savedJobError) throw savedJobError;
+      await upsertSavedJobWithPostgres(userId, requestedJobId);
     } else {
-      const { error: deleteSavedJobError } = await supabase
-        .from("saved_jobs")
-        .delete()
-        .eq("user_id", userId)
-        .eq("job_id", requestedJobId);
-      if (deleteSavedJobError) throw deleteSavedJobError;
+      await deleteSavedJobWithPostgres(userId, requestedJobId);
     }
 
     return res.json({
       success: true,
-      application: data,
+      application: saved,
       isSaved: normalizedStatus === "saved",
     });
   } catch (err: any) {
@@ -1502,21 +1511,6 @@ router.post("/admin/tracker/contacts", authMiddleware, async (req: Authenticated
   }
 
   try {
-    if (hasUsableDatabaseUrl()) {
-      if (singleContact) {
-        const saved = singleContact.id
-          ? await updateRecruiterContactWithPostgres(Number(singleContact.id), singleContact)
-          : await createRecruiterContactWithPostgres(singleContact);
-        return res.json({ success: true, contact: saved });
-      }
-
-      const savedContacts = [];
-      for (const row of batchContacts) {
-        savedContacts.push(await createRecruiterContactWithPostgres(row));
-      }
-      return res.json({ success: true, contacts: savedContacts });
-    }
-
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
         if (singleContact) {
@@ -1536,6 +1530,21 @@ router.post("/admin/tracker/contacts", authMiddleware, async (req: Authenticated
           throw error;
         }
       }
+    }
+
+    if (hasUsableDatabaseUrl()) {
+      if (singleContact) {
+        const saved = singleContact.id
+          ? await updateRecruiterContactWithPostgres(Number(singleContact.id), singleContact)
+          : await createRecruiterContactWithPostgres(singleContact);
+        return res.json({ success: true, contact: saved });
+      }
+
+      const savedContacts = [];
+      for (const row of batchContacts) {
+        savedContacts.push(await createRecruiterContactWithPostgres(row));
+      }
+      return res.json({ success: true, contacts: savedContacts });
     }
 
     if (singleContact) {
@@ -1595,11 +1604,6 @@ router.get("/admin/tracker/contacts", authMiddleware, async (req: AuthenticatedR
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
 
   try {
-    if (hasUsableDatabaseUrl()) {
-      const contacts = await getRecruiterContactsWithPostgres(clientId);
-      return res.json({ success: true, contacts });
-    }
-
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
         const query = clientId
@@ -1613,6 +1617,11 @@ router.get("/admin/tracker/contacts", authMiddleware, async (req: AuthenticatedR
           throw error;
         }
       }
+    }
+
+    if (hasUsableDatabaseUrl()) {
+      const contacts = await getRecruiterContactsWithPostgres(clientId);
+      return res.json({ success: true, contacts });
     }
 
     const contacts = await getLocalRecruiterContacts(clientId);
@@ -1634,11 +1643,6 @@ router.delete("/admin/tracker/contacts/:id", authMiddleware, async (req: Authent
   }
 
   try {
-    if (hasUsableDatabaseUrl()) {
-      const deleted = await deleteRecruiterContactWithPostgres(contactId);
-      return res.json({ success: deleted });
-    }
-
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
         const { error } = await supabase.from("recruiter_contacts").delete().eq("id", contactId);
@@ -1651,11 +1655,178 @@ router.delete("/admin/tracker/contacts/:id", authMiddleware, async (req: Authent
       }
     }
 
+    if (hasUsableDatabaseUrl()) {
+      const deleted = await deleteRecruiterContactWithPostgres(contactId);
+      return res.json({ success: deleted });
+    }
+
     const deleted = await deleteLocalRecruiterContact(contactId);
     return res.json({ success: deleted, mode: "local_preview" });
   } catch (err: any) {
     console.error("[Tracker Route] DELETE /admin/tracker/contacts/:id failed:", err);
     return res.status(500).json({ error: err.message || "Failed to delete hiring manager" });
+  }
+});
+
+router.get("/admin/tracker/follow-ups", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
+
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for follow-up sync." });
+    }
+
+    const query = clientId
+      ? supabase.from("follow_ups").select("*").eq("client_id", clientId).order("due_date", { ascending: true })
+      : supabase.from("follow_ups").select("*").order("due_date", { ascending: true });
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return res.json({ success: true, followUps: data ?? [] });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/follow-ups failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load follow-ups" });
+  }
+});
+
+router.post("/admin/tracker/follow-ups", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const followUp = req.body?.followUp;
+  if (!followUp) {
+    return res.status(400).json({ error: "Missing follow-up payload" });
+  }
+
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for follow-up sync." });
+    }
+
+    const query = followUp.id
+      ? supabase.from("follow_ups").update(followUp).eq("id", Number(followUp.id)).select().single()
+      : supabase.from("follow_ups").insert([followUp]).select().single();
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return res.json({ success: true, followUp: data });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/follow-ups failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save follow-up" });
+  }
+});
+
+router.delete("/admin/tracker/follow-ups/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const followUpId = Number(req.params.id);
+  if (!Number.isFinite(followUpId)) {
+    return res.status(400).json({ error: "Invalid follow-up id" });
+  }
+
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for follow-up sync." });
+    }
+
+    const { error } = await supabase.from("follow_ups").delete().eq("id", followUpId);
+    if (error) throw error;
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/follow-ups/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete follow-up" });
+  }
+});
+
+router.get("/admin/tracker/cold-emails", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
+
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for cold email sync." });
+    }
+
+    const query = clientId
+      ? supabase.from("cold_emails").select("*").eq("client_id", clientId).order("sent_at", { ascending: false })
+      : supabase.from("cold_emails").select("*").order("sent_at", { ascending: false });
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return res.json({ success: true, coldEmails: data ?? [] });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/cold-emails failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load cold emails" });
+  }
+});
+
+router.post("/admin/tracker/cold-emails", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const coldEmail = req.body?.coldEmail;
+  const coldEmails = Array.isArray(req.body?.coldEmails) ? req.body.coldEmails : [];
+  if (!coldEmail && coldEmails.length === 0) {
+    return res.status(400).json({ error: "Missing cold email payload" });
+  }
+
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for cold email sync." });
+    }
+
+    if (coldEmail) {
+      const query = coldEmail.id
+        ? supabase.from("cold_emails").update(coldEmail).eq("id", Number(coldEmail.id)).select().single()
+        : supabase.from("cold_emails").insert([coldEmail]).select().single();
+      const { data, error } = await query;
+      if (error) throw error;
+      return res.json({ success: true, coldEmail: data });
+    }
+
+    const { data, error } = await supabase.from("cold_emails").insert(coldEmails).select();
+    if (error) throw error;
+    return res.json({ success: true, coldEmails: data ?? [] });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/cold-emails failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save cold email" });
+  }
+});
+
+router.delete("/admin/tracker/cold-emails/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const coldEmailId = Number(req.params.id);
+  if (!Number.isFinite(coldEmailId)) {
+    return res.status(400).json({ error: "Invalid cold email id" });
+  }
+
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for cold email sync." });
+    }
+
+    const { error } = await supabase.from("cold_emails").delete().eq("id", coldEmailId);
+    if (error) throw error;
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/cold-emails/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete cold email" });
   }
 });
 
@@ -1977,10 +2148,6 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
     })();
 
     const recruiterContactsPromise = (async () => {
-      if (hasUsableDatabaseUrl()) {
-        return { data: await getRecruiterContactsWithPostgres(targetUserId), error: null };
-      }
-
       const result = await supabase
         .from("recruiter_contacts")
         .select("*")
@@ -1991,11 +2158,15 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
         return result;
       }
 
-      if (isMissingRelationError(result.error)) {
-        return { data: await getLocalRecruiterContacts(targetUserId), error: null };
+      if (!isMissingRelationError(result.error)) {
+        return result;
       }
 
-      return result;
+      if (hasUsableDatabaseUrl()) {
+        return { data: await getRecruiterContactsWithPostgres(targetUserId), error: null };
+      }
+
+      return { data: await getLocalRecruiterContacts(targetUserId), error: null };
     })();
 
     const successStoriesPromise = (async () => {
@@ -2113,6 +2284,14 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmails: coldEmailsResult.data ?? [],
       clientScores: clientScoresResult.data ?? [],
       notifications: notificationsResult.data ?? [],
+      activityLogs:
+        (
+          await supabase
+            .from("activity_logs")
+            .select("*")
+            .eq("client_id", targetUserId)
+            .order("created_at", { ascending: false })
+        ).data ?? [],
     });
   } catch (err: any) {
     console.error("[Tracker Route] GET /mobile/snapshot failed:", err);

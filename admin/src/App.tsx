@@ -17,6 +17,7 @@ const previewTrackerClient = {
 };
 
 const SUCCESS_STORIES_LOCAL_KEY = "admin_success_stories_preview";
+const canUseBackendSuccessStories = Boolean(BACKEND_URL);
 
 const previewTrackerJobs = [
   {
@@ -638,13 +639,13 @@ export default function App() {
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "", status: "sent" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
-  const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied" });
+  const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "" });
   const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
   const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
   const [contactForm, setContactForm] = useState({ client_id: "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
   const [coldEmailForm, setColdEmailForm] = useState({ client_id: "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
   const [scoreForm, setScoreForm] = useState({ client_id: "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
-  const [quickUpdateForm, setQuickUpdateForm] = useState({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "" });
+  const [quickUpdateForm, setQuickUpdateForm] = useState({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "", before_screenshot_url: "", after_screenshot_url: "" });
   const [successStoryForm, setSuccessStoryForm] = useState({ id: "", name: "", position: "", year: "", message: "", story_rate: 5, photo_url: "", display_order: 0, is_active: true });
   const [successStoryPhotoUploading, setSuccessStoryPhotoUploading] = useState(false);
 
@@ -794,6 +795,18 @@ export default function App() {
       void fetchInterviewPreparationData(selectedTrackerClientId || undefined);
     }
   }, [activeTab, isAdmin, selectedTrackerClientId]);
+
+  useEffect(() => {
+    if (
+      isAdmin &&
+      isModalOpen &&
+      selectedTrackerClientId &&
+      (modalType === "follow_up" || modalType === "interview" || modalType === "cold_email" || modalType === "score") &&
+      applications.length === 0
+    ) {
+      void fetchTrackerClientData(selectedTrackerClientId);
+    }
+  }, [applications.length, isAdmin, isModalOpen, modalType, selectedTrackerClientId]);
 
   // Real-time Chat subscriptions
   useEffect(() => {
@@ -1459,56 +1472,62 @@ export default function App() {
 
   const fetchSuccessStories = async () => {
     try {
-      const token = await ensureAdminToken();
-      if (!token) {
-        throw new Error("Admin auth token missing. Please sign in again.");
-      }
-
-      const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => null);
-        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
-      }
-
-      const payload = await response.json();
-      const backendStories = payload.stories || [];
-      const localStories = readLocalSuccessStories();
-
-      if (localStories.length > 0) {
-        try {
-          const migratedStories = await syncLocalSuccessStoriesToBackend(localStories, ensureAdminToken);
-          const mergedStories = [...backendStories];
-          for (const migratedStory of migratedStories) {
-            if (!mergedStories.some((item: any) => item.id === migratedStory.id)) {
-              mergedStories.push(migratedStory);
-            }
-          }
-
-          mergedStories.sort((left: any, right: any) => {
-            const leftOrder = Number(left.display_order ?? 0);
-            const rightOrder = Number(right.display_order ?? 0);
-            if (leftOrder !== rightOrder) {
-              return leftOrder - rightOrder;
-            }
-
-            return String(right.created_at || "").localeCompare(String(left.created_at || ""));
-          });
-
-          setSuccessStories(mergedStories);
-          return;
-        } catch (migrationError) {
-          console.warn("Local success stories migration to backend failed, keeping admin-only preview copy:", migrationError);
+      if (canUseBackendSuccessStories) {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
         }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const backendStories = payload.stories || [];
+        const localStories = readLocalSuccessStories();
+
+        if (localStories.length > 0) {
+          try {
+            const migratedStories = await syncLocalSuccessStoriesToBackend(localStories, ensureAdminToken);
+            const mergedStories = [...backendStories];
+            for (const migratedStory of migratedStories) {
+              if (!mergedStories.some((item: any) => item.id === migratedStory.id)) {
+                mergedStories.push(migratedStory);
+              }
+            }
+
+            mergedStories.sort((left: any, right: any) => {
+              const leftOrder = Number(left.display_order ?? 0);
+              const rightOrder = Number(right.display_order ?? 0);
+              if (leftOrder !== rightOrder) {
+                return leftOrder - rightOrder;
+              }
+
+              return String(right.created_at || "").localeCompare(String(left.created_at || ""));
+            });
+
+            setSuccessStories(mergedStories);
+            return;
+          } catch (migrationError) {
+            console.warn("Local success stories migration to backend failed, keeping admin-only preview copy:", migrationError);
+          }
+        }
+
+        setSuccessStories(backendStories);
+        return;
+      }
+    } catch (backendError) {
+      if (canUseBackendSuccessStories) {
+        throw backendError;
       }
 
-      setSuccessStories(backendStories);
-      return;
-    } catch (backendError) {
       console.warn("fetchSuccessStories backend call failed, falling back to Supabase direct query:", backendError);
     }
 
@@ -1569,12 +1588,8 @@ export default function App() {
   };
 
   const fetchTrackerClientData = async (clientId: string) => {
-    const contactsPromise = (async () => {
-      const directResult = await supabase
-        .from("recruiter_contacts")
-        .select("*")
-        .eq("client_id", clientId)
-        .order("contact_date", { ascending: false });
+    const fetchTrackerDataset = async (path: string, fallbackQuery: () => Promise<{ data: any; error: any }>, key: string) => {
+      const directResult = await fallbackQuery();
 
       if (!directResult.error || !isMissingRelationError(directResult.error)) {
         return directResult;
@@ -1585,7 +1600,7 @@ export default function App() {
         return directResult;
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/contacts?clientId=${encodeURIComponent(clientId)}`, {
+      const response = await fetch(`${BACKEND_URL}${path}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -1596,7 +1611,46 @@ export default function App() {
       }
 
       const payload = await response.json();
-      return { data: payload.contacts ?? [], error: null };
+      return { data: payload[key] ?? [], error: null };
+    };
+
+    const contactsPromise = (async () => {
+      return await fetchTrackerDataset(
+        `/api/admin/tracker/contacts?clientId=${encodeURIComponent(clientId)}`,
+        async () =>
+          await supabase
+            .from("recruiter_contacts")
+            .select("*")
+            .eq("client_id", clientId)
+            .order("contact_date", { ascending: false }),
+        "contacts",
+      );
+    })();
+
+    const followUpsPromise = (async () => {
+      return await fetchTrackerDataset(
+        `/api/admin/tracker/follow-ups?clientId=${encodeURIComponent(clientId)}`,
+        async () =>
+          await supabase
+            .from("follow_ups")
+            .select("*")
+            .eq("client_id", clientId)
+            .order("due_date", { ascending: true }),
+        "followUps",
+      );
+    })();
+
+    const coldEmailsPromise = (async () => {
+      return await fetchTrackerDataset(
+        `/api/admin/tracker/cold-emails?clientId=${encodeURIComponent(clientId)}`,
+        async () =>
+          await supabase
+            .from("cold_emails")
+            .select("*")
+            .eq("client_id", clientId)
+            .order("sent_at", { ascending: false }),
+        "coldEmails",
+      );
     })();
 
     const [
@@ -1610,9 +1664,9 @@ export default function App() {
     ] = await Promise.all([
       supabase.from("applications").select("*, jobs(*)").eq("user_id", clientId).order("created_at", { ascending: false }),
       supabase.from("interviews").select("*").eq("client_id", clientId).order("interview_date", { ascending: false }),
-      supabase.from("follow_ups").select("*").eq("client_id", clientId).order("due_date", { ascending: true }),
+      followUpsPromise,
       contactsPromise,
-      supabase.from("cold_emails").select("*").eq("client_id", clientId).order("sent_at", { ascending: false }),
+      coldEmailsPromise,
       supabase.from("client_scores").select("*").eq("client_id", clientId).order("calculated_at", { ascending: false }),
       supabase.from("activity_logs").select("*").eq("client_id", clientId).order("created_at", { ascending: false }),
     ]);
@@ -2086,7 +2140,7 @@ export default function App() {
         is_active: successStoryForm.is_active,
       };
 
-      try {
+      if (canUseBackendSuccessStories) {
         const token = await ensureAdminToken();
         if (!token) {
           throw new Error("Admin auth token missing. Please sign in again.");
@@ -2105,8 +2159,7 @@ export default function App() {
           const errorPayload = await response.json().catch(() => null);
           throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
         }
-      } catch (backendError) {
-        console.warn("handleSaveSuccessStory backend save failed, falling back to Supabase upsert:", backendError);
+      } else {
         const recordId = payload.id || `story_${Math.random().toString(36).slice(2, 10)}`;
         const { error } = await supabase
           .from("success_stories")
@@ -2246,6 +2299,12 @@ export default function App() {
         job_description: selectedJob.description || "",
         created_by_admin_id: user?.id || "admin",
       };
+      const screenshotPayload = {
+        before_screenshot_url: trackerForm.before_screenshot_url || "",
+        after_screenshot_url: trackerForm.after_screenshot_url || "",
+      };
+      let savedApplicationId = editItem?.id ? Number(editItem.id) : null;
+
       try {
         const token = await ensureAdminToken();
         if (!token || !BACKEND_URL) {
@@ -2268,12 +2327,24 @@ export default function App() {
           const errorPayload = await res.json().catch(() => null);
           throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
         }
+
+        const responsePayload = await res.json().catch(() => null);
+        savedApplicationId = Number(responsePayload?.application?.id ?? savedApplicationId ?? 0) || savedApplicationId;
       } catch (backendError) {
         console.warn("handleSaveTracker backend tracker save failed, falling back to direct Supabase upsert:", backendError);
-        await saveTrackerApplicationDirectly(payload, selectedJob, { skipJobUpsert: true });
+        const savedApplication = await saveTrackerApplicationDirectly(payload, selectedJob, { skipJobUpsert: true });
+        savedApplicationId = Number(savedApplication?.id ?? savedApplicationId ?? 0) || savedApplicationId;
       }
 
-      await logActivity(payload.user_id, editItem?.id ?? null, "application_saved", "Application saved", "Application tracker entry created or updated from admin panel.", editItem ?? null, payload);
+      await logActivity(
+        payload.user_id,
+        savedApplicationId,
+        "application_saved",
+        "Application saved",
+        "Application tracker entry created or updated from admin panel.",
+        editItem ?? null,
+        { ...payload, ...screenshotPayload },
+      );
       showSuccess("Job tracker updated successfully!");
       if (payload.user_id) {
         await fetchTrackerClientData(payload.user_id);
@@ -2342,6 +2413,7 @@ export default function App() {
     e.preventDefault();
     try {
       const payload = {
+        ...(editItem?.id ? { id: editItem.id } : {}),
         client_id: followUpForm.client_id,
         application_id: Number(followUpForm.application_id),
         follow_up_type: followUpForm.follow_up_type,
@@ -2353,12 +2425,23 @@ export default function App() {
         created_by: user?.primaryEmailAddress?.emailAddress || "admin",
       };
 
-      if (editItem) {
-        const { error } = await supabase.from("follow_ups").update(payload).eq("id", editItem.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("follow_ups").insert([payload]);
-        if (error) throw error;
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const res = await fetch(`${BACKEND_URL}/api/admin/tracker/follow-ups`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ followUp: payload }),
+      });
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
       }
 
       await logActivity(payload.client_id, payload.application_id, "follow_up_saved", "Follow-up saved", "Follow-up details updated from admin panel.", editItem ?? null, payload);
@@ -2484,12 +2567,30 @@ export default function App() {
   const handleSaveColdEmail = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const normalizeEmail = (value: string) => value.trim().toLowerCase();
+      const recipientEmails = editItem
+        ? [coldEmailForm.recipient_email.trim()]
+        : Array.from(
+            new Set(
+              coldEmailForm.recipient_email
+                .split(/[\n,;]+/)
+                .map((value) => value.trim())
+                .filter(Boolean),
+            ),
+          );
+
+      if (recipientEmails.length === 0) {
+        throw new Error("Please add at least one recipient email.");
+      }
+
+      const payloadBase = {
         client_id: coldEmailForm.client_id,
         application_id: coldEmailForm.application_id ? Number(coldEmailForm.application_id) : null,
-        recipient_name: coldEmailForm.recipient_name,
-        recipient_email: coldEmailForm.recipient_email,
-        company_name: coldEmailForm.company_name,
         subject: coldEmailForm.subject,
         message: coldEmailForm.message,
         sent_at: coldEmailForm.sent_at || new Date().toISOString(),
@@ -2498,19 +2599,68 @@ export default function App() {
         created_by: user?.primaryEmailAddress?.emailAddress || "admin",
       };
 
-      if (editItem) {
-        const { error } = await supabase.from("cold_emails").update(payload).eq("id", editItem.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("cold_emails").insert([payload]);
-        if (error) throw error;
+      const coldEmailRecords = recipientEmails.map((recipientEmail) => {
+        const matchedContact = trackerContacts.find((contact) => normalizeEmail(contact.email || "") === normalizeEmail(recipientEmail));
+        return {
+          ...payloadBase,
+          recipient_name: matchedContact?.recruiter_name || coldEmailForm.recipient_name,
+          recipient_email: recipientEmail,
+          company_name: matchedContact?.company_name || coldEmailForm.company_name,
+          application_id: payloadBase.application_id ?? matchedContact?.application_id ?? null,
+        };
+      });
+
+      const res = await fetch(`${BACKEND_URL}/api/admin/tracker/cold-emails`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(
+          editItem
+            ? { coldEmail: { id: editItem.id, ...coldEmailRecords[0] } }
+            : { coldEmails: coldEmailRecords },
+        ),
+      });
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
       }
 
-      await logActivity(payload.client_id, payload.application_id, "cold_email_saved", "Cold email saved", "Cold email details updated from admin panel.", editItem ?? null, payload);
-      showSuccess("Cold email saved successfully!");
-      await fetchTrackerClientData(payload.client_id);
+      await logActivity(
+        payloadBase.client_id,
+        payloadBase.application_id,
+        "cold_email_saved",
+        "Cold email saved",
+        `Cold email details updated from admin panel for ${recipientEmails.length} recipient${recipientEmails.length === 1 ? "" : "s"}.`,
+        editItem ?? null,
+        editItem ? coldEmailRecords[0] : { recipients: recipientEmails, subject: payloadBase.subject },
+      );
+      showSuccess(editItem ? "Cold email saved successfully!" : `Cold email saved for ${recipientEmails.length} recipient${recipientEmails.length === 1 ? "" : "s"}!`);
+      await fetchTrackerClientData(payloadBase.client_id);
     } catch (err: any) {
       showError(err.message);
+    }
+  };
+
+  const handleTrackerScreenshotChange = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    target: "before_screenshot_url" | "after_screenshot_url",
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const screenshotUrl = await createCompressedImageDataUrl(file);
+      setTrackerForm((current) => ({ ...current, [target]: screenshotUrl }));
+      setQuickUpdateForm((current) => ({ ...current, [target]: screenshotUrl }));
+    } catch (err: any) {
+      showError(err.message || "Failed to process selected screenshot.");
     }
   };
 
@@ -2612,7 +2762,7 @@ export default function App() {
       }
 
       if (table === "success_stories") {
-        try {
+        if (canUseBackendSuccessStories) {
           const token = await ensureAdminToken();
           if (!token) {
             throw new Error("Admin auth token missing. Please sign in again.");
@@ -2629,8 +2779,7 @@ export default function App() {
             const errorPayload = await res.json().catch(() => null);
             throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
           }
-        } catch (backendError) {
-          console.warn("handleDelete success_stories backend delete failed, falling back to Supabase delete:", backendError);
+        } else {
           const { error } = await supabase.from("success_stories").delete().eq("id", id);
           if (error) {
             if (isMissingRelationError(error)) {
@@ -2653,6 +2802,36 @@ export default function App() {
         }
 
         const res = await fetch(`${BACKEND_URL}/api/admin/tracker/contacts/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        }
+
+        showSuccess("Item deleted successfully.");
+        if (selectedTrackerClientId) {
+          await fetchTrackerClientData(selectedTrackerClientId);
+        }
+        return;
+      }
+
+      if (table === "follow_ups" || table === "cold_emails") {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const endpoint =
+          table === "follow_ups"
+            ? `${BACKEND_URL}/api/admin/tracker/follow-ups/${encodeURIComponent(id)}`
+            : `${BACKEND_URL}/api/admin/tracker/cold-emails/${encodeURIComponent(id)}`;
+
+        const res = await fetch(endpoint, {
           method: "DELETE",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -2923,13 +3102,13 @@ export default function App() {
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "", status: "sent" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
-    setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied" });
+    setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "" });
     setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
     setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
     setContactForm({ client_id: selectedTrackerClientId || "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
     setColdEmailForm({ client_id: selectedTrackerClientId || "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
     setScoreForm({ client_id: selectedTrackerClientId || "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
-    setQuickUpdateForm({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "" });
+    setQuickUpdateForm({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "", before_screenshot_url: "", after_screenshot_url: "" });
     setSuccessStoryForm({ id: "", name: "", position: "", year: "", message: "", story_rate: 5, photo_url: "", display_order: successStories.length, is_active: true });
     setIsModalOpen(true);
   };
@@ -2981,7 +3160,13 @@ export default function App() {
     } else if (type === "resume") {
       setResumeForm({ user_id: item.user_id, score: item.score, suggestions: item.suggestions?.join(", ") || "", notes: item.notes || "" });
     } else if (type === "tracker") {
-      setTrackerForm({ user_id: item.user_id, job_id: item.job_id, status: item.status || "applied" });
+      setTrackerForm({
+        user_id: item.user_id,
+        job_id: item.job_id,
+        status: item.status || "applied",
+        before_screenshot_url: item.before_screenshot_url || "",
+        after_screenshot_url: item.after_screenshot_url || "",
+      });
     } else if (type === "interview") {
       setInterviewForm({ client_id: item.client_id, application_id: String(item.application_id), interview_type: item.interview_type || "video", interview_round: item.interview_round || "", interview_date: item.interview_date || "", status: item.status || "scheduled", interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "", admin_notes: item.admin_notes || "" });
     } else if (type === "follow_up") {
@@ -2993,7 +3178,16 @@ export default function App() {
     } else if (type === "score") {
       setScoreForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", ats_score: item.ats_score || 0, ai_match_score: item.ai_match_score || 0, score_reason: item.score_reason || "", recommendations: item.recommendations?.join(", ") || "" });
     } else if (type === "quick_update") {
-      setQuickUpdateForm({ application_id: String(item.id), status: item.status || "applied", current_stage: item.current_stage || item.status || "applied", next_action: item.next_action || "", next_action_date: item.next_action_date || "", notes: item.notes || "" });
+      setQuickUpdateForm({
+        application_id: String(item.id),
+        status: item.status || "applied",
+        current_stage: item.current_stage || item.status || "applied",
+        next_action: item.next_action || "",
+        next_action_date: item.next_action_date || "",
+        notes: item.notes || "",
+        before_screenshot_url: item.before_screenshot_url || "",
+        after_screenshot_url: item.after_screenshot_url || "",
+      });
     } else if (type === "success_story") {
       setSuccessStoryForm({
         id: item.id || "",
@@ -3095,6 +3289,21 @@ export default function App() {
     scores: trackerScores,
     timezone: selectedTrackerClient?.timezone || "Australia/Melbourne",
   });
+  const trackerApplicationOptions = applications
+    .filter((application) => !selectedTrackerClientId || application.user_id === selectedTrackerClientId || application.client_id === selectedTrackerClientId)
+    .map((application) => ({
+      id: String(application.id),
+      label: `${application.job_title || application.jobs?.title || "Application"} - ${application.company_name || application.jobs?.company || "Company"}`,
+    }));
+  const trackerContactOptions = trackerContacts
+    .filter((contact) => !selectedTrackerClientId || contact.client_id === selectedTrackerClientId)
+    .map((contact) => ({
+      id: String(contact.id),
+      recruiterName: contact.recruiter_name || "",
+      position: contact.company_name || "",
+      email: contact.email || "",
+      applicationId: contact.application_id ? String(contact.application_id) : "",
+    }));
 
   const modalHeading = modalType === "contact"
     ? `${editItem ? "Edit" : "Create"} Hiring Manager`
@@ -5045,6 +5254,32 @@ export default function App() {
                     ))}
                   </select>
                 </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Before Screenshot</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="form-input"
+                      onChange={(e) => void handleTrackerScreenshotChange(e, "before_screenshot_url")}
+                    />
+                    {trackerForm.before_screenshot_url ? (
+                      <img src={trackerForm.before_screenshot_url} alt="Before screenshot" style={{ width: "100%", maxHeight: "140px", objectFit: "contain", marginTop: "10px", borderRadius: "12px", border: "1px solid var(--border-color)" }} />
+                    ) : null}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">After Screenshot</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="form-input"
+                      onChange={(e) => void handleTrackerScreenshotChange(e, "after_screenshot_url")}
+                    />
+                    {trackerForm.after_screenshot_url ? (
+                      <img src={trackerForm.after_screenshot_url} alt="After screenshot" style={{ width: "100%", maxHeight: "140px", objectFit: "contain", marginTop: "10px", borderRadius: "12px", border: "1px solid var(--border-color)" }} />
+                    ) : null}
+                  </div>
+                </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>
                   Save Tracker Entry
                 </button>
@@ -5108,9 +5343,9 @@ export default function App() {
                   <label className="form-label">Application</label>
                   <select className="form-input" required value={followUpForm.application_id} onChange={(e) => setFollowUpForm({ ...followUpForm, application_id: e.target.value })}>
                     <option value="">Select application</option>
-                    {applications.map((application) => (
+                    {trackerApplicationOptions.map((application) => (
                       <option key={application.id} value={application.id}>
-                        {(application.job_title || application.jobs?.title || "Application")} - {(application.company_name || application.jobs?.company || "Company")}
+                        {application.label}
                       </option>
                     ))}
                   </select>
@@ -5156,8 +5391,46 @@ export default function App() {
             {modalType === "cold_email" && (
               <form onSubmit={handleSaveColdEmail}>
                 <div className="form-group">
+                  <label className="form-label">Recruiter</label>
+                  <select
+                    className="form-input"
+                    value={coldEmailForm.recipient_email}
+                    onChange={(e) => {
+                      const selectedContact = trackerContactOptions.find((contact) => contact.email === e.target.value);
+                      if (!selectedContact) {
+                        setColdEmailForm({ ...coldEmailForm, recipient_email: e.target.value });
+                        return;
+                      }
+                      setColdEmailForm({
+                        ...coldEmailForm,
+                        application_id: selectedContact.applicationId,
+                        recipient_name: selectedContact.recruiterName,
+                        recipient_email: selectedContact.email,
+                        company_name: selectedContact.position,
+                      });
+                    }}
+                  >
+                    <option value="">Select recruiter</option>
+                    {trackerContactOptions.map((contact) => (
+                      <option key={contact.id} value={contact.email}>
+                        {contact.recruiterName || "Recruiter"} - {contact.position || "Position"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Recruiter Name</label>
+                    <input type="text" className="form-input" value={coldEmailForm.recipient_name} onChange={(e) => setColdEmailForm({ ...coldEmailForm, recipient_name: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Position</label>
+                    <input type="text" className="form-input" value={coldEmailForm.company_name} onChange={(e) => setColdEmailForm({ ...coldEmailForm, company_name: e.target.value })} />
+                  </div>
+                </div>
+                <div className="form-group">
                   <label className="form-label">Recipient Email</label>
-                  <input type="email" className="form-input" required value={coldEmailForm.recipient_email} onChange={(e) => setColdEmailForm({ ...coldEmailForm, recipient_email: e.target.value })} />
+                  <input type="text" className="form-input" required placeholder="name@company.com, next@company.com" value={coldEmailForm.recipient_email} onChange={(e) => setColdEmailForm({ ...coldEmailForm, recipient_email: e.target.value })} />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Subject</label>

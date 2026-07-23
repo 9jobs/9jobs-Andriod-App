@@ -15,10 +15,6 @@ import { supabase } from "@/lib/supabase/client";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
 
-const previewCompatibleEmails = new Set([
-  previewMobileUser.email.toLowerCase(),
-]);
-
 type SessionContextValue = {
   isBooting: boolean;
   user: SessionUser | null;
@@ -124,20 +120,7 @@ async function clearPreviewSnapshotCache() {
 }
 
 function resolvePreviewCompatibleUser(user: SessionUser | null) {
-  if (!user) {
-    return null;
-  }
-
-  if (!previewCompatibleEmails.has(user.email.trim().toLowerCase())) {
-    return user;
-  }
-
-      return {
-        id: previewMobileUser.id,
-        email: previewMobileUser.email,
-        fullName: previewMobileUser.fullName,
-        phoneNumber: user.phoneNumber,
-      } satisfies SessionUser;
+  return user;
 }
 
 function MissingClerkSessionProvider({ children }: PropsWithChildren) {

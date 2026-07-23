@@ -3,27 +3,9 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalExpoBinary = Join-Path $ProjectRoot "node_modules\.bin\expo.cmd"
 $MetroPortCandidates = 8091..8100
-$TunnelRetryCount = 2
+$TunnelRetryCount = 3
 $MetroStartupWaitSeconds = 20
-
-function Get-PreferredLanIpAddress {
-  try {
-    $addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
-      Where-Object {
-        $_.IPAddress -notlike "127.*" -and
-        $_.IPAddress -notlike "169.254.*" -and
-        $_.PrefixOrigin -ne "WellKnown"
-      } |
-      Sort-Object -Property InterfaceMetric
-
-    if ($addresses) {
-      return $addresses[0].IPAddress
-    }
-  } catch {
-  }
-
-  return $null
-}
+$PhoneOnlyAndroidSdkBypass = Join-Path $ProjectRoot ".expo-phone-no-android-sdk\missing-sdk"
 
 function Test-MetroEndpoint {
   param(
@@ -167,7 +149,39 @@ function Start-ExpoForPhone {
   }
 
   $commandLine = $commandParts -join " "
-  & cmd.exe /c $commandLine
+  $previousAndroidHome = $env:ANDROID_HOME
+  $previousAndroidSdkRoot = $env:ANDROID_SDK_ROOT
+  $previousExpoHeadless = $env:EXPO_UNSTABLE_HEADLESS
+
+  try {
+    # Skip Android SDK auto-detection for tunnel mode so Expo does not try adb reverse
+    # or other native Android helpers when the user is connecting from a phone only.
+    $env:ANDROID_HOME = $PhoneOnlyAndroidSdkBypass
+    $env:ANDROID_SDK_ROOT = $PhoneOnlyAndroidSdkBypass
+    # Keep the terminal QR flow but prevent background standalone DevTools setup.
+    $env:EXPO_UNSTABLE_HEADLESS = "1"
+
+    & cmd.exe /c $commandLine
+  } finally {
+    if ($null -eq $previousAndroidHome) {
+      Remove-Item Env:ANDROID_HOME -ErrorAction SilentlyContinue
+    } else {
+      $env:ANDROID_HOME = $previousAndroidHome
+    }
+
+    if ($null -eq $previousAndroidSdkRoot) {
+      Remove-Item Env:ANDROID_SDK_ROOT -ErrorAction SilentlyContinue
+    } else {
+      $env:ANDROID_SDK_ROOT = $previousAndroidSdkRoot
+    }
+
+    if ($null -eq $previousExpoHeadless) {
+      Remove-Item Env:EXPO_UNSTABLE_HEADLESS -ErrorAction SilentlyContinue
+    } else {
+      $env:EXPO_UNSTABLE_HEADLESS = $previousExpoHeadless
+    }
+  }
+
   return $LASTEXITCODE
 }
 
@@ -175,7 +189,7 @@ Stop-StaleMetroProcesses
 $MetroPort = Get-FreeMetroPort
 
 Write-Host "Starting 9Jobs phone testing server on port $MetroPort..." -ForegroundColor Cyan
-Write-Host "Trying Expo tunnel mode first so the phone does not depend on local LAN discovery." -ForegroundColor Yellow
+Write-Host "Using Expo tunnel mode so the phone does not depend on local LAN discovery." -ForegroundColor Yellow
 Write-Host "Open the installed 9Jobs dev app and scan the QR shown below." -ForegroundColor Yellow
 
 Push-Location $ProjectRoot
@@ -198,18 +212,11 @@ try {
   }
 
   if (-not $tunnelStarted) {
-    $lanIp = Get-PreferredLanIpAddress
     Write-Host ""
-    Write-Host "Tunnel is unavailable right now, so switching to LAN mode automatically." -ForegroundColor Yellow
-    if ($lanIp) {
-      Write-Host "Phone and laptop must be on the same Wi-Fi. Local IP: $lanIp" -ForegroundColor Cyan
-    } else {
-      Write-Host "Phone and laptop must be on the same Wi-Fi for LAN mode to work." -ForegroundColor Yellow
-    }
-    Write-Host "If Windows Firewall asks, allow Node.js/Expo on Private networks." -ForegroundColor Yellow
-    Write-Host ""
-    Start-ExpoForPhone -HostMode "lan" -Port $MetroPort | Out-Null
-    exit $LASTEXITCODE
+    Write-Host "Expo tunnel could not start, so the script stopped instead of falling back to LAN." -ForegroundColor Red
+    Write-Host "This prevents the phone from opening an unreachable 192.168.x.x Metro URL." -ForegroundColor Yellow
+    Write-Host "Please run 'npm run phone' again in a minute. If it still fails, reinstall @expo/ngrok and retry." -ForegroundColor Yellow
+    exit 1
   }
 } finally {
   Pop-Location

@@ -9,6 +9,8 @@ import { useCallback } from "react";
 export default function StoriesScreen() {
   const { data: stories = [], refetch } = usePreviewSyncQuery(true, {
     select: (snapshot) => snapshot.successStories,
+    refetchInterval: 10000,
+    refetchIntervalInBackground: true,
   });
 
   useFocusEffect(

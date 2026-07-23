@@ -6,6 +6,7 @@ import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { AppIcon } from "@/components/ui/AppIcon";
+import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
@@ -36,11 +37,23 @@ export default function TrackerDetailsScreen() {
   const jobs = snapshot?.jobs ?? [];
   const summary = normalizeTrackerSummary(snapshot?.trackerSummary);
   const [screenshotMap, setScreenshotMap] = useState<Record<string, string>>({});
+  const [beforeScreenshotMap, setBeforeScreenshotMap] = useState<Record<string, string>>({});
+  const [afterScreenshotMap, setAfterScreenshotMap] = useState<Record<string, string>>({});
 
   React.useEffect(() => {
     AsyncStorage.getItem("job_screenshots_cache").then((data) => {
       if (data) {
         setScreenshotMap(JSON.parse(data));
+      }
+    });
+    AsyncStorage.getItem("job_screenshots_before_cache").then((data) => {
+      if (data) {
+        setBeforeScreenshotMap(JSON.parse(data));
+      }
+    });
+    AsyncStorage.getItem("job_screenshots_after_cache").then((data) => {
+      if (data) {
+        setAfterScreenshotMap(JSON.parse(data));
       }
     });
   }, []);
@@ -70,18 +83,56 @@ export default function TrackerDetailsScreen() {
 
   const applicationsByJobId = useMemo(() => {
     const mapped = new Map<string, {
+      id: number;
       status?: string | null;
       application_date?: string | null;
       applied_at?: string | null;
       created_at: string;
       offer_received_at?: string | null;
       hired_at?: string | null;
+      before_screenshot_url?: string | null;
+      after_screenshot_url?: string | null;
     }>();
     (snapshot?.rawApplications ?? []).forEach((application) => {
       mapped.set(application.job_id, application);
     });
     return mapped;
   }, [snapshot?.rawApplications]);
+
+  const applicationsById = useMemo(() => {
+    const mapped = new Map<number, MobileSyncSnapshot["rawApplications"][number]>();
+    (snapshot?.rawApplications ?? []).forEach((application) => {
+      mapped.set(application.id, application);
+    });
+    return mapped;
+  }, [snapshot?.rawApplications]);
+
+  const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
+  const applicationScreenshotMap = useMemo(() => {
+    const mapped = new Map<number, { before?: string; after?: string }>();
+
+    (snapshot?.trackerActivityLogs ?? []).forEach((activity) => {
+      if (!activity.application_id || !activity.new_value) {
+        return;
+      }
+
+      const nextValue = activity.new_value as Record<string, unknown>;
+      const beforeScreenshot = typeof nextValue.before_screenshot_url === "string" ? nextValue.before_screenshot_url : "";
+      const afterScreenshot = typeof nextValue.after_screenshot_url === "string" ? nextValue.after_screenshot_url : "";
+
+      if (!beforeScreenshot && !afterScreenshot) {
+        return;
+      }
+
+      const current = mapped.get(activity.application_id) || {};
+      mapped.set(activity.application_id, {
+        before: current.before || beforeScreenshot || undefined,
+        after: current.after || afterScreenshot || undefined,
+      });
+    });
+
+    return mapped;
+  }, [snapshot?.trackerActivityLogs]);
 
   const todayApplicationJobIds = useMemo(() => {
     const todayKey = toTimezoneDateKey(new Date().toISOString());
@@ -105,7 +156,7 @@ export default function TrackerDetailsScreen() {
   }, [snapshot?.rawApplications, toTimezoneDateKey]);
 
   const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
+    const matchingJobs = jobs.filter((job) => {
       const rawApplication = applicationsByJobId.get(job.id);
       const normalizedStatus = rawApplication?.status?.trim().toLowerCase() ?? "";
 
@@ -133,16 +184,107 @@ export default function TrackerDetailsScreen() {
         case "Rejected":
           return job.isApplied && normalizedStatus === "rejected";
         case "Follow-ups Due":
-          return job.isApplied;
+          return false;
         case "Cold Emails Sent":
-          return job.isApplied;
+          return false;
         case "Hiring Managers Contacted":
-          return job.isApplied;
+          return false;
         default:
           return job.isApplied;
       }
     });
+
+    return matchingJobs.sort((left, right) => {
+      const leftApplication = applicationsByJobId.get(left.id);
+      const rightApplication = applicationsByJobId.get(right.id);
+      const leftDate = new Date(leftApplication?.application_date ?? leftApplication?.applied_at ?? leftApplication?.created_at ?? 0).getTime();
+      const rightDate = new Date(rightApplication?.application_date ?? rightApplication?.applied_at ?? rightApplication?.created_at ?? 0).getTime();
+      return rightDate - leftDate;
+    });
   }, [activeFilter, applicationsByJobId, jobs, todayApplicationJobIds]);
+
+  const detailEntries = useMemo(() => {
+    if (activeFilter === "Follow-ups Due") {
+      return (snapshot?.trackerFollowUps ?? [])
+        .filter((item) => item.status?.toLowerCase() !== "completed")
+        .map((item) => {
+          const application = applicationsById.get(item.application_id);
+          const job = application ? jobsById.get(application.job_id) : undefined;
+          return {
+            id: `follow-up-${item.id}`,
+            type: "follow-up" as const,
+            title: item.contact_person?.trim() || job?.title || "Follow-up",
+            subtitle: [job?.company, item.contact_email?.trim()].filter(Boolean).join(" • "),
+            badge: item.status || "pending",
+            timestamp: item.due_date,
+            message: item.notes?.trim() || item.message?.trim() || "Admin panel follow-up note synced here.",
+            facts: [
+              { label: "Type", value: item.follow_up_type?.trim() || "email" },
+              { label: "Due", value: item.due_date ? toTimezoneDateKey(item.due_date) : "Live" },
+              { label: "Role", value: job?.title || "Linked application" },
+              { label: "Company", value: job?.company || "9Jobs Tracker" },
+            ],
+          };
+        });
+    }
+
+    if (activeFilter === "Cold Emails Sent") {
+      return (snapshot?.trackerColdEmails ?? []).map((item) => {
+        const application = item.application_id ? applicationsById.get(item.application_id) : undefined;
+        const job = application ? jobsById.get(application.job_id) : undefined;
+        const companyName = item.company_name?.trim() || job?.company || "Company";
+        return {
+          id: `cold-email-${item.id}`,
+          type: "cold-email" as const,
+          title: item.recipient_name?.trim() || item.recipient_email?.trim() || "Hiring Team",
+          subtitle: companyName,
+          badge: item.delivery_status || "sent",
+          timestamp: item.sent_at,
+          emailSubject: item.subject?.trim() || "Cold outreach",
+          emailTo: item.recipient_email?.trim() || "No recipient email",
+          emailBody: item.message?.trim() || "Cold email content synced from admin panel.",
+          facts: [
+            { label: "Sent", value: item.sent_at ? toTimezoneDateKey(item.sent_at) : "Live" },
+            { label: "Response", value: item.response_status?.trim() || "no_response" },
+            { label: "Role", value: job?.title || "Direct outreach" },
+            { label: "Company", value: companyName },
+          ],
+        };
+      });
+    }
+
+    if (activeFilter === "Recruiter Contacted" || activeFilter === "Hiring Managers Contacted") {
+      return (snapshot?.trackerRecruiterContacts ?? []).map((item) => {
+        const application = item.application_id ? applicationsById.get(item.application_id) : undefined;
+        const job = application ? jobsById.get(application.job_id) : undefined;
+        return {
+          id: `contact-${item.id}`,
+          type: "contact" as const,
+          title: item.recruiter_name?.trim() || "Hiring Manager",
+          subtitle: item.company_name?.trim() || job?.company || "Company",
+          badge: item.response_status || "no_response",
+          timestamp: item.contact_date,
+          message: item.notes?.trim() || item.email?.trim() || "Recruiter contact synced from admin panel.",
+          facts: [
+            { label: "Email", value: item.email?.trim() || "Not added" },
+            { label: "Role", value: job?.title || "Linked application" },
+            { label: "Date", value: item.contact_date ? toTimezoneDateKey(item.contact_date) : "Live" },
+            { label: "Status", value: item.response_status?.trim() || "no_response" },
+          ],
+        };
+      });
+    }
+
+    return [];
+  }, [
+    activeFilter,
+    applicationsById,
+    jobsById,
+    snapshot?.trackerColdEmails,
+    snapshot?.trackerFollowUps,
+    snapshot?.trackerRecruiterContacts,
+    toTimezoneDateKey,
+  ]);
 
   const activeFocusText = useMemo(() => {
     switch (activeFilter) {
@@ -234,34 +376,95 @@ export default function TrackerDetailsScreen() {
   }, [activeFilter, filteredJobs.length, summary]);
 
   const lastSyncedLabel = summary.lastUpdatedAt ? toTimezoneDateKey(summary.lastUpdatedAt) : "Live";
+  const isColdEmailView = activeFilter === "Cold Emails Sent";
 
   return (
     <Screen contentStyle={styles.content}>
       <BackHeader label="Tracker" />
 
-      <View style={styles.heroCard}>
-        <Text style={styles.title}>{activeFilter}</Text>
-        <Text style={styles.subtitle}>{activeFilterDescription}</Text>
+      {isColdEmailView ? (
+        <View style={styles.emailScreenHeader}>
+          <Text style={styles.title}>Cold Emails</Text>
+          <Text style={styles.subtitle}>Admin panel se bheje gaye emails yahan direct mail format me dikhte hain.</Text>
+          <Text style={styles.emailHeaderMeta}>
+            {activeMetricValue} email synced • {lastSyncedLabel}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.heroCard}>
+          <Text style={styles.title}>{activeFilter}</Text>
+          <Text style={styles.subtitle}>{activeFilterDescription}</Text>
 
-        <View style={styles.summaryGrid}>
-          <View style={styles.metricCardPrimary}>
-            <Text style={styles.metricCardValue}>{activeMetricValue}</Text>
-            <Text style={styles.metricCardLabel}>Live synced records</Text>
+          <View style={styles.summaryGrid}>
+            <View style={styles.metricCardPrimary}>
+              <Text style={styles.metricCardValue}>{activeMetricValue}</Text>
+              <Text style={styles.metricCardLabel}>Live synced records</Text>
+            </View>
+            <View style={styles.metricCardSecondary}>
+              <Text style={styles.sideLabel}>Last synced</Text>
+              <Text style={styles.sideValue}>{lastSyncedLabel}</Text>
+              <Text style={styles.sideHint}>Updated from admin panel</Text>
+            </View>
           </View>
-          <View style={styles.metricCardSecondary}>
-            <Text style={styles.sideLabel}>Last synced</Text>
-            <Text style={styles.sideValue}>{lastSyncedLabel}</Text>
-            <Text style={styles.sideHint}>Updated from admin panel</Text>
+
+          <View style={styles.focusCard}>
+            <Text style={styles.focusLabel}>Current focus</Text>
+            <Text style={styles.focusValue}>{activeFocusText}</Text>
           </View>
         </View>
+      )}
 
-        <View style={styles.focusCard}>
-          <Text style={styles.focusLabel}>Current focus</Text>
-          <Text style={styles.focusValue}>{activeFocusText}</Text>
+      {detailEntries.length > 0 ? (
+        <View style={styles.cards}>
+          {detailEntries.map((entry) => (
+            entry.type === "cold-email" ? (
+              <View key={entry.id} style={styles.emailThreadCard}>
+                <View style={styles.emailThreadTop}>
+                  <View style={styles.detailCopy}>
+                    <Text style={styles.emailSubject}>{entry.emailSubject}</Text>
+                    <Text style={styles.detailMeta}>To: {entry.emailTo}</Text>
+                    <Text style={styles.detailMeta}>{entry.title}{entry.subtitle ? ` • ${entry.subtitle}` : ""}</Text>
+                  </View>
+                  <Text style={styles.emailDate}>{entry.timestamp ? toTimezoneDateKey(entry.timestamp) : "Live"}</Text>
+                </View>
+
+                <View style={styles.emailBodyCard}>
+                  <Text style={styles.emailGreeting}>Hi {entry.title},</Text>
+                  <Text style={styles.emailBodyText}>{entry.emailBody}</Text>
+                </View>
+
+                <Text style={styles.syncedHint}>
+                  {entry.badge ? `${entry.badge} • ` : ""}Synced from admin panel
+                </Text>
+              </View>
+            ) : (
+              <View key={entry.id} style={styles.detailCard}>
+                <View style={styles.detailHeader}>
+                  <View style={styles.detailCopy}>
+                    <Text style={styles.detailTitle}>{entry.title}</Text>
+                    <Text style={styles.detailMeta}>{entry.subtitle}</Text>
+                  </View>
+                  <View style={styles.stageBadge}>
+                    <Text style={styles.stageBadgeText}>{entry.badge}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.factGrid}>
+                  {entry.facts.map((fact) => (
+                    <FactPill key={`${entry.id}-${fact.label}`} label={fact.label} value={fact.value} />
+                  ))}
+                </View>
+
+                <Text style={styles.description}>{entry.message}</Text>
+
+                <Text style={styles.syncedHint}>
+                  {entry.timestamp ? `Synced ${toTimezoneDateKey(entry.timestamp)}` : "Live sync from admin panel"}
+                </Text>
+              </View>
+            )
+          ))}
         </View>
-      </View>
-
-      {filteredJobs.length > 0 ? (
+      ) : filteredJobs.length > 0 ? (
         <View style={styles.cards}>
           {filteredJobs.map((job) => {
             const rawApplication = applicationsByJobId.get(job.id);
@@ -269,7 +472,18 @@ export default function TrackerDetailsScreen() {
               rawApplication?.application_date ??
               rawApplication?.applied_at ??
               rawApplication?.created_at;
-            const hasScreenshot = Boolean(screenshotMap[job.id]);
+            const syncedScreenshots = rawApplication ? applicationScreenshotMap.get(rawApplication.id) : undefined;
+            const beforeScreenshotUri =
+              syncedScreenshots?.before ||
+              rawApplication?.before_screenshot_url?.trim() ||
+              beforeScreenshotMap[job.id];
+            const afterScreenshotUri =
+              syncedScreenshots?.after ||
+              rawApplication?.after_screenshot_url?.trim() ||
+              afterScreenshotMap[job.id] ||
+              screenshotMap[job.id];
+            const hasBeforeScreenshot = Boolean(beforeScreenshotUri);
+            const hasAfterScreenshot = Boolean(afterScreenshotUri);
 
             return (
               <View key={job.id} style={styles.detailCard}>
@@ -302,20 +516,48 @@ export default function TrackerDetailsScreen() {
                 <View style={styles.factGrid}>
                   <FactPill label="Match" value={`${job.matchScore ?? 0}%`} />
                   <FactPill label="Salary" value={job.salary || "N/A"} />
-                  <FactPill label="Updated" value={syncedDate ? toTimezoneDateKey(syncedDate) : "Live"} />
-                  <FactPill label="Screenshot" value={hasScreenshot ? "Attached" : "Pending"} />
+                  <FactPill label="Applied" value={syncedDate ? toTimezoneDateKey(syncedDate) : "Live"} />
+                  <FactPill
+                    label="Screenshots"
+                    value={
+                      hasBeforeScreenshot && hasAfterScreenshot
+                        ? "Before & After"
+                        : hasBeforeScreenshot
+                        ? "Before"
+                        : hasAfterScreenshot
+                        ? "After"
+                        : "Pending"
+                    }
+                  />
                 </View>
 
                 <Text style={styles.description}>
                   {job.description || "Admin-managed tracker updates for this role appear here as soon as they sync."}
                 </Text>
 
-                {hasScreenshot ? (
-                  <Image
-                    source={{ uri: screenshotMap[job.id] }}
-                    style={styles.screenshot}
-                    resizeMode="cover"
-                  />
+                {hasBeforeScreenshot || hasAfterScreenshot ? (
+                  <View style={styles.screenshotPair}>
+                    {hasBeforeScreenshot ? (
+                      <View style={styles.screenshotBlock}>
+                        <Text style={styles.screenshotLabel}>Before</Text>
+                        <Image
+                          source={{ uri: beforeScreenshotUri }}
+                          style={styles.screenshot}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    ) : null}
+                    {hasAfterScreenshot ? (
+                      <View style={styles.screenshotBlock}>
+                        <Text style={styles.screenshotLabel}>After</Text>
+                        <Image
+                          source={{ uri: afterScreenshotUri }}
+                          style={styles.screenshot}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    ) : null}
+                  </View>
                 ) : null}
 
                 <Pressable
@@ -395,6 +637,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     ...shadows.card,
+  },
+  emailScreenHeader: {
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
   },
   title: {
     ...typography.display,
@@ -565,11 +811,100 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
+  syncedHint: {
+    ...typography.body,
+    color: colors.mutedText,
+    fontSize: 12,
+  },
+  emailHeaderMeta: {
+    ...typography.label,
+    color: colors.subtleText,
+    fontSize: 12,
+  },
+  emailThreadCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.card,
+  },
+  emailThreadTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  emailSubject: {
+    ...typography.title,
+    color: colors.text,
+    fontSize: 17,
+  },
+  emailDate: {
+    ...typography.label,
+    color: colors.subtleText,
+    fontSize: 12,
+  },
+  emailBodyCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  emailGreeting: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: "700",
+  },
+  emailBodyText: {
+    ...typography.body,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  emailCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  emailLine: {
+    ...typography.body,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  emailMetaBlock: {
+    gap: 2,
+  },
+  emailMetaLabel: {
+    ...typography.label,
+    color: colors.subtleText,
+    fontSize: 11,
+  },
+  emailMetaValue: {
+    ...typography.body,
+    color: colors.text,
+  },
   screenshot: {
     width: "100%",
     height: 180,
     borderRadius: radii.md,
     backgroundColor: colors.background,
+  },
+  screenshotPair: {
+    gap: spacing.md,
+  },
+  screenshotBlock: {
+    gap: spacing.xs,
+  },
+  screenshotLabel: {
+    ...typography.label,
+    color: colors.subtleText,
+    fontSize: 12,
   },
   actionButton: {
     alignSelf: "flex-start",

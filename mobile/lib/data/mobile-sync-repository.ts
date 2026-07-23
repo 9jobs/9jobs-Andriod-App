@@ -55,6 +55,8 @@ type ApplicationRow = {
   recruiter_email?: string | null;
   recruiter_phone?: string | null;
   hiring_manager_email?: string | null;
+  before_screenshot_url?: string | null;
+  after_screenshot_url?: string | null;
   created_at: string;
 };
 
@@ -70,9 +72,14 @@ type FollowUpRow = {
   id: number;
   client_id: string;
   application_id: number;
+  follow_up_type?: string | null;
   due_date: string;
   completed_at: string | null;
   status: string;
+  contact_person?: string | null;
+  contact_email?: string | null;
+  message?: string | null;
+  notes?: string | null;
 };
 
 type RecruiterContactRow = {
@@ -86,14 +93,21 @@ type RecruiterContactRow = {
   linkedin_url?: string | null;
   contact_date: string | null;
   response_status: string | null;
+  notes?: string | null;
 };
 
 type ColdEmailRow = {
   id: number;
   client_id: string;
   application_id: number | null;
+  recipient_name?: string | null;
+  recipient_email?: string | null;
+  company_name?: string | null;
+  subject?: string | null;
+  message?: string | null;
   sent_at: string | null;
   delivery_status: string | null;
+  response_status?: string | null;
 };
 
 type ClientScoreRow = {
@@ -197,6 +211,20 @@ type NotificationRow = {
   user_id: string | null;
   status: string;
   sent_at: string | null;
+};
+
+type ActivityLogRow = {
+  id: number;
+  client_id: string;
+  application_id: number | null;
+  performed_by?: string | null;
+  activity_type: string;
+  title: string;
+  description?: string | null;
+  old_value?: Record<string, unknown> | null;
+  new_value?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
 };
 
 const seedCategoryNames = [
@@ -331,6 +359,11 @@ export type MobileSyncSnapshot = {
   };
   jobs: Job[];
   rawApplications: ApplicationRow[];
+  trackerInterviews: InterviewRow[];
+  trackerFollowUps: FollowUpRow[];
+  trackerRecruiterContacts: RecruiterContactRow[];
+  trackerColdEmails: ColdEmailRow[];
+  trackerActivityLogs: ActivityLogRow[];
   homeMetrics: {
     totalApplications: number;
     todayApplied: number;
@@ -922,6 +955,7 @@ function buildSnapshotFromSource({
   coldEmailsRows,
   clientScoresRows,
   notificationRows,
+  activityLogRows,
 }: {
   activeUser: ReturnType<typeof resolveActiveUser>;
   profileRow?: ProfileRow | null;
@@ -942,6 +976,7 @@ function buildSnapshotFromSource({
   coldEmailsRows: ColdEmailRow[];
   clientScoresRows: ClientScoreRow[];
   notificationRows: NotificationRow[];
+  activityLogRows: ActivityLogRow[];
 }): MobileSyncSnapshot {
   const categoriesById = Object.fromEntries(
     categoriesRows.map((category) => [category.id, category.name]),
@@ -975,6 +1010,11 @@ function buildSnapshotFromSource({
     systemSettings,
     jobs,
     rawApplications,
+    trackerInterviews: interviewsRows,
+    trackerFollowUps: followUpsRows,
+    trackerRecruiterContacts: recruiterContactsRows,
+    trackerColdEmails: coldEmailsRows,
+    trackerActivityLogs: activityLogRows,
     homeMetrics: buildUserHomeMetrics(
       rawApplications,
       resumeScore,
@@ -1263,6 +1303,11 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
     systemSettings,
     jobs,
     rawApplications,
+    trackerInterviews: [{ id: 1, client_id: activeUser.id, application_id: 2, interview_date: new Date().toISOString(), status: "scheduled" }],
+    trackerFollowUps: [],
+    trackerRecruiterContacts: [],
+    trackerColdEmails: [],
+    trackerActivityLogs: [],
     homeMetrics: buildUserHomeMetrics(rawApplications, resumeScore, new Date().toISOString()),
     trackerSummary: buildTrackerSummaryFromApplications(rawApplications, savedJobs.length, resumeScore, new Date().toISOString(), {
       timezone: seedProfile.timezone ?? "Australia/Melbourne",
@@ -1312,6 +1357,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           coldEmailsRows: (backendSnapshot.coldEmails as ColdEmailRow[]) ?? [],
           clientScoresRows: (backendSnapshot.clientScores as ClientScoreRow[]) ?? [],
           notificationRows: (backendSnapshot.notifications as NotificationRow[]) ?? [],
+          activityLogRows: (backendSnapshot.activityLogs as ActivityLogRow[]) ?? [],
         });
 
         const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
@@ -1368,6 +1414,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
+      activityLogsResult,
     ] = await Promise.all([
       client.from("profiles").select("*").eq("id", activeUser.id).single(),
       client.from("jobs").select("*").order("created_at", { ascending: false }),
@@ -1387,6 +1434,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       client.from("cold_emails").select("*").eq("client_id", activeUser.id).order("sent_at", { ascending: false }),
       client.from("client_scores").select("*").eq("client_id", activeUser.id).order("calculated_at", { ascending: false }),
       client.from("notifications").select("*").eq("user_id", activeUser.id).order("sent_at", { ascending: false }),
+      client.from("activity_logs").select("*").eq("client_id", activeUser.id).order("created_at", { ascending: false }),
     ]);
 
     const results = [
@@ -1408,6 +1456,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
+      activityLogsResult,
     ];
 
     for (const result of results) {
@@ -1436,6 +1485,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       coldEmailsRows: (coldEmailsResult.data as ColdEmailRow[] | null) ?? [],
       clientScoresRows: (clientScoresResult.data as ClientScoreRow[] | null) ?? [],
       notificationRows: (notificationsResult.data as NotificationRow[] | null) ?? [],
+      activityLogRows: (activityLogsResult.data as ActivityLogRow[] | null) ?? [],
     });
 
     const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
