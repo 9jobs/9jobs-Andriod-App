@@ -8,6 +8,7 @@ import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import React, { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
+import Animated, { useAnimatedStyle, withTiming } from "react-native-reanimated";
 
 export default function AppLayout() {
   const { user, hasCompletedOnboarding } = useSession();
@@ -24,7 +25,6 @@ export default function AppLayout() {
 
   const isDarkMode = (snapshot?.profile.darkMode ?? false) && !(snapshot?.systemSettings.darkModeOverride ?? false);
   setTheme(isDarkMode);
-
 
   if (!hasCompletedOnboarding) {
     return <Redirect href="/(public)" />;
@@ -143,11 +143,21 @@ function TabGlyph({
   focused: boolean;
   name: "home" | "grid" | "tracker" | "mail" | "profile";
 }) {
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          scale: withTiming(focused ? 1.06 : 1, { duration: 150 }),
+        },
+      ],
+    };
+  }, [focused]);
+
   return (
-    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+    <Animated.View style={[styles.iconWrap, focused && styles.iconWrapActive, animatedStyle]}>
       <AppIcon name={name} color={focused ? colors.text : color} />
       {focused ? <View style={styles.indicator} /> : null}
-    </View>
+    </Animated.View>
   );
 }
 

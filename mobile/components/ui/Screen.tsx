@@ -7,56 +7,57 @@ import { colors, spacing } from "@/theme";
 
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
+  preserveScroll?: boolean;
   style?: ViewStyle;
   contentStyle?: ViewStyle;
 }>;
 
 const screenScrollOffsets = new Map<string, number>();
 
-export function Screen({ children, scroll = true, style, contentStyle }: ScreenProps) {
+export function Screen({
+  children,
+  scroll = true,
+  preserveScroll = false,
+  style,
+  contentStyle,
+}: ScreenProps) {
   const pathname = usePathname();
   const scrollRef = useRef<ScrollView | null>(null);
   const lastOffsetRef = useRef(screenScrollOffsets.get(pathname) ?? 0);
-  const shouldRestoreRef = useRef(scroll);
 
-  const saveOffset = useCallback((y: number) => {
-    lastOffsetRef.current = y;
-    screenScrollOffsets.set(pathname, y);
-  }, [pathname]);
+  const saveOffset = useCallback(
+    (y: number) => {
+      if (!preserveScroll) return;
+      lastOffsetRef.current = y;
+      screenScrollOffsets.set(pathname, y);
+    },
+    [pathname, preserveScroll]
+  );
 
   const restoreOffset = useCallback(() => {
-    if (!scroll || !shouldRestoreRef.current) {
-      return;
-    }
-
+    if (!scroll || !preserveScroll) return;
     const savedOffset = screenScrollOffsets.get(pathname) ?? 0;
-    if (savedOffset <= 0) {
-      shouldRestoreRef.current = false;
-      return;
-    }
+    if (savedOffset <= 0) return;
 
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({ y: savedOffset, animated: false });
-      shouldRestoreRef.current = false;
     });
-  }, [pathname, scroll]);
+  }, [pathname, preserveScroll, scroll]);
 
   useFocusEffect(
     useCallback(() => {
-      shouldRestoreRef.current = scroll;
-      restoreOffset();
-
+      if (preserveScroll) {
+        restoreOffset();
+      }
       return () => {
-        saveOffset(lastOffsetRef.current);
+        if (preserveScroll) {
+          saveOffset(lastOffsetRef.current);
+        }
       };
-    }, [restoreOffset, saveOffset, scroll]),
+    }, [preserveScroll, restoreOffset, saveOffset])
   );
 
-  const body = (
-    <View style={[styles.content, contentStyle]}>
-      {children}
-    </View>
-  );
+  const body = <View style={[styles.content, contentStyle]}>{children}</View>;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
@@ -64,15 +65,14 @@ export function Screen({ children, scroll = true, style, contentStyle }: ScreenP
         <ScrollView
           ref={scrollRef}
           {...verticalScrollProps}
-          onScroll={(event) => saveOffset(event.nativeEvent.contentOffset.y)}
-          onMomentumScrollEnd={(event) => saveOffset(event.nativeEvent.contentOffset.y)}
-          onScrollEndDrag={(event) => saveOffset(event.nativeEvent.contentOffset.y)}
-          onContentSizeChange={restoreOffset}
+          onScroll={preserveScroll ? (event) => saveOffset(event.nativeEvent.contentOffset.y) : undefined}
           contentContainerStyle={styles.scrollInner}
         >
           {body}
         </ScrollView>
-      ) : body}
+      ) : (
+        body
+      )}
     </SafeAreaView>
   );
 }

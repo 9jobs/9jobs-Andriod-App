@@ -7,6 +7,8 @@ import { Screen } from "@/components/ui/Screen";
 import { getAboutDetailContent } from "@/lib/data/premium-content";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
+import { SplineBackground } from "@/components/motion/SplineBackground";
+
 export default function AboutDetailScreen() {
   const params = useLocalSearchParams<{ type?: string; id?: string }>();
   const detail = getAboutDetailContent(params.type || "", params.id || "");
@@ -35,6 +37,7 @@ export default function AboutDetailScreen() {
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
       >
+        <SplineBackground />
         <Text style={styles.kicker}>{detail.kicker}</Text>
         <Text style={styles.title}>{detail.title}</Text>
         <Text style={styles.subtitle}>{detail.subtitle}</Text>

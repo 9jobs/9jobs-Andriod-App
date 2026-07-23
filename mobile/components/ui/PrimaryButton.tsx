@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, ViewStyle } from "react-native";
+import { StyleSheet, Text, ViewStyle } from "react-native";
 import { colors, radii, typography } from "@/theme";
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 
 type PrimaryButtonProps = {
   label: string;
@@ -17,13 +18,15 @@ export function PrimaryButton({
   disabled,
 }: PrimaryButtonProps) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [
+      scaleTo={0.98}
+      opacityTo={0.88}
+      duration={120}
+      style={[
         styles.base,
         variant === "primary" ? styles.primary : styles.ghost,
-        pressed && !disabled && styles.pressed,
         disabled && styles.disabled,
         style,
       ]}
@@ -31,7 +34,7 @@ export function PrimaryButton({
       <Text style={[styles.label, variant === "ghost" && styles.ghostLabel]}>
         {label}
       </Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

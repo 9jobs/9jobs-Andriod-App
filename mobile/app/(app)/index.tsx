@@ -35,6 +35,9 @@ function TwinklingSpark({ style }: { style: any }) {
   return <Animated.View style={[style, { opacity }]} />;
 }
 
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
+import { FadeInView } from "@/components/motion/FadeInView";
+
 export default function HomeScreen() {
   const { user } = useSession();
   const { data: snapshot } = usePreviewSyncQuery();
@@ -47,191 +50,213 @@ export default function HomeScreen() {
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
       {/* 1. Header Row */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.greetingText}>Good morning 👋</Text>
-          <Text style={styles.userNameText}>{profile?.fullName ?? user?.fullName ?? "Test User"}</Text>
+      <FadeInView type="fade-down" delay={0}>
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Text style={styles.greetingText}>Good morning 👋</Text>
+            <Text style={styles.userNameText}>{profile?.fullName ?? user?.fullName ?? "Test User"}</Text>
+          </View>
+          <View style={styles.headerRight}>
+            <AnimatedPressable
+              style={styles.bellButton}
+              onPress={() => router.push("/(app)/notifications" as never)}
+              scaleTo={0.95}
+            >
+              <AppIcon name="bell" size={22} color={colors.text} />
+              {hasUnreadNotifications ? <View style={styles.bellDot} /> : null}
+            </AnimatedPressable>
+            <Image
+              source={{
+                uri: profile?.avatarUrl ?? "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80",
+              }}
+              style={styles.avatarImage}
+            />
+          </View>
         </View>
-        <View style={styles.headerRight}>
-          <Pressable
-            style={styles.bellButton}
-            onPress={() => router.push("/(app)/notifications" as never)}
-          >
-            <AppIcon name="bell" size={22} color={colors.text} />
-            {hasUnreadNotifications ? <View style={styles.bellDot} /> : null}
-          </Pressable>
-          <Image
-            source={{
-              uri: profile?.avatarUrl ?? "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80",
-            }}
-            style={styles.avatarImage}
-          />
-        </View>
-      </View>
+      </FadeInView>
 
       {/* 2. Search Bar Row */}
-      <View style={styles.searchRow}>
-        <View style={styles.searchInputContainer}>
-          <AppIcon name="search" size={20} color={colors.mutedText} />
-          <Text style={styles.searchPlaceholderText}>Search jobs, companies...</Text>
+      <FadeInView type="fade-up" delay={50}>
+        <View style={styles.searchRow}>
+          <View style={styles.searchInputContainer}>
+            <AppIcon name="search" size={20} color={colors.mutedText} />
+            <Text style={styles.searchPlaceholderText}>Search jobs, companies...</Text>
+          </View>
+          <AnimatedPressable
+            style={styles.filterButton}
+            onPress={() => router.push("/(app)/jobs/search" as never)}
+            scaleTo={0.94}
+          >
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+              <Path
+                d="M4 6H20L14 12V18L10 20V12L4 6Z"
+                stroke={colors.accent}
+                strokeWidth={2.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </AnimatedPressable>
         </View>
-        <Pressable
-          style={styles.filterButton}
-          onPress={() => router.push("/(app)/jobs/search" as never)}
-        >
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M4 6H20L14 12V18L10 20V12L4 6Z"
-              stroke={colors.accent}
-              strokeWidth={2.2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Svg>
-        </Pressable>
-      </View>
+      </FadeInView>
 
       {/* 3. Stat Cards Row */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{String(metrics?.totalApplications ?? 0)}</Text>
-          <Text style={styles.statLabel}>Applications</Text>
-          <Text style={styles.statDelta}>+{metrics?.todayApplied ?? 0}</Text>
+      <FadeInView type="fade-up" delay={100}>
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{String(metrics?.totalApplications ?? 0)}</Text>
+            <Text style={styles.statLabel}>Applications</Text>
+            <Text style={styles.statDelta}>+{metrics?.todayApplied ?? 0}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{String(metrics?.interviewing ?? 0)}</Text>
+            <Text style={styles.statLabel}>Interviews</Text>
+            <Text style={styles.statDelta}>Live</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{String(metrics?.offers ?? 0)}</Text>
+            <Text style={styles.statLabel}>Offers</Text>
+            <Text style={styles.statDelta}>Live</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statValue}>{String(metrics?.resumeScore ?? 0)}</Text>
+            <Text style={styles.statLabel}>Resume Score</Text>
+            <Text style={[styles.statDelta, { color: "#22C55E" }]}>Live</Text>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{String(metrics?.interviewing ?? 0)}</Text>
-          <Text style={styles.statLabel}>Interviews</Text>
-          <Text style={styles.statDelta}>Live</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{String(metrics?.offers ?? 0)}</Text>
-          <Text style={styles.statLabel}>Offers</Text>
-          <Text style={styles.statDelta}>Live</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{String(metrics?.resumeScore ?? 0)}</Text>
-          <Text style={styles.statLabel}>Resume Score</Text>
-          <Text style={[styles.statDelta, { color: "#22C55E" }]}>Live</Text>
-        </View>
-      </View>
+      </FadeInView>
 
       {/* 4. Quick Action Grid Row */}
-      <View style={styles.quickActionRow}>
-        <Pressable
-          style={styles.quickActionCard}
-          onPress={() => router.push("/(app)/resume" as never)}
-        >
-          <AppIcon name="resume" size={24} color={colors.accent} />
-          <Text style={styles.quickActionLabel}>Resume AI</Text>
-        </Pressable>
-        <Pressable
-          style={styles.quickActionCard}
-          onPress={() => router.push("/(app)/outreach" as never)}
-        >
-          <AppIcon name="mail" size={24} color={colors.accent} />
-          <Text style={styles.quickActionLabel}>Outreach</Text>
-        </Pressable>
-        <Pressable
-          style={styles.quickActionCard}
-          onPress={() => router.push("/(app)/interview" as never)}
-        >
-          <AppIcon name="mic" size={24} color={colors.accent} />
-          <Text style={styles.quickActionLabel}>Interview</Text>
-        </Pressable>
-        <Pressable
-          style={styles.quickActionCard}
-          onPress={() => router.push("/(app)/services" as never)}
-        >
-          <AppIcon name="grid" size={24} color={colors.accent} />
-          <Text style={styles.quickActionLabel}>Services</Text>
-        </Pressable>
-      </View>
+      <FadeInView type="fade-up" delay={150}>
+        <View style={styles.quickActionRow}>
+          <AnimatedPressable
+            style={styles.quickActionCard}
+            onPress={() => router.push("/(app)/resume" as never)}
+            scaleTo={0.96}
+          >
+            <AppIcon name="resume" size={24} color={colors.accent} />
+            <Text style={styles.quickActionLabel}>Resume AI</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            style={styles.quickActionCard}
+            onPress={() => router.push("/(app)/outreach" as never)}
+            scaleTo={0.96}
+          >
+            <AppIcon name="mail" size={24} color={colors.accent} />
+            <Text style={styles.quickActionLabel}>Outreach</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            style={styles.quickActionCard}
+            onPress={() => router.push("/(app)/interview" as never)}
+            scaleTo={0.96}
+          >
+            <AppIcon name="mic" size={24} color={colors.accent} />
+            <Text style={styles.quickActionLabel}>Interview</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            style={styles.quickActionCard}
+            onPress={() => router.push("/(app)/services" as never)}
+            scaleTo={0.96}
+          >
+            <AppIcon name="grid" size={24} color={colors.accent} />
+            <Text style={styles.quickActionLabel}>Services</Text>
+          </AnimatedPressable>
+        </View>
+      </FadeInView>
 
       {/* 5. Pro Tip Hero Card with Star Twinkle Background */}
-      <View style={styles.heroCardContainer}>
-        {/* Background Twinkling Sparks */}
-        <View style={StyleSheet.absoluteFill}>
-          {Array.from({ length: 18 }).map((_, index) => (
-            <TwinklingSpark
-              key={index}
-              style={[
-                styles.heroSpark,
-                {
-                  top: `${10 + (index * 7) % 80}%`,
-                  left: `${5 + (index * 19) % 90}%`,
-                },
-              ]}
-            />
-          ))}
-        </View>
+      <FadeInView type="fade-up" delay={200}>
+        <View style={styles.heroCardContainer}>
+          {/* Background Twinkling Sparks */}
+          <View style={StyleSheet.absoluteFill}>
+            {Array.from({ length: 18 }).map((_, index) => (
+              <TwinklingSpark
+                key={index}
+                style={[
+                  styles.heroSpark,
+                  {
+                    top: `${10 + (index * 7) % 80}%`,
+                    left: `${5 + (index * 19) % 90}%`,
+                  },
+                ]}
+              />
+            ))}
+          </View>
 
-        {/* Hero Content */}
-        <View style={styles.heroBadgeContainer}>
-          <Text style={styles.heroBadgeText}>PRO TIP</Text>
+          {/* Hero Content */}
+          <View style={styles.heroBadgeContainer}>
+            <Text style={styles.heroBadgeText}>PRO TIP</Text>
+          </View>
+          <Text style={styles.heroTitleText}>Your resume ranks in top 3%</Text>
+          <Text style={styles.heroSubtitleText}>
+            Upgrade to Pro to unlock personalized recruiter outreach
+          </Text>
+          <AnimatedPressable
+            style={styles.heroButton}
+            onPress={() => router.push("/(app)/pricing" as never)}
+            scaleTo={0.97}
+          >
+            <Text style={styles.heroButtonText}>Unlock Outreach →</Text>
+          </AnimatedPressable>
         </View>
-        <Text style={styles.heroTitleText}>Your resume ranks in top 3%</Text>
-        <Text style={styles.heroSubtitleText}>
-          Upgrade to Pro to unlock personalized recruiter outreach
-        </Text>
-        <Pressable
-          style={styles.heroButton}
-          onPress={() => router.push("/(app)/pricing" as never)}
-        >
-          <Text style={styles.heroButtonText}>Unlock Outreach →</Text>
-        </Pressable>
-      </View>
+      </FadeInView>
 
       {/* 6. Recommended Roles Section */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Recommended</Text>
-        <Text
-          style={styles.sectionAction}
-          onPress={() => router.push("/(app)/jobs/search" as never)}
-        >
-          See all →
-        </Text>
-      </View>
+      <FadeInView type="fade-up" delay={250}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recommended</Text>
+          <Text
+            style={styles.sectionAction}
+            onPress={() => router.push("/(app)/jobs/search" as never)}
+          >
+            See all →
+          </Text>
+        </View>
 
-      <View style={styles.jobStack}>
-        {recommendedJobs.map((job) => (
-          <View key={job.id} style={styles.recommendedCard}>
-            <View style={styles.cardTopRow}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarLetter}>{job.company.charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={styles.cardCopy}>
-                <Text style={styles.jobTitle}>{job.title}</Text>
-                <Text style={styles.jobSubtitle}>
-                  {job.company} · {job.location}
-                </Text>
-              </View>
-              <View style={styles.matchBadge}>
-                <Text style={styles.matchText}>Match {job.matchScore}%</Text>
-              </View>
-            </View>
+        <View style={styles.jobStack}>
+          {recommendedJobs.map((job, idx) => (
+            <FadeInView key={job.id} type="fade-up" delay={280 + idx * 40}>
+              <View style={styles.recommendedCard}>
+                <View style={styles.cardTopRow}>
+                  <View style={styles.avatarCircle}>
+                    <Text style={styles.avatarLetter}>{job.company.charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={styles.cardCopy}>
+                    <Text style={styles.jobTitle}>{job.title}</Text>
+                    <Text style={styles.jobSubtitle}>
+                      {job.company} · {job.location}
+                    </Text>
+                  </View>
+                  <View style={styles.matchBadge}>
+                    <Text style={styles.matchText}>Match {job.matchScore}%</Text>
+                  </View>
+                </View>
 
-            <View style={styles.cardBottomRow}>
-              <Text style={styles.salaryText}>
-                {job.salary.split("/")[0]}
-                <Text style={styles.salaryPeriod}>/yr</Text>
-              </Text>
-              <Pressable
-                style={[styles.applyButton, job.isApplied && styles.appliedButton]}
-                onPress={() => {
-                  if (!job.isApplied) {
-                    applyMutation.mutate(job.id);
-                  }
-                }}
-                disabled={job.isApplied || applyMutation.isPending}
-              >
-                <Text style={[styles.applyButtonText, job.isApplied && styles.appliedButtonText]}>
-                  {job.isApplied ? "Applied" : "Apply →"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        ))}
-      </View>
+                <View style={styles.cardBottomRow}>
+                  <Text style={styles.salaryText}>
+                    {job.salary.split("/")[0]}
+                    <Text style={styles.salaryPeriod}>/yr</Text>
+                  </Text>
+                  <AnimatedPressable
+                    style={[styles.applyButton, job.isApplied && styles.appliedButton]}
+                    onPress={() => {
+                      if (!job.isApplied) {
+                        applyMutation.mutate(job.id);
+                      }
+                    }}
+                    disabled={job.isApplied || applyMutation.isPending}
+                    scaleTo={0.96}
+                  >
+                    <Text style={[styles.applyButtonText, job.isApplied && styles.appliedButtonText]}>
+                      {job.isApplied ? "Applied" : "Apply →"}
+                    </Text>
+                  </AnimatedPressable>
+                </View>
+              </View>
+            </FadeInView>
+          ))}
+        </View>
+      </FadeInView>
     </Screen>
   );
 }

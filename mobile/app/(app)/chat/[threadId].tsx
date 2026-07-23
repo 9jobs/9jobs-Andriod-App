@@ -60,6 +60,8 @@ function getSpeechModule(): null | { speak: (text: string) => void; stop: () => 
   }
 }
 
+import { FadeInView } from "@/components/motion/FadeInView";
+
 export default function AdminThreadScreen() {
   const { user } = useSession();
   const { data: snapshot } = usePreviewSyncQuery(true);
@@ -72,6 +74,13 @@ export default function AdminThreadScreen() {
   const messages = snapshot?.messages ?? [];
   const scrollViewRef = useRef<ScrollView | null>(null);
   const stickToBottomRef = useRef(true);
+  const initialMessageIdsRef = useRef<Set<number | string>>(new Set());
+
+  useEffect(() => {
+    if (messages.length > 0 && initialMessageIdsRef.current.size === 0) {
+      initialMessageIdsRef.current = new Set(messages.map((m) => m.id));
+    }
+  }, [messages]);
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
 
@@ -511,8 +520,9 @@ export default function AdminThreadScreen() {
 
           {messages.map((message) => {
             const isIncoming = message.direction === "incoming";
+            const isNewlyAdded = !initialMessageIdsRef.current.has(message.id);
 
-            return (
+            const rowContent = (
               <Pressable
                 key={message.id}
                 onLongPress={() => handleLongPressMessage(message)}
@@ -550,6 +560,16 @@ export default function AdminThreadScreen() {
                 </View>
               </Pressable>
             );
+
+            if (isNewlyAdded) {
+              return (
+                <FadeInView key={message.id} type={isIncoming ? "fade-right" : "fade-left"} duration={240}>
+                  {rowContent}
+                </FadeInView>
+              );
+            }
+
+            return rowContent;
           })}
         </ScrollView>
 

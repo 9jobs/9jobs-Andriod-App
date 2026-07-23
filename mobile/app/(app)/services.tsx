@@ -91,6 +91,9 @@ function TwinklingSpark({ style }: { style: any }) {
   return <Animated.View style={[style, { opacity }]} />;
 }
 
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
+import { FadeInView } from "@/components/motion/FadeInView";
+
 export default function ServicesScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
   const serviceOrder = ["job-tracker", "tracker", "resume-intelligence", "resume", "hiring-manager-outreach", "outreach", "interview-prep", "interview", "success-stories", "stories", "pricing"];
@@ -118,85 +121,89 @@ export default function ServicesScreen() {
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
       {/* 1. Header Section */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Services</Text>
-        <Text style={styles.headerSubtitle}>Everything you need to land the job</Text>
-      </View>
+      <FadeInView type="fade-down" delay={0}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Services</Text>
+          <Text style={styles.headerSubtitle}>Everything you need to land the job</Text>
+        </View>
+      </FadeInView>
 
       {/* 2. Hero Card (Job Search Command Center) */}
-      <View style={styles.heroCardContainer}>
-        {/* Background Twinkling Sparks */}
-        <View style={StyleSheet.absoluteFill}>
-          {Array.from({ length: 15 }).map((_, index) => (
-            <TwinklingSpark
-              key={index}
-              style={[
-                styles.heroSpark,
-                {
-                  top: `${10 + (index * 7) % 80}%`,
-                  left: `${5 + (index * 19) % 90}%`,
-                },
-              ]}
-            />
-          ))}
-        </View>
-
-        {/* Hero Card Layout */}
-        <View style={styles.heroRow}>
-          {/* Left Column: Command Center Text */}
-          <View style={styles.heroLeftCol}>
-            <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeText}>ALL-IN-ONE</Text>
-            </View>
-            <Text style={styles.heroTitleText}>Your Job Search Command Center</Text>
+      <FadeInView type="fade-up" delay={60}>
+        <View style={styles.heroCardContainer}>
+          {/* Background Twinkling Sparks */}
+          <View style={StyleSheet.absoluteFill}>
+            {Array.from({ length: 15 }).map((_, index) => (
+              <TwinklingSpark
+                key={index}
+                style={[
+                  styles.heroSpark,
+                  {
+                    top: `${10 + (index * 7) % 80}%`,
+                    left: `${5 + (index * 19) % 90}%`,
+                  },
+                ]}
+              />
+            ))}
           </View>
 
-          {/* Right Column: Mini Job Card */}
-          <View style={styles.heroRightCol}>
-            <View style={styles.miniJobCard}>
-              <View style={styles.miniCardTopRow}>
-                <View style={styles.miniLogoCircle}>
-                  <Text style={styles.miniLogoText}>G</Text>
+          {/* Hero Card Layout */}
+          <View style={styles.heroRow}>
+            {/* Left Column: Command Center Text */}
+            <View style={styles.heroLeftCol}>
+              <View style={styles.heroBadge}>
+                <Text style={styles.heroBadgeText}>ALL-IN-ONE</Text>
+              </View>
+              <Text style={styles.heroTitleText}>Your Job Search Command Center</Text>
+            </View>
+
+            {/* Right Column: Mini Job Card */}
+            <View style={styles.heroRightCol}>
+              <View style={styles.miniJobCard}>
+                <View style={styles.miniCardTopRow}>
+                  <View style={styles.miniLogoCircle}>
+                    <Text style={styles.miniLogoText}>G</Text>
+                  </View>
+                  <View style={styles.miniTitleCol}>
+                    <Text style={styles.miniJobTitle} numberOfLines={1}>Google</Text>
+                    <Text style={styles.miniJobCompany} numberOfLines={1}>Sr. Product Designer</Text>
+                  </View>
+                  <View style={styles.heartIconWrap}>
+                    <Svg width={14} height={14} viewBox="0 0 24 24" fill={colors.accent}>
+                      <Path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+                    </Svg>
+                  </View>
                 </View>
-                <View style={styles.miniTitleCol}>
-                  <Text style={styles.miniJobTitle} numberOfLines={1}>Google</Text>
-                  <Text style={styles.miniJobCompany} numberOfLines={1}>Sr. Product Designer</Text>
-                </View>
-                <View style={styles.heartIconWrap}>
-                  <Svg width={14} height={14} viewBox="0 0 24 24" fill={colors.accent}>
-                    <Path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+
+                <View style={styles.miniCardLocRow}>
+                  <Svg width={11} height={11} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M12 21C15.5 16.8 18 13.7 18 10.5C18 6.9 15.3 4 12 4C8.7 4 6 6.9 6 10.5C6 13.7 8.5 16.8 12 21Z"
+                      stroke={colors.accent}
+                      strokeWidth={2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                    <Circle cx="12" cy="10" r="2.5" fill={colors.accent} />
                   </Svg>
+                  <Text style={styles.miniLocText}>Remote · Full-time</Text>
                 </View>
-              </View>
 
-              <View style={styles.miniCardLocRow}>
-                <Svg width={11} height={11} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M12 21C15.5 16.8 18 13.7 18 10.5C18 6.9 15.3 4 12 4C8.7 4 6 6.9 6 10.5C6 13.7 8.5 16.8 12 21Z"
-                    stroke={colors.accent}
-                    strokeWidth={2.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <Circle cx="12" cy="10" r="2.5" fill={colors.accent} />
-                </Svg>
-                <Text style={styles.miniLocText}>Remote · Full-time</Text>
-              </View>
-
-              <View style={styles.miniCardBottomRow}>
-                <Text style={styles.miniSalaryText}>$145k</Text>
-                <View style={styles.miniNewBadge}>
-                  <Text style={styles.miniNewText}>New</Text>
+                <View style={styles.miniCardBottomRow}>
+                  <Text style={styles.miniSalaryText}>$145k</Text>
+                  <View style={styles.miniNewBadge}>
+                    <Text style={styles.miniNewText}>New</Text>
+                  </View>
                 </View>
               </View>
             </View>
           </View>
         </View>
-      </View>
+      </FadeInView>
 
       {/* 3. Services List Section */}
       <View style={styles.servicesList}>
-        {services.map((service) => (
+        {services.map((service, index) => (
           (() => {
             const useDarkIconBackground =
               service.isIconDark ||
@@ -205,86 +212,88 @@ export default function ServicesScreen() {
               service.icon === "mail";
 
             return (
-          <Pressable
-            key={service.id}
-            style={styles.serviceCard}
-            onPress={() => router.push(service.route as never)}
-          >
-            {/* Left: Custom Alternating Icon wrapper */}
-            <View
-              style={[
-                styles.iconContainer,
-                useDarkIconBackground
-                  ? { backgroundColor: colors.dark }
-                  : { backgroundColor: "rgba(163, 230, 53, 0.12)" },
-              ]}
-            >
-              {service.icon === "star" ? (
-                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
-                    stroke={useDarkIconBackground ? colors.accent : colors.text}
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </Svg>
-              ) : service.icon === "pricing" ? (
-                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-                  <Path
-                    d="M6 18L10 13L13 16L18 9"
-                    stroke={colors.text}
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <Path
-                    d="M18 9H14"
-                    stroke={colors.text}
-                    strokeWidth={2.2}
-                    strokeLinecap="round"
-                  />
-                </Svg>
-              ) : (
-                <AppIcon
-                  name={service.icon as any}
-                  color={useDarkIconBackground ? colors.accent : colors.text}
-                  size={20}
-                  strokeWidth={2.2}
-                />
-              )}
-            </View>
-
-            {/* Center: Title, Badge and Description */}
-            <View style={styles.cardInfo}>
-              <View style={styles.titleRow}>
-                <Text style={styles.serviceTitle}>{service.title}</Text>
-                {service.badge === "AI" ? (
-                  <View style={styles.aiBadge}>
-                    <Text style={styles.aiBadgeText}>AI</Text>
+              <FadeInView key={service.id} type="fade-up" delay={120 + index * 40}>
+                <AnimatedPressable
+                  style={styles.serviceCard}
+                  onPress={() => router.push(service.route as never)}
+                  scaleTo={0.97}
+                >
+                  {/* Left: Custom Alternating Icon wrapper */}
+                  <View
+                    style={[
+                      styles.iconContainer,
+                      useDarkIconBackground
+                        ? { backgroundColor: colors.dark }
+                        : { backgroundColor: "rgba(163, 230, 53, 0.12)" },
+                    ]}
+                  >
+                    {service.icon === "star" ? (
+                      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                        <Path
+                          d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
+                          stroke={useDarkIconBackground ? colors.accent : colors.text}
+                          strokeWidth={2.2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </Svg>
+                    ) : service.icon === "pricing" ? (
+                      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                        <Path
+                          d="M6 18L10 13L13 16L18 9"
+                          stroke={colors.text}
+                          strokeWidth={2.2}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <Path
+                          d="M18 9H14"
+                          stroke={colors.text}
+                          strokeWidth={2.2}
+                          strokeLinecap="round"
+                        />
+                      </Svg>
+                    ) : (
+                      <AppIcon
+                        name={service.icon as any}
+                        color={useDarkIconBackground ? colors.accent : colors.text}
+                        size={20}
+                        strokeWidth={2.2}
+                      />
+                    )}
                   </View>
-                ) : service.badge === "PRO" ? (
-                  <View style={styles.proBadge}>
-                    <Text style={styles.proBadgeText}>PRO</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={styles.serviceSubtitle} numberOfLines={1}>
-                {service.subtitle}
-              </Text>
-            </View>
 
-            {/* Right: Chevron arrow */}
-            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M9 5L16 12L9 19"
-                stroke={colors.subtleText}
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </Svg>
-          </Pressable>
+                  {/* Center: Title, Badge and Description */}
+                  <View style={styles.cardInfo}>
+                    <View style={styles.titleRow}>
+                      <Text style={styles.serviceTitle}>{service.title}</Text>
+                      {service.badge === "AI" ? (
+                        <View style={styles.aiBadge}>
+                          <Text style={styles.aiBadgeText}>AI</Text>
+                        </View>
+                      ) : service.badge === "PRO" ? (
+                        <View style={styles.proBadge}>
+                          <Text style={styles.proBadgeText}>PRO</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={styles.serviceSubtitle} numberOfLines={1}>
+                      {service.subtitle}
+                    </Text>
+                  </View>
+
+                  {/* Right: Chevron arrow */}
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path
+                      d="M9 5L16 12L9 19"
+                      stroke={colors.subtleText}
+                      strokeWidth={2.2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </Svg>
+                </AnimatedPressable>
+              </FadeInView>
             );
           })()
         ))}
