@@ -15,6 +15,10 @@ import { supabase } from "@/lib/supabase/client";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
 
+const shouldEnableLiveTransport =
+  process.env.NODE_ENV === "test" ||
+  (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
+
 type SessionContextValue = {
   isBooting: boolean;
   user: SessionUser | null;
@@ -59,7 +63,9 @@ async function syncBackendToken(sessionUser: SessionUser | null) {
         [storageKeys.authToken, data.token],
         [storageKeys.authTokenUserId, sessionUser.id],
       ]);
-      await connectSocket();
+      if (shouldEnableLiveTransport) {
+        await connectSocket();
+      }
       console.log("[SessionProvider] Sync: Backend JWT token saved successfully.");
     } else {
       console.warn("[SessionProvider] Sync: Failed to exchange token:", res.status);

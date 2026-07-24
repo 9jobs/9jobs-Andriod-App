@@ -10,18 +10,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
 import Animated, { useAnimatedStyle, withTiming } from "react-native-reanimated";
 
+const shouldEnableLiveTransport =
+  process.env.NODE_ENV === "test" ||
+  (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
+
 export default function AppLayout() {
   const { user, hasCompletedOnboarding } = useSession();
   const { data: snapshot } = usePreviewSyncQuery();
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (user) {
+    if (user && shouldEnableLiveTransport) {
       initializeSocket(user.id, queryClient);
     } else {
       disconnectSocket();
     }
-  }, [user]);
+  }, [queryClient, user]);
 
   const isDarkMode = (snapshot?.profile.darkMode ?? false) && !(snapshot?.systemSettings.darkModeOverride ?? false);
   setTheme(isDarkMode);

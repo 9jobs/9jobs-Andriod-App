@@ -297,6 +297,7 @@ const seedPricingPlans = [
 const supportWelcomeMessage = "Welcome to the live 9Jobs preview. This thread is synced with the admin panel.";
 const fallbackSupportReply =
   "Thanks for contacting 9Jobs. Your message has been received and shared with our support team. An admin will respond shortly.";
+const SNAPSHOT_CACHE_SCHEMA_VERSION = "2026-07-23-1";
 
 export type LiveServiceCard = {
   id: string;
@@ -1140,6 +1141,20 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
   }
 
   try {
+    const cacheVersion = await AsyncStorage.getItem(storageKeys.snapshotCacheVersion);
+    if (cacheVersion !== SNAPSHOT_CACHE_SCHEMA_VERSION) {
+      const keys = await AsyncStorage.getAllKeys();
+      const staleSnapshotKeys = keys.filter(
+        (key) =>
+          key === storageKeys.snapshotCache ||
+          key.startsWith(`${storageKeys.snapshotCache}:`),
+      );
+      if (staleSnapshotKeys.length > 0) {
+        await AsyncStorage.multiRemove(staleSnapshotKeys);
+      }
+      await AsyncStorage.setItem(storageKeys.snapshotCacheVersion, SNAPSHOT_CACHE_SCHEMA_VERSION);
+    }
+
     const cached =
       (await AsyncStorage.getItem(getSnapshotCacheKey(activeUser.id))) ??
       (await AsyncStorage.getItem(storageKeys.snapshotCache));
@@ -1150,6 +1165,24 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
       }
       if (inMemoryStore && !Array.isArray(inMemoryStore.notifications)) {
         inMemoryStore.notifications = [];
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.trackerInterviews)) {
+        inMemoryStore.trackerInterviews = [];
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.trackerFollowUps)) {
+        inMemoryStore.trackerFollowUps = [];
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.trackerRecruiterContacts)) {
+        inMemoryStore.trackerRecruiterContacts = [];
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.trackerColdEmails)) {
+        inMemoryStore.trackerColdEmails = [];
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.trackerActivityLogs)) {
+        inMemoryStore.trackerActivityLogs = [];
+      }
+      if (inMemoryStore && !Array.isArray(inMemoryStore.rawApplications)) {
+        inMemoryStore.rawApplications = [];
       }
       if (inMemoryStore) {
         return inMemoryStore;
@@ -1951,6 +1984,7 @@ async function persistLocalSnapshot(snapshot: MobileSyncSnapshot) {
   inMemoryStore = { ...snapshot };
   const cacheKey = getSnapshotCacheKey(snapshot.profile.id);
   await AsyncStorage.multiSet([
+    [storageKeys.snapshotCacheVersion, SNAPSHOT_CACHE_SCHEMA_VERSION],
     [cacheKey, JSON.stringify(inMemoryStore)],
     [storageKeys.snapshotCache, JSON.stringify(inMemoryStore)],
   ]);

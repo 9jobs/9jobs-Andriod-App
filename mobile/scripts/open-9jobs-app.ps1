@@ -3,11 +3,13 @@ $ErrorActionPreference = "Stop"
 $AdbPath = "C:\Users\USER\AppData\Local\Android\Sdk\platform-tools\adb.exe"
 $EmulatorPath = "C:\Users\USER\AppData\Local\Android\Sdk\emulator\emulator.exe"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+$LocalExpoBinary = Join-Path $ProjectRoot "node_modules\.bin\expo.cmd"
+$ExpoLaunchLog = Join-Path $ProjectRoot ".expo\android-launch.log"
 $AppPackage = "com.ninejobs.mobile"
 $MainActivity = "$AppPackage/.MainActivity"
 $ExpoGoPackage = "host.exp.exponent"
 $AvdName = "Pixel_7"
-$MetroPortCandidates = 8081..8090
+$MetroPortCandidates = 8091..8100
 
 if (-not (Test-Path -LiteralPath $AdbPath)) {
   throw "adb.exe not found at '$AdbPath'."
@@ -15,6 +17,10 @@ if (-not (Test-Path -LiteralPath $AdbPath)) {
 
 if (-not (Test-Path -LiteralPath $EmulatorPath)) {
   throw "emulator.exe not found at '$EmulatorPath'."
+}
+
+if (-not (Test-Path -LiteralPath $LocalExpoBinary)) {
+  throw "Local Expo CLI not found at '$LocalExpoBinary'. Run npm install inside the mobile app first."
 }
 
 function Test-PortListening {
@@ -53,6 +59,12 @@ function Test-MetroEndpoint {
 }
 
 function Get-ActiveMetroPort {
+  foreach ($port in 8081..8090) {
+    if (Test-MetroEndpoint -Port $port) {
+      return $port
+    }
+  }
+
   foreach ($port in $MetroPortCandidates) {
     if (Test-MetroEndpoint -Port $port) {
       return $port
@@ -78,7 +90,7 @@ function Get-FreeMetroPort {
     }
   }
 
-  throw "No free Metro port found in the expected range 8081-8090."
+  throw "No free Metro port found in the expected range 8091-8100."
 }
 
 function Ensure-EmulatorReady {
@@ -143,6 +155,31 @@ function Wait-For-MetroReady {
       throw "Metro endpoint on port $Port did not become ready within the expected time."
     }
   }
+}
+
+function Start-MetroServer {
+  param(
+    [int]$Port
+  )
+
+  $expoArgs = "`"$LocalExpoBinary`" start --dev-client --host localhost --port $Port --clear"
+  $logDirectory = Split-Path -Parent $ExpoLaunchLog
+  if (-not (Test-Path -LiteralPath $logDirectory)) {
+    New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+  }
+
+  if (Test-Path -LiteralPath $ExpoLaunchLog) {
+    Remove-Item -LiteralPath $ExpoLaunchLog -Force -ErrorAction SilentlyContinue
+  }
+
+  Write-Host "Starting Expo dev server on localhost:$Port..." -ForegroundColor Cyan
+  Start-Process `
+    -FilePath "cmd.exe" `
+    -ArgumentList "/c", $expoArgs `
+    -WorkingDirectory $ProjectRoot `
+    -RedirectStandardOutput $ExpoLaunchLog `
+    -RedirectStandardError $ExpoLaunchLog `
+    -WindowStyle Hidden | Out-Null
 }
 
 function Get-ForegroundPackage {
@@ -212,12 +249,7 @@ $MetroPort = Get-ActiveMetroPort
 
 if (-not $MetroPort) {
   $MetroPort = Get-FreeMetroPort
-  Write-Host "Starting Expo dev server for the native 9Jobs app..." -ForegroundColor Cyan
-  Start-Process `
-    -FilePath "powershell.exe" `
-    -ArgumentList "-NoExit", "-Command", "Set-Location '$ProjectRoot'; npx expo start --dev-client --clear --port $MetroPort" `
-    -WorkingDirectory $ProjectRoot | Out-Null
-
+  Start-MetroServer -Port $MetroPort
   Wait-For-MetroReady -Port $MetroPort
 }
 

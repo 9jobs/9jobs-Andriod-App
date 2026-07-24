@@ -54,7 +54,7 @@
     "android": "powershell -ExecutionPolicy Bypass -File ./scripts/open-9jobs-app.ps1",
     "android:app": "powershell -ExecutionPolicy Bypass -File ./scripts/open-9jobs-app.ps1",
     "android:native": "expo run:android",
-    "phone": "powershell -ExecutionPolicy Bypass -File ./scripts/start-9jobs-phone.ps1",
+    "phone": "cmd /c .\\node_modules\\.bin\\expo.cmd start --dev-client --host lan --port 8091 --clear",
     "phone:usb": "powershell -ExecutionPolicy Bypass -File ./scripts/start-9jobs-phone-usb.ps1",
     "ios": "expo run:ios",
     "web": "expo start --web",

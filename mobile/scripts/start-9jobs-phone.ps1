@@ -3,7 +3,8 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LocalExpoBinary = Join-Path $ProjectRoot "node_modules\.bin\expo.cmd"
 $MetroPortCandidates = 8091..8100
-$TunnelRetryCount = 3
+$MetroCleanupPortCandidates = 8081..8100
+$TunnelRetryCount = 1
 $MetroStartupWaitSeconds = 20
 $PhoneOnlyAndroidSdkBypass = Join-Path $ProjectRoot ".expo-phone-no-android-sdk\missing-sdk"
 
@@ -45,7 +46,7 @@ function Get-ListeningProcessIdsForMetroPorts {
 
   foreach ($entry in $rawEntries) {
     $line = ($entry.ToString() -replace "\s+", " ").Trim()
-    foreach ($port in $MetroPortCandidates) {
+    foreach ($port in $MetroCleanupPortCandidates) {
       if ($line -match "[:\.]$port\s") {
         $parts = $line.Split(" ")
         $processIdText = $parts[$parts.Length - 1]
@@ -130,7 +131,7 @@ function Start-ExpoForPhone {
     [int]$Port
   )
 
-  $clearFlag = if ($HostMode -eq "tunnel") { "--clear" } else { $null }
+  $clearFlag = "--clear"
   if (-not (Test-Path $LocalExpoBinary)) {
     throw "Local Expo CLI not found at $LocalExpoBinary. Run npm install inside the mobile app first."
   }
@@ -148,19 +149,15 @@ function Start-ExpoForPhone {
     $commandParts += $clearFlag
   }
 
-  $commandLine = $commandParts -join " "
   $previousAndroidHome = $env:ANDROID_HOME
   $previousAndroidSdkRoot = $env:ANDROID_SDK_ROOT
-  $previousExpoHeadless = $env:EXPO_UNSTABLE_HEADLESS
 
   try {
-    # Skip Android SDK auto-detection for tunnel mode so Expo does not try adb reverse
-    # or other native Android helpers when the user is connecting from a phone only.
+    # Force Expo tunnel startup to skip adb reverse in phone-only mode.
+    # The path is intentionally invalid so @expo/cli treats Android SDK as unavailable.
     $env:ANDROID_HOME = $PhoneOnlyAndroidSdkBypass
     $env:ANDROID_SDK_ROOT = $PhoneOnlyAndroidSdkBypass
-    # Keep the terminal QR flow but prevent background standalone DevTools setup.
-    $env:EXPO_UNSTABLE_HEADLESS = "1"
-
+    $commandLine = $commandParts -join " "
     & cmd.exe /c $commandLine
   } finally {
     if ($null -eq $previousAndroidHome) {
@@ -174,12 +171,6 @@ function Start-ExpoForPhone {
     } else {
       $env:ANDROID_SDK_ROOT = $previousAndroidSdkRoot
     }
-
-    if ($null -eq $previousExpoHeadless) {
-      Remove-Item Env:EXPO_UNSTABLE_HEADLESS -ErrorAction SilentlyContinue
-    } else {
-      $env:EXPO_UNSTABLE_HEADLESS = $previousExpoHeadless
-    }
   }
 
   return $LASTEXITCODE
@@ -189,33 +180,19 @@ Stop-StaleMetroProcesses
 $MetroPort = Get-FreeMetroPort
 
 Write-Host "Starting 9Jobs phone testing server on port $MetroPort..." -ForegroundColor Cyan
-Write-Host "Using Expo tunnel mode so the phone does not depend on local LAN discovery." -ForegroundColor Yellow
+Write-Host "The script will start the phone build in a visible Expo terminal flow." -ForegroundColor Yellow
 Write-Host "Open the installed 9Jobs dev app and scan the QR shown below." -ForegroundColor Yellow
 
 Push-Location $ProjectRoot
 try {
-  $tunnelStarted = $false
+  $phoneServerStarted = $false
 
-  for ($attempt = 1; $attempt -le $TunnelRetryCount; $attempt++) {
-    if ($attempt -gt 1) {
-      Write-Host "Retrying Expo tunnel ($attempt/$TunnelRetryCount)..." -ForegroundColor Yellow
-    }
-
-    $exitCode = Start-ExpoForPhone -HostMode "tunnel" -Port $MetroPort
-    if ($exitCode -eq 0) {
-      $tunnelStarted = $true
-      break
-    }
-
-    Write-Host "Expo tunnel failed with exit code $exitCode." -ForegroundColor Red
-    Start-Sleep -Seconds 2
-  }
-
-  if (-not $tunnelStarted) {
-    Write-Host ""
-    Write-Host "Expo tunnel could not start, so the script stopped instead of falling back to LAN." -ForegroundColor Red
-    Write-Host "This prevents the phone from opening an unreachable 192.168.x.x Metro URL." -ForegroundColor Yellow
-    Write-Host "Please run 'npm run phone' again in a minute. If it still fails, reinstall @expo/ngrok and retry." -ForegroundColor Yellow
+  Write-Host "Using LAN mode. Make sure the phone and this PC are on the same Wi-Fi." -ForegroundColor Yellow
+  $exitCode = Start-ExpoForPhone -HostMode "lan" -Port $MetroPort
+  if ($exitCode -eq 0) {
+    $phoneServerStarted = $true
+  } else {
+    Write-Host "Expo LAN startup failed with exit code $exitCode." -ForegroundColor Red
     exit 1
   }
 } finally {

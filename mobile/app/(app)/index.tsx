@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Pressable, StyleSheet, Text, View, Image, Animated } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View, Image, Animated, TextInput } from "react-native";
 import { router } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -8,6 +8,7 @@ import { colors, radii, spacing } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { useApplyMutation } from "@/features/jobs/hooks";
+import { useJobFilters } from "@/features/jobs/useJobFilters";
 
 // Twinkling Spark component for background stars animation
 function TwinklingSpark({ style }: { style: any }) {
@@ -41,11 +42,42 @@ import { FadeInView } from "@/components/motion/FadeInView";
 export default function HomeScreen() {
   const { user } = useSession();
   const { data: snapshot } = usePreviewSyncQuery();
+  const jobFilters = useJobFilters();
   const profile = snapshot?.profile;
   const metrics = snapshot?.homeMetrics;
-  const recommendedJobs = snapshot?.jobs.slice(0, 3) ?? [];
+  const [searchQuery, setSearchQuery] = useState(jobFilters.query);
+  const recommendedJobs = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const jobs = snapshot?.jobs ?? [];
+
+    if (!normalizedQuery) {
+      return jobs.slice(0, 3);
+    }
+
+    return jobs
+      .filter((job) =>
+        [job.title, job.company, job.location, job.description, ...job.tags]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery),
+      )
+      .slice(0, 3);
+  }, [searchQuery, snapshot?.jobs]);
   const hasUnreadNotifications = snapshot?.notifications.some((item) => item.unread) ?? false;
   const applyMutation = useApplyMutation();
+
+  useEffect(() => {
+    setSearchQuery(jobFilters.query);
+  }, [jobFilters.query]);
+
+  function openSearchScreen() {
+    const normalizedQuery = searchQuery.trim();
+    jobFilters.setQuery(normalizedQuery);
+    router.push({
+      pathname: "/(app)/jobs/search",
+      params: normalizedQuery ? { query: normalizedQuery } : undefined,
+    } as never);
+  }
 
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
@@ -54,7 +86,9 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.greetingText}>Good morning 👋</Text>
-            <Text style={styles.userNameText}>{profile?.fullName ?? user?.fullName ?? "Test User"}</Text>
+            <Text numberOfLines={2} style={styles.userNameText}>
+              {profile?.fullName ?? user?.fullName ?? "Test User"}
+            </Text>
           </View>
           <View style={styles.headerRight}>
             <AnimatedPressable
@@ -78,13 +112,24 @@ export default function HomeScreen() {
       {/* 2. Search Bar Row */}
       <FadeInView type="fade-up" delay={50}>
         <View style={styles.searchRow}>
-          <View style={styles.searchInputContainer}>
+          <Pressable style={styles.searchInputContainer} onPress={openSearchScreen}>
             <AppIcon name="search" size={20} color={colors.mutedText} />
-            <Text style={styles.searchPlaceholderText}>Search jobs, companies...</Text>
-          </View>
+            <TextInput
+              value={searchQuery}
+              onChangeText={(value) => {
+                setSearchQuery(value);
+                jobFilters.setQuery(value);
+              }}
+              onSubmitEditing={openSearchScreen}
+              placeholder="Search jobs, companies..."
+              placeholderTextColor={colors.subtleText}
+              returnKeyType="search"
+              style={styles.searchInput}
+            />
+          </Pressable>
           <AnimatedPressable
             style={styles.filterButton}
-            onPress={() => router.push("/(app)/jobs/search" as never)}
+            onPress={openSearchScreen}
             scaleTo={0.94}
           >
             <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
@@ -271,11 +316,14 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginTop: spacing.xs,
   },
   headerLeft: {
     gap: 4,
+    flex: 1,
+    minWidth: 0,
+    paddingRight: spacing.md,
   },
   greetingText: {
     fontSize: 14,
@@ -287,11 +335,14 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.text,
     letterSpacing: -0.5,
+    lineHeight: 31,
+    flexShrink: 1,
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    paddingTop: 2,
   },
   bellButton: {
     width: 44,
@@ -322,6 +373,7 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
+    marginTop: 2,
   },
   searchInputContainer: {
     flex: 1,
@@ -333,9 +385,11 @@ const styles = StyleSheet.create({
     height: 48,
     gap: 10,
   },
-  searchPlaceholderText: {
+  searchInput: {
+    flex: 1,
     fontSize: 15,
-    color: colors.subtleText,
+    color: colors.text,
+    paddingVertical: 0,
   },
   filterButton: {
     width: 48,

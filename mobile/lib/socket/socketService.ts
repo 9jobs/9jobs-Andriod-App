@@ -14,6 +14,7 @@ let socket: Socket | null = null;
 let activeConversationId: string | null = null;
 let queryClientInstance: QueryClient | null = null;
 let currentUserId: string | null = null;
+let hasLoggedConnectError = false;
 
 export function initializeSocket(userId: string, queryClient: QueryClient) {
   currentUserId = userId;
@@ -33,17 +34,21 @@ export function initializeSocket(userId: string, queryClient: QueryClient) {
     autoConnect: false,
     transports: ["websocket", "polling"],
     reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1500,
     timeout: 10000,
   });
 
   // Attach auth token dynamically before connect
   socket.on("connect_error", async (err) => {
-    console.error("[Socket Service] Connect error:", err.message);
+    if (!hasLoggedConnectError) {
+      console.warn("[Socket Service] Connect error:", err.message);
+      hasLoggedConnectError = true;
+    }
   });
 
   socket.on("connect", () => {
+    hasLoggedConnectError = false;
     console.log("[Socket Service] Connected successfully. Socket ID:", socket?.id);
     
     // Rejoin active conversation room if we reconnect
@@ -122,6 +127,10 @@ export function initializeSocket(userId: string, queryClient: QueryClient) {
 
 export async function connectSocket() {
   if (!socket) return;
+
+  if (socket.connected || socket.active) {
+    return;
+  }
   
   try {
     const token = await AsyncStorage.getItem("auth_token");
@@ -132,7 +141,7 @@ export async function connectSocket() {
       console.warn("[Socket Service] No auth token found. Socket will not connect yet.");
     }
   } catch (err) {
-    console.error("[Socket Service] Error reading auth token for socket connection:", err);
+    console.warn("[Socket Service] Error reading auth token for socket connection:", err);
   }
 }
 
@@ -143,6 +152,7 @@ export function disconnectSocket() {
     socket = null;
     activeConversationId = null;
     currentUserId = null;
+    hasLoggedConnectError = false;
   }
 }
 

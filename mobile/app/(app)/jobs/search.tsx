@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { DarkHeroCard, PremiumScaffold } from "@/components/premium/PremiumScaffold";
 import { JobCard } from "@/components/ui/JobCard";
 import { Pill } from "@/components/ui/Pill";
@@ -11,9 +12,16 @@ const categories = ["All", "Career Growth", "AI Resume", "Outreach", "Interview"
 const locations = ["All locations", "Remote", "Dubai", "Bangalore", "London"] as const;
 
 export default function SearchScreen() {
+  const params = useLocalSearchParams<{ query?: string }>();
   const filters = useJobFilters();
   const { data: jobs = [] } = useJobsQuery();
   const toggleSave = useToggleSaveMutation();
+
+  useEffect(() => {
+    if (typeof params.query === "string" && params.query !== filters.query) {
+      filters.setQuery(params.query);
+    }
+  }, [filters, params.query]);
 
   return (
     <PremiumScaffold

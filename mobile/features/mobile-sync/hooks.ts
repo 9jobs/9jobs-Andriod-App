@@ -12,6 +12,10 @@ import { useRealtimeInvalidation } from "@/lib/supabase/useRealtimeInvalidation"
 import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { useSession } from "@/providers/SessionProvider";
 
+const shouldEnableLiveTransport =
+  process.env.NODE_ENV === "test" ||
+  (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
+
 function usePreviewRealtimeSync(channelName: string, tables: string[]) {
   useRealtimeInvalidation(
     channelName,
@@ -49,7 +53,7 @@ export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
 ) {
   const { user } = useSession();
 
-  if (enableRealtime) {
+  if (enableRealtime && shouldEnableLiveTransport) {
     usePreviewRealtimeSync("preview-sync-core", previewSyncTables);
   }
 
@@ -57,6 +61,7 @@ export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
     queryKey: options?.queryKey ?? [...queryKeys.previewSync, user?.id ?? "preview-user"],
     queryFn: () => fetchMobileSyncSnapshot(user),
     retry: 1,
+    refetchInterval: shouldEnableLiveTransport ? false : 15000,
     refetchOnMount: true,
     refetchOnReconnect: true,
     ...options,

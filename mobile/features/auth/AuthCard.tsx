@@ -63,10 +63,10 @@ function ClerkAuthCard() {
     try {
       if (mode === "signin") {
         console.log("Signing in with Clerk for:", email.trim());
-        const signInRes = await signIn.create({
+        const signInRes = (await signIn.create({
           identifier: email.trim(),
           password,
-        });
+        })) as any;
 
         console.log("signIn.create succeeded. Status:", signInRes.status);
 

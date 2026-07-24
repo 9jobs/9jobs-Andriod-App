@@ -6,4 +6,5 @@ export const storageKeys = {
   authToken: "auth_token",
   authTokenUserId: "ninejobs.auth.user-id",
   snapshotCache: "mobile_sync_snapshot_cache",
+  snapshotCacheVersion: "ninejobs.snapshot-cache.version",
 };

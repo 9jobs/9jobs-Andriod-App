@@ -37,6 +37,19 @@ type LocalAuthProfile = {
   phoneNumber?: string;
 };
 
+async function saveLocalAuthProfile(profile: LocalAuthProfile) {
+  await AsyncStorage.setItem(storageKeys.mockProfile, JSON.stringify(profile));
+}
+
+async function loadLocalAuthProfile() {
+  const savedProfileRaw = await AsyncStorage.getItem(storageKeys.mockProfile);
+  if (!savedProfileRaw) {
+    return null;
+  }
+
+  return JSON.parse(savedProfileRaw) as LocalAuthProfile;
+}
+
 function getSsoRedirectUrl() {
   return AuthSession.makeRedirectUri({
     scheme: "ninejobs",
@@ -251,7 +264,7 @@ function ClerkSignUpScreen() {
       phoneNumber: form.phoneNumber.trim() || undefined,
     };
 
-    await AsyncStorage.setItem(storageKeys.mockProfile, JSON.stringify(profile));
+    await saveLocalAuthProfile(profile);
     await signInDemo({
       id: `local-${profile.email.toLowerCase()}`,
       email: profile.email,
@@ -291,6 +304,12 @@ function ClerkSignUpScreen() {
 
       const activeSignUpAttempt = createdSignUpAttempt ?? signUpResource;
       signUpAttemptRef.current = activeSignUpAttempt;
+      await saveLocalAuthProfile({
+        email: form.email.trim(),
+        password: form.password,
+        fullName: `${form.firstName} ${form.lastName}`.trim(),
+        phoneNumber: form.phoneNumber.trim() || undefined,
+      });
       const activeStatus = activeSignUpAttempt.status ?? null;
       const createdSessionId = activeSignUpAttempt.createdSessionId ?? null;
       const needsEmailVerification = Array.isArray(activeSignUpAttempt.unverifiedFields)
@@ -714,12 +733,10 @@ function ClerkSignInScreen() {
   }
 
   async function tryStoredAccountFallback() {
-    const savedProfileRaw = await AsyncStorage.getItem(storageKeys.mockProfile);
-    if (!savedProfileRaw) {
+    const savedProfile = await loadLocalAuthProfile();
+    if (!savedProfile) {
       return false;
     }
-
-    const savedProfile = JSON.parse(savedProfileRaw) as LocalAuthProfile;
     const normalizedEmail = email.trim().toLowerCase();
 
     if (
@@ -753,16 +770,20 @@ function ClerkSignInScreen() {
 
     try {
       console.log("Signing in with Clerk for:", email.trim());
-      const signInRes = await signIn.create({
+      const signInRes = (await signIn.create({
         identifier: email.trim(),
         password,
-      });
+      })) as any;
 
       console.log("signIn.create succeeded. Status:", signInRes.status);
 
       if (signInRes.status === "complete" && signInRes.createdSessionId) {
         await clerk.setActive({ session: signInRes.createdSessionId });
         router.replace("/(app)");
+        return;
+      }
+
+      if (await tryStoredAccountFallback()) {
         return;
       }
 
