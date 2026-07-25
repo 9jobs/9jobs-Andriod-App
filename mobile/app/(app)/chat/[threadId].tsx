@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
-import * as Contacts from "expo-contacts";
+let Contacts: any = null;
+try {
+  Contacts = require("expo-contacts");
+} catch (e) {
+  console.warn("expo-contacts native module not found");
+}
 import { router } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -383,6 +388,13 @@ export default function AdminThreadScreen() {
   };
 
   const handleInsertContact = async () => {
+    if (!Contacts) {
+      Alert.alert(
+        "Rebuild Required",
+        "Native contact picking requires rebuilding the app binary. Please run 'npm run android:native' (or 'npx expo run:android') to rebuild and install the updated app."
+      );
+      return;
+    }
     try {
       const { status } = await Contacts.requestPermissionsAsync();
       if (status !== "granted") {
