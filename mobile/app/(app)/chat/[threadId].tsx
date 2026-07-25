@@ -391,7 +391,18 @@ export default function AdminThreadScreen() {
     if (!Contacts) {
       Alert.alert(
         "Rebuild Required",
-        "Native contact picking requires rebuilding the app binary. Please run 'npm run android:native' (or 'npx expo run:android') to rebuild and install the updated app."
+        "Native contact picking requires rebuilding the app. Please run 'npm run android:native' to install the updated app.\n\nWould you like to insert 9Jobs Support contact instead?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Insert 9Jobs Contact",
+            onPress: () => {
+              setDraft((current) =>
+                `${current ? `${current}\n` : ""}9Jobs Support Contact\nPhone: +61 422 279 428\nEmail: support@9jobs.app`
+              );
+            }
+          }
+        ]
       );
       return;
     }
@@ -535,8 +546,8 @@ export default function AdminThreadScreen() {
 
       <KeyboardAvoidingView
         style={styles.chatCanvas}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 60}
       >
         <View style={styles.patternA} />
         <View style={styles.patternB} />
