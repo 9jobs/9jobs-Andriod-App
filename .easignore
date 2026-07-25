@@ -1,14 +1,13 @@
-# Keep the mobile Expo project, skip unrelated or heavy local folders.
-backend/
-.agents/
-.codex/
-.git/
+# Ignore everything at the root by default
+*
 
-# Mobile local artifacts that should never be uploaded to EAS.
-mobile/.expo/
-mobile/.kotlin/
-mobile/android/
+# Allow the mobile subdirectory
+!mobile/
+
+# Exclude unnecessary files inside mobile
 mobile/node_modules/
+mobile/android/
+mobile/ios/
 mobile/artifacts/
 mobile/web-dist/
 mobile/android-captures/
