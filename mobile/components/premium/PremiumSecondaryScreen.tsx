@@ -161,14 +161,12 @@ export function AboutPremiumScreen({
       <View style={styles.aboutPanel}>
         <SectionHeading title="Who We Are" />
         <Text style={styles.aboutSectionBody}>
-          9Jobs is a dedicated team of resume writers, application specialists, and career experts.
-          We help you stand out in the Australian job market with optimized profiles, strategic
-          applications, and end-to-end support.
+          9Jobs is Australia's premier candidate-centric job search support agency, dedicated to bridging the gap between ambitious job seekers and top hiring teams across every state and territory in Australia. Founded by industry veterans with deep expertise in Australian recruitment systems, HR technology, and ATS platforms, 9Jobs operates as a strategic co-pilot for candidates navigating the competitive local market. Our multi-disciplinary team consists of certified resume strategists, ATS optimization experts, senior talent acquisition advisors, and dedicated application managers. We remove the stress and friction from job hunting by offering end-to-end support: from rewriting ATS-compliant resumes and polishing LinkedIn profiles, to submitting targeted applications on your behalf and organizing your interview pipeline. Whether you are an experienced professional, a skilled migrant transitioning into the Australian workforce, or a career switcher looking for your next big step, 9Jobs provides personalized, high-touch support designed around real career outcomes.
         </Text>
 
         {overviewSection?.body ? (
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Overview</Text>
+            <Text style={styles.infoTitle}>Market Overview & Strategy</Text>
             <Text style={styles.infoBody}>{overviewSection.body}</Text>
           </View>
         ) : null}
@@ -182,15 +180,16 @@ export function AboutPremiumScreen({
           <View style={styles.missionCopy}>
             <Text style={styles.missionTitle}>Our Mission</Text>
             <Text style={styles.missionBody}>
-              To bridge the gap between talent and opportunity by delivering personalized,
-              results-driven job search solutions.
+              Our mission is to empower professionals across Australia with the tools, strategy, and dedicated support necessary to achieve fast, meaningful career progression. We are committed to dismantling the invisible barriers between talent and employment by delivering tailored, outcome-driven solutions. By handling complex ATS formatting, application logistics, and proactive follow-ups, we allow candidates to focus entirely on personal development and interview preparation. We measure our success not by application volume, but by the number of interviews secured, offers received, and careers transformed.
             </Text>
           </View>
         </View>
 
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>Our Vision</Text>
-          <Text style={styles.infoBody}>{visionBody}</Text>
+          <Text style={styles.infoBody}>
+            To become Australia's most trusted and innovative job search accelerator, recognized for transforming candidate outcomes through technology, human empathy, and market-leading expertise. We envision an employment landscape where every professional has access to transparent, professional guidance that accurately highlights their potential to hiring teams.
+          </Text>
         </View>
       </View>
 
@@ -273,9 +272,9 @@ export function AboutPremiumScreen({
           Connecting skilled people with companies that need them. 9Jobs was created for candidates who know they can contribute, but need a sharper way to present skills, choose the right roles, and stay consistent through applications.
         </Text>
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Australia Talent & Opportunity</Text>
+          <Text style={styles.infoTitle}>Australia Talent & Opportunity Accelerator</Text>
           <Text style={styles.infoBody}>
-            9jobs, also known as 9 Jobs, helps professionals across Australia improve resumes, optimize LinkedIn profiles and secure interviews. We remove the invisible barriers between talent and opportunity.
+            9jobs, also known as 9 Jobs, helps professionals across Australia improve resumes, optimize LinkedIn profiles and secure interviews. Our journey began with a simple observation: thousands of highly skilled candidates in Australia were missing out on interviews not because of a lack of talent, but because traditional hiring systems filter out applications using rigid automated algorithms. 9Jobs was established to level the playing field and give candidates a clear competitive advantage. Over the years, 9Jobs has transformed into a comprehensive national job search accelerator empowering candidates across Sydney, Melbourne, Brisbane, Perth, Adelaide, Canberra, Hobart, Darwin, and regional centers to showcase their true value, connect with leading recruiters, and secure rewarding job offers in technical and non-technical fields alike. We remove the invisible barriers between talent and opportunity.
           </Text>
         </View>
       </View>
@@ -359,16 +358,12 @@ export function AboutPremiumScreen({
           </Text>
           <View style={styles.contactDivider} />
           <View style={styles.contactRow}>
-            <AppIcon name="pin" color={colors.accentDark} size={16} strokeWidth={2} />
-            <Text style={styles.contactText}>Level 24, Three International Towers, 300 Barangaroo Ave, Sydney NSW 2000, Australia</Text>
-          </View>
-          <View style={styles.contactRow}>
             <AppIcon name="briefcase" color={colors.accentDark} size={16} strokeWidth={2} />
             <Text style={styles.contactText}>Phone: +61 422 279 428</Text>
           </View>
           <View style={styles.contactRow}>
             <AppIcon name="spark" color={colors.accentDark} size={16} strokeWidth={2} />
-            <Text style={styles.contactText}>Email: support@9jobs.app</Text>
+            <Text style={styles.contactText}>Email: 9jobsapplicationservice@gmail.com</Text>
           </View>
         </View>
       </View>
