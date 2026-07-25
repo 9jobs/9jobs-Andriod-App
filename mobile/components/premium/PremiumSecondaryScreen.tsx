@@ -172,17 +172,15 @@ export function AboutPremiumScreen({
         ) : null}
 
         <View style={styles.missionCard}>
-          <View style={styles.missionTarget}>
-            <View style={styles.missionRing}>
-              <View style={styles.missionDot} />
+          <View style={styles.missionHeaderRow}>
+            <View style={styles.missionBadgeIconWrap}>
+              <AppIcon name="spark" color={colors.accentDark} size={18} strokeWidth={2.2} />
             </View>
-          </View>
-          <View style={styles.missionCopy}>
             <Text style={styles.missionTitle}>Our Mission</Text>
-            <Text style={styles.missionBody}>
-              Our mission is to empower professionals across Australia with the tools, strategy, and dedicated support necessary to achieve fast, meaningful career progression. We are committed to dismantling the invisible barriers between talent and employment by delivering tailored, outcome-driven solutions. By handling complex ATS formatting, application logistics, and proactive follow-ups, we allow candidates to focus entirely on personal development and interview preparation. We measure our success not by application volume, but by the number of interviews secured, offers received, and careers transformed.
-            </Text>
           </View>
+          <Text style={styles.missionBody}>
+            Our mission is to empower professionals across Australia with the tools, strategy, and dedicated support necessary to achieve fast, meaningful career progression. We are committed to dismantling the invisible barriers between talent and employment by delivering tailored, outcome-driven solutions. By handling complex ATS formatting, application logistics, and proactive follow-ups, we allow candidates to focus entirely on personal development and interview preparation. We measure our success not by application volume, but by the number of interviews secured, offers received, and careers transformed.
+          </Text>
         </View>
 
         <View style={styles.infoCard}>
@@ -649,6 +647,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 19,
     color: colors.mutedText,
+    textAlign: "justify",
   },
   infoCard: {
     borderRadius: 18,
@@ -656,7 +655,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 4,
+    gap: 6,
   },
   infoTitle: {
     fontSize: 14,
@@ -668,51 +667,41 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 17,
     color: colors.mutedText,
+    textAlign: "justify",
   },
   missionCard: {
-    flexDirection: "row",
-    gap: 12,
-    alignItems: "center",
-    padding: 14,
+    padding: 16,
     borderRadius: 18,
     backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: 10,
+    ...shadows.card,
   },
-  missionTarget: {
-    width: 64,
+  missionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  missionBadgeIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  missionRing: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 3,
-    borderColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  missionDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.accentDark,
-  },
-  missionCopy: {
-    flex: 1,
-    gap: 4,
+    backgroundColor: colors.softAccent,
   },
   missionTitle: {
     fontSize: 15,
     lineHeight: 18,
-    fontWeight: "700",
+    fontWeight: "800",
     color: colors.text,
   },
   missionBody: {
     fontSize: 11.5,
-    lineHeight: 17,
+    lineHeight: 18,
     color: colors.mutedText,
+    textAlign: "justify",
   },
   serviceList: {
     gap: 0,
@@ -936,6 +925,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     color: colors.mutedText,
+    textAlign: "justify",
   },
   contactDivider: {
     height: 1,

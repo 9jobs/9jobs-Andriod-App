@@ -149,6 +149,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.mutedText,
     lineHeight: 20,
+    textAlign: "justify",
   },
   points: {
     gap: 10,
@@ -171,6 +172,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: colors.mutedText,
+    textAlign: "justify",
   },
   emptyCard: {
     backgroundColor: colors.surface,
