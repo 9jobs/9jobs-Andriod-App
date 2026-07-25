@@ -405,25 +405,37 @@ export default function AdminThreadScreen() {
 
   const handleInsertContact = async () => {
     if (!Contacts) {
-      Alert.alert("Permission Error", "Please allow contact access to pick a contact.");
+      Alert.alert("Module Missing", "Contacts feature requires a native build. Please install the updated app build.");
       return;
     }
     try {
-      const { status } = await Contacts.requestPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission Denied", "Please allow contact access to pick a contact.");
-        return;
+      let contact: any = null;
+
+      // Try direct system picker first (works without full read contacts permission on Android)
+      try {
+        contact = await Contacts.presentContactPickerAsync();
+      } catch (pickerErr) {
+        console.log("[Chat Screen] Direct picker notice:", pickerErr);
       }
 
-      const contact = await Contacts.presentContactPickerAsync();
+      // If direct picker returned null/failed, request permissions & retry
+      if (!contact) {
+        const { status } = await Contacts.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission Required", "Please grant contacts permission in device settings to pick a contact.");
+          return;
+        }
+        contact = await Contacts.presentContactPickerAsync();
+      }
+
       if (contact) {
         const name = contact.name || `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Unknown Contact";
-        const phones = (contact.phoneNumbers || []).map((p: any) => p.number).join(", ");
-        const emails = (contact.emails || []).map((e: any) => e.email).join(", ");
+        const phones = (contact.phoneNumbers || []).map((p: any) => p.number).filter(Boolean).join(", ");
+        const emails = (contact.emails || []).map((e: any) => e.email).filter(Boolean).join(", ");
 
-        let contactText = `${name}`;
-        if (phones) contactText += `\nPhone: ${phones}`;
-        if (emails) contactText += `\nEmail: ${emails}`;
+        let contactText = `👤 ${name}`;
+        if (phones) contactText += `\n📞 Phone: ${phones}`;
+        if (emails) contactText += `\n✉️ Email: ${emails}`;
 
         setDraft((current) =>
           `${current ? `${current}\n` : ""}${contactText}`
@@ -497,21 +509,29 @@ export default function AdminThreadScreen() {
 
   const handleSend = () => {
     const messageText = draft.trim();
-    if (!messageText && !pendingAttachment) return;
+    const currentAttachment = pendingAttachment;
+    if (!messageText && !currentAttachment) return;
+
+    // Clear draft & pending attachment immediately for 0ms instant user feedback
+    setDraft("");
+    setPendingAttachment(null);
 
     sendMessage.mutate(
       {
         text: messageText,
-        messageType: pendingAttachment?.messageType ?? "text",
-        attachmentUrl: pendingAttachment?.url,
-        attachmentName: pendingAttachment?.name,
-        attachmentMimeType: pendingAttachment?.mimeType,
-        attachmentSize: pendingAttachment?.size,
+        messageType: currentAttachment?.messageType ?? "text",
+        attachmentUrl: currentAttachment?.url,
+        attachmentName: currentAttachment?.name,
+        attachmentMimeType: currentAttachment?.mimeType,
+        attachmentSize: currentAttachment?.size,
       },
       {
-        onSuccess: () => {
-          setDraft("");
-          setPendingAttachment(null);
+        onError: (err) => {
+          console.error("[Chat Screen] Send failed:", err);
+          // Restore user draft if network request fails
+          setDraft(messageText);
+          setPendingAttachment(currentAttachment);
+          Alert.alert("Send Failed", "Could not send message. Please try again.");
         },
       },
     );
