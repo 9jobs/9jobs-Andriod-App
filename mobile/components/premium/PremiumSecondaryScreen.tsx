@@ -16,6 +16,8 @@ import { colors, radii, shadows, typography } from "@/theme";
 import {
   aboutServicePillars,
   aboutWhyChooseItems,
+  itRolesItems,
+  nonItRolesItems,
   type PremiumScreenContent,
 } from "@/lib/data/premium-content";
 
@@ -231,7 +233,11 @@ export function AboutPremiumScreen({
         <SectionHeading title="Why Choose 9Jobs?" />
         <View style={styles.whyGrid}>
           {aboutWhyChooseItems.map((item) => (
-            <View key={item.title} style={styles.whyCard}>
+            <Pressable
+              key={item.title}
+              style={styles.whyCard}
+              onPress={() => item.href && router.push(item.href as never)}
+            >
               <View style={styles.whyIconWrap}>
                 <AppIcon
                   name={getWhyChooseIcon(item.title)}
@@ -242,7 +248,7 @@ export function AboutPremiumScreen({
               </View>
               <Text style={styles.whyTitle}>{item.title}</Text>
               <Text style={styles.whyBody}>{item.subtitle}</Text>
-            </View>
+            </Pressable>
           ))}
         </View>
 
@@ -259,6 +265,60 @@ export function AboutPremiumScreen({
           </Text>
           <Text style={styles.quoteAuthor}>9Jobs Team</Text>
         </LinearGradient>
+      </View>
+
+      <View style={styles.aboutPanel}>
+        <SectionHeading title="Our Story" />
+        <Text style={styles.aboutSectionBody}>
+          Connecting skilled people with companies that need them. 9Jobs was created for candidates who know they can contribute, but need a sharper way to present skills, choose the right roles, and stay consistent through applications.
+        </Text>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Australia Talent & Opportunity</Text>
+          <Text style={styles.infoBody}>
+            9jobs, also known as 9 Jobs, helps professionals across Australia improve resumes, optimize LinkedIn profiles and secure interviews. We remove the invisible barriers between talent and opportunity.
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.aboutPanel}>
+        <SectionHeading title="Role Coverage" />
+        <Text style={styles.aboutSectionBody}>
+          Built for technical and non-technical career paths. For IT professionals, we focus on technical clarity. For non-IT professionals, we translate experience into outcomes hiring teams can quickly understand.
+        </Text>
+
+        <Text style={styles.roleCategoryHeader}>IT Roles</Text>
+        <View style={styles.whyGrid}>
+          {itRolesItems.map((item) => (
+            <Pressable
+              key={item.title}
+              style={styles.whyCard}
+              onPress={() => item.href && router.push(item.href as never)}
+            >
+              <View style={styles.whyIconWrap}>
+                <AppIcon name="spark" color={colors.accentDark} size={18} strokeWidth={2.1} />
+              </View>
+              <Text style={styles.whyTitle}>{item.title}</Text>
+              <Text style={styles.whyBody}>{item.subtitle}</Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <Text style={[styles.roleCategoryHeader, { marginTop: 14 }]}>Non-IT Roles</Text>
+        <View style={styles.whyGrid}>
+          {nonItRolesItems.map((item) => (
+            <Pressable
+              key={item.title}
+              style={styles.whyCard}
+              onPress={() => item.href && router.push(item.href as never)}
+            >
+              <View style={styles.whyIconWrap}>
+                <AppIcon name="briefcase" color={colors.accentDark} size={18} strokeWidth={2.1} />
+              </View>
+              <Text style={styles.whyTitle}>{item.title}</Text>
+              <Text style={styles.whyBody}>{item.subtitle}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
 
       {marketSection?.items?.length ? (
@@ -289,6 +349,29 @@ export function AboutPremiumScreen({
           </View>
         </View>
       ) : null}
+
+      <View style={styles.aboutPanel}>
+        <SectionHeading title="Contact & Australia Support" />
+        <View style={styles.contactCard}>
+          <Text style={styles.contactCompany}>9Jobs - Job Search, Resume Writing & Career Support Australia</Text>
+          <Text style={styles.contactDesc}>
+            We optimize your resume, LinkedIn, SEEK and Jora profiles, apply for jobs on your behalf, and help you secure interviews and job offers.
+          </Text>
+          <View style={styles.contactDivider} />
+          <View style={styles.contactRow}>
+            <AppIcon name="pin" color={colors.accentDark} size={16} strokeWidth={2} />
+            <Text style={styles.contactText}>Level 24, Three International Towers, 300 Barangaroo Ave, Sydney NSW 2000, Australia</Text>
+          </View>
+          <View style={styles.contactRow}>
+            <AppIcon name="briefcase" color={colors.accentDark} size={16} strokeWidth={2} />
+            <Text style={styles.contactText}>Phone: +61 422 279 428</Text>
+          </View>
+          <View style={styles.contactRow}>
+            <AppIcon name="spark" color={colors.accentDark} size={16} strokeWidth={2} />
+            <Text style={styles.contactText}>Email: support@9jobs.app</Text>
+          </View>
+        </View>
+      </View>
 
       <LinearGradient
         colors={["#090A08", "#10110E", "#181913"]}
@@ -831,5 +914,49 @@ const styles = StyleSheet.create({
     marginTop: 6,
     alignSelf: "flex-start",
     paddingHorizontal: 18,
+  },
+  roleCategoryHeader: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: colors.text,
+    marginBottom: 8,
+  },
+  contactCard: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+    ...shadows.card,
+  },
+  contactCompany: {
+    fontSize: 13.5,
+    lineHeight: 18,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  contactDesc: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.mutedText,
+  },
+  contactDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: 4,
+  },
+  contactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  contactText: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: colors.text,
+    fontWeight: "600",
+    flex: 1,
   },
 });
