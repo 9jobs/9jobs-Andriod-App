@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path } from "react-native-svg";
@@ -9,6 +9,22 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
+
+const categoryFilterList = [
+  "Applied",
+  "Interviewing",
+  "Offers",
+  "Saved",
+  "Applications Today",
+  "Recruiter Contacted",
+  "Shortlisted",
+  "Interview Completed",
+  "Hired",
+  "Rejected",
+  "Follow-ups Due",
+  "Cold Emails Sent",
+  "Hiring Managers Contacted",
+];
 
 const submittedTrackerStatuses = new Set([
   "applied",
@@ -32,7 +48,15 @@ const submittedTrackerStatuses = new Set([
 
 export default function TrackerDetailsScreen() {
   const { filter } = useLocalSearchParams<{ filter?: string }>();
-  const activeFilter = filter || "Applied";
+  const [selectedFilter, setSelectedFilter] = useState<string>(filter || "Applied");
+
+  React.useEffect(() => {
+    if (filter) {
+      setSelectedFilter(filter);
+    }
+  }, [filter]);
+
+  const activeFilter = selectedFilter;
   const { data: snapshot, refetch } = usePreviewSyncQuery();
   const jobs = snapshot?.jobs ?? [];
   const summary = normalizeTrackerSummary(snapshot?.trackerSummary);
@@ -380,7 +404,34 @@ export default function TrackerDetailsScreen() {
 
   return (
     <Screen contentStyle={styles.content}>
-      <BackHeader label="Tracker" />
+      <View style={styles.headerTopContainer}>
+        <BackHeader label="Tracker" />
+        <View style={styles.livePulseBadge}>
+          <View style={styles.pulseDot} />
+          <Text style={styles.pulseText}>ADMIN LIVE SYNC</Text>
+        </View>
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoryScrollContainer}
+      >
+        {categoryFilterList.map((cat) => {
+          const isActive = cat === activeFilter;
+          return (
+            <Pressable
+              key={cat}
+              onPress={() => setSelectedFilter(cat)}
+              style={[styles.categoryPill, isActive && styles.categoryPillActive]}
+            >
+              <Text style={[styles.categoryPillText, isActive && styles.categoryPillTextActive]}>
+                {cat}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       {isColdEmailView ? (
         <View style={styles.emailScreenHeader}>
@@ -616,7 +667,60 @@ function FactPill({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   content: {
     paddingTop: spacing.md,
-    gap: spacing.lg,
+    gap: spacing.md,
+  },
+  headerTopContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  livePulseBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: colors.softAccent,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  pulseDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.accentDark,
+  },
+  pulseText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    color: colors.text,
+    letterSpacing: 0.5,
+  },
+  categoryScrollContainer: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  categoryPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  categoryPillActive: {
+    backgroundColor: colors.accentDark,
+    borderColor: colors.accentDark,
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.mutedText,
+  },
+  categoryPillTextActive: {
+    color: colors.surface,
+    fontWeight: "800",
   },
   backRow: {
     flexDirection: "row",
