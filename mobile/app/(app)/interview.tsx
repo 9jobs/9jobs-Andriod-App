@@ -298,6 +298,8 @@ export default function InterviewScreen() {
     }
   };
 
+  const lastUserTranscript = latestResponse?.transcript || screenData?.session?.last_transcript || "";
+
   return (
     <Screen contentStyle={styles.screenContent}>
       <BackHeader label="Back" />
@@ -403,7 +405,13 @@ export default function InterviewScreen() {
       </View>
 
       <View style={styles.feedbackCard}>
-        <Text style={styles.feedbackTitle}>AI Feedback · Latest answer</Text>
+        <Text style={styles.feedbackTitle}>AI Assistant · Spoken Q&A & Feedback</Text>
+        {lastUserTranscript ? (
+          <View style={styles.userQueryBox}>
+            <Text style={styles.userQueryLabel}>You Spoke / Asked:</Text>
+            <Text style={styles.userQueryText}>"{lastUserTranscript}"</Text>
+          </View>
+        ) : null}
         <Text style={styles.feedbackBody}>{feedbackBody}</Text>
         <Text style={styles.feedbackHint}>{feedbackHint}</Text>
       </View>
@@ -596,15 +604,38 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.accentDark,
   },
+  userQueryBox: {
+    backgroundColor: "rgba(163,230,53,0.14)",
+    borderRadius: 12,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accentDark,
+    gap: 2,
+  },
+  userQueryLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: colors.accentDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  userQueryText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.text,
+    fontStyle: "italic",
+  },
   feedbackBody: {
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
     fontWeight: "600",
+    textAlign: "justify",
   },
   feedbackHint: {
     fontSize: 13,
     color: colors.mutedText,
     lineHeight: 19,
+    textAlign: "justify",
   },
 });

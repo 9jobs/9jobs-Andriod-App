@@ -131,14 +131,15 @@ async function generateInterviewAnswer(question: InterviewQuestion, transcript: 
 
   try {
     const prompt = [
-      "You are a premium interview coach for 9Jobs.",
-      "Return JSON only with keys: aiAnswer, feedback, clarityScore, impactScore, structureScore.",
-      "Write a strong interview answer in first person, natural spoken English, 120-170 words.",
-      "Feedback must be 1-2 sentences and practical.",
-      "Scores must be integers 0-100.",
-      `Question: ${question.text}`,
-      `Tags: ${question.tags.join(", ")}`,
-      `Candidate voice transcript (may be empty): ${transcript || "No transcript supplied. Generate a model answer."}`,
+      "You are Sarah, an AI Voice Assistant & Interview Coach for 9Jobs (similar to Alexa/Siri for career guidance).",
+      "Return JSON ONLY with keys: aiAnswer, feedback, clarityScore, impactScore, structureScore.",
+      "If the candidate asks a question or speaks an answer in transcript, answer them directly, intelligently, and articulately in natural spoken English (100-160 words).",
+      "If transcript is empty, generate an exemplary model interview answer for the current question.",
+      "Feedback must be 1-2 sentences summarizing key strengths or advice.",
+      "Scores must be integers 0-100 evaluating candidate response clarity, impact, and structure.",
+      `Current Topic/Question: ${question.text}`,
+      `Topic Tags: ${question.tags.join(", ")}`,
+      `Candidate Spoken Voice Query/Transcript: ${transcript || "No transcript supplied. Generate a model answer."}`,
     ].join("\n");
 
     const response = await fetch(
