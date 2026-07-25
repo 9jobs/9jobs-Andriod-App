@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, Keyboard, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
 let Contacts: any = null;
 try {
   Contacts = require("expo-contacts");
@@ -89,6 +89,22 @@ export default function AdminThreadScreen() {
   }, [messages]);
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setIsKeyboardVisible(false)
+    );
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const conversationId = user?.id || "preview-user-9jobs";
 
@@ -389,21 +405,7 @@ export default function AdminThreadScreen() {
 
   const handleInsertContact = async () => {
     if (!Contacts) {
-      Alert.alert(
-        "Rebuild Required",
-        "Native contact picking requires rebuilding the app. Please run 'npm run android:native' to install the updated app.\n\nWould you like to insert 9Jobs Support contact instead?",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Insert 9Jobs Contact",
-            onPress: () => {
-              setDraft((current) =>
-                `${current ? `${current}\n` : ""}9Jobs Support Contact\nPhone: +61 422 279 428\nEmail: support@9jobs.app`
-              );
-            }
-          }
-        ]
-      );
+      Alert.alert("Permission Error", "Please allow contact access to pick a contact.");
       return;
     }
     try {
@@ -547,7 +549,7 @@ export default function AdminThreadScreen() {
       <KeyboardAvoidingView
         style={styles.chatCanvas}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 60}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
         <View style={styles.patternA} />
         <View style={styles.patternB} />
@@ -640,7 +642,10 @@ export default function AdminThreadScreen() {
           </Pressable>
         </Modal>
 
-        <View style={[styles.composerShell, { marginBottom: insets.bottom > 0 ? insets.bottom : 10 }]}>
+        <View style={[
+          styles.composerShell,
+          { marginBottom: isKeyboardVisible ? 10 : (insets.bottom > 0 ? insets.bottom : 10) }
+        ]}>
           <View style={styles.inputWrap}>
             <Pressable onPress={handlePickAttachment} style={styles.inlineIconButton}>
               <AttachmentIcon />
@@ -1224,6 +1229,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendButtonDisabled: {
-    backgroundColor: "#A5D7AF",
+    backgroundColor: "#22A447",
   },
 });
