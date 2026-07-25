@@ -3862,12 +3862,13 @@ export default function App() {
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Avatar</th><th>Client</th><th>Phone</th><th>Status</th><th>Assigned Consultant</th><th>Total Applications</th><th>Active Roles</th><th>Interviews</th><th>Offers</th><th>Hired</th><th>Last Activity</th><th>Actions</th></tr>
+                  <tr><th>Avatar</th><th>User ID</th><th>Client</th><th>Phone</th><th>Status</th><th>Assigned Consultant</th><th>Total Applications</th><th>Active Roles</th><th>Interviews</th><th>Offers</th><th>Hired</th><th>Last Activity</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {filteredUsers.map((u) => (
                     <tr key={u.id}>
                       <td><img src={u.avatar_url || "https://randomuser.me/api/portraits/men/32.jpg"} alt="" className="chat-user-item-avatar" /></td>
+                      <td><code style={{ fontSize: "11px", background: "rgba(0,0,0,0.05)", padding: "2px 6px", borderRadius: "4px", fontFamily: "monospace", wordBreak: "break-all" }}>{u.id}</code></td>
                       <td><strong>{u.full_name}</strong><br /><span style={{ fontSize: "11px", color: "#888" }}>{u.email}</span></td>
                       <td>{u.phone_number || "—"}</td>
                       <td>
@@ -3892,7 +3893,7 @@ export default function App() {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={12} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No clients found match search queries.</td></tr>
+                    <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No clients found match search queries.</td></tr>
                   )}
                 </tbody>
               </table>
