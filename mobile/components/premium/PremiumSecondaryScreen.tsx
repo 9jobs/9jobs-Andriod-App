@@ -694,10 +694,11 @@ const styles = StyleSheet.create({
   whyGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    justifyContent: "space-between",
+    rowGap: 12,
   },
   whyCard: {
-    width: "48.4%",
+    width: "47.5%",
     paddingVertical: 14,
     paddingHorizontal: 12,
     borderRadius: 16,
