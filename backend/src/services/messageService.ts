@@ -7,7 +7,9 @@ import {
   getLocalConversation,
   updateLocalConversation,
   deleteLocalMessage,
+  updateLocalMessage,
   clearLocalConversation,
+  deleteLocalConversation,
 } from "../lib/localDb";
 
 
@@ -624,37 +626,53 @@ export async function deleteMessage(
 
   try {
     const isNew = await hasNewSchema();
-    
-    // Fetch message first to verify ownership
-    const { data: msg, error: fetchErr } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("id", messageId)
-      .maybeSingle();
+    let supabaseDeleted = false;
+    let localDeleted = false;
 
-    if (fetchErr || !msg) {
+    // 1. Try to delete from local DB
+    localDeleted = await deleteLocalMessage(messageId);
+
+    // 2. Try to delete from Supabase
+    try {
+      const { data: msg, error: fetchErr } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("id", messageId)
+        .maybeSingle();
+
+      if (!fetchErr && msg) {
+        // Verify ownership: Client can only delete their own messages
+        if (role === "client") {
+          const msgSender = msg.sender_id;
+          if (msgSender !== senderId) {
+            return { success: false, error: "Unauthorized: Cannot delete messages sent by others" };
+          }
+        }
+
+        const { error: deleteErr } = await supabase
+          .from("messages")
+          .delete()
+          .eq("id", messageId);
+
+        if (!deleteErr) {
+          supabaseDeleted = true;
+        }
+      }
+    } catch (sbErr: any) {
+      console.warn("[Message Service] Supabase delete error:", sbErr.message);
+    }
+
+    if (!localDeleted && !supabaseDeleted) {
       return { success: false, error: "Message not found" };
     }
-
-    // Verify ownership: Client can only delete their own messages
-    if (role === "client") {
-      const msgSender = msg.sender_id;
-      if (msgSender !== senderId) {
-        return { success: false, error: "Unauthorized: Cannot delete messages sent by others" };
-      }
-    }
-
-    // Delete message
-    const { error: deleteErr } = await supabase
-      .from("messages")
-      .delete()
-      .eq("id", messageId);
-
-    if (deleteErr) throw deleteErr;
 
     // Emit live delete event
     if (ioInstance) {
       ioInstance.to(`conversation:${conversationId}`).emit("message_deleted", {
+        conversationId,
+        messageId,
+      });
+      ioInstance.to("admins").emit("message_deleted", {
         conversationId,
         messageId,
       });
@@ -666,6 +684,128 @@ export async function deleteMessage(
     return { success: false, error: err.message };
   }
 }
+
+export async function updateMessage(
+  senderId: string,
+  role: "client" | "admin" | "staff",
+  messageId: string,
+  text: string,
+  targetConversationId?: string
+): Promise<{ success: boolean; message?: any; error?: string }> {
+  const conversationId = targetConversationId || senderId;
+  console.log(`[Message Service] updateMessage: sender=${senderId} (${role}), message=${messageId}, text="${text}"`);
+
+  const trimmedText = text ? text.trim() : "";
+  if (!trimmedText) {
+    return { success: false, error: "Message text is required" };
+  }
+
+  try {
+    const isNew = await hasNewSchema();
+    let supabaseUpdated = false;
+    let localUpdated = false;
+    let updatedMsgPayload: any = null;
+
+    // 1. Try to update in local DB
+    localUpdated = await updateLocalMessage(messageId, trimmedText);
+
+    // 2. Try to update in Supabase
+    try {
+      const { data: msg, error: fetchErr } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("id", messageId)
+        .maybeSingle();
+
+      if (!fetchErr && msg) {
+        // Verify ownership: Client can only edit their own messages
+        if (role === "client" && msg.sender_id !== senderId) {
+          return { success: false, error: "Unauthorized: Cannot edit messages sent by others" };
+        }
+
+        const updatePayload: any = {};
+        if (msg.hasOwnProperty("text")) {
+          updatePayload.text = trimmedText;
+        }
+        if (msg.hasOwnProperty("content")) {
+          updatePayload.content = trimmedText;
+        }
+
+        const { data: updatedMsg, error: updateErr } = await supabase
+          .from("messages")
+          .update(updatePayload)
+          .eq("id", messageId)
+          .select()
+          .single();
+
+        if (!updateErr && updatedMsg) {
+          supabaseUpdated = true;
+          updatedMsgPayload = {
+            ...updatedMsg,
+            content: updatedMsg.text || updatedMsg.content || trimmedText,
+          };
+        }
+      }
+    } catch (sbErr: any) {
+      console.warn("[Message Service] Supabase update error:", sbErr.message);
+    }
+
+    if (!localUpdated && !supabaseUpdated) {
+      return { success: false, error: "Message not found" };
+    }
+
+    // 3. Fallback/Standard message payload if not returned by Supabase
+    if (!updatedMsgPayload) {
+      updatedMsgPayload = {
+        id: messageId,
+        conversation_id: conversationId,
+        sender_id: senderId,
+        sender_role: role,
+        text: trimmedText,
+        content: trimmedText,
+        message_type: "text",
+        created_at: new Date().toISOString(),
+      };
+    }
+
+    // 4. Update last message of the conversation if needed in Supabase
+    try {
+      if (isNew) {
+        const { data: conv } = await supabase
+          .from("conversations")
+          .select("*")
+          .eq("id", conversationId)
+          .maybeSingle();
+
+        if (conv && (conv.last_message_id === messageId || conv.last_message_text === trimmedText)) {
+          await supabase
+            .from("conversations")
+            .update({ last_message_text: trimmedText.substring(0, 200) })
+            .eq("id", conversationId);
+        }
+      }
+    } catch (convErr: any) {
+      console.warn("[Message Service] Supabase conversation last message update error:", convErr.message);
+    }
+
+    // 5. Emit live update events via Socket.IO
+    if (ioInstance) {
+      const socketPayload = {
+        conversationId,
+        messageId,
+        message: updatedMsgPayload,
+      };
+      ioInstance.to(`conversation:${conversationId}`).emit("message_updated", socketPayload);
+      ioInstance.to("admins").emit("message_updated", socketPayload);
+    }
+
+    return { success: true, message: updatedMsgPayload };
+  } catch (err: any) {
+    console.error("[Message Service] updateMessage failed:", err);
+    return { success: false, error: err.message };
+  }
+}
+
 
 export async function clearConversation(
   senderId: string,
@@ -831,6 +971,57 @@ export async function startConversation(
   return clearConversation(senderId, role, targetConversationId, { includeWelcomeMessage: true });
 }
 
+export async function deleteConversation(
+  senderId: string,
+  role: "client" | "admin" | "staff",
+  conversationId: string
+): Promise<{ success: boolean; error?: string }> {
+  console.log(`[Message Service] deleteConversation: sender=${senderId} (${role}), conversation=${conversationId}`);
+
+  try {
+    const isNew = await hasNewSchema();
+
+    await deleteLocalConversation(conversationId);
+
+    try {
+      if (isNew) {
+        await supabase
+          .from("messages")
+          .delete()
+          .eq("conversation_id", conversationId);
+
+        const { error: convErr } = await supabase
+          .from("conversations")
+          .delete()
+          .eq("id", conversationId);
+
+        if (convErr) throw convErr;
+      } else {
+        await supabase
+          .from("messages")
+          .delete()
+          .or(`sender_id.eq.${conversationId},recipient_id.eq.${conversationId}`);
+      }
+    } catch (dbErr: any) {
+      console.warn("[Message Service] Supabase delete conversation failed:", dbErr.message);
+    }
+
+    if (ioInstance) {
+      ioInstance.to(`conversation:${conversationId}`).emit("conversation_deleted", {
+        conversationId,
+      });
+      ioInstance.to("admins").emit("conversation_deleted", {
+        conversationId,
+      });
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error("[Message Service] deleteConversation failed:", err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function getConversationsList(): Promise<any[]> {
   const isNew = await hasNewSchema();
   let supabaseConvs: any[] = [];
@@ -938,6 +1129,86 @@ export async function getMessagesHistory(conversationId: string): Promise<any[]>
     }
   } catch (err) {
     console.warn("[Message Service] Failed to fetch Supabase messages:", err);
+  }
+
+  if (supabaseMsgs.length === 0) {
+    const localMsgs = await getLocalMessages(conversationId);
+    if (localMsgs.length > 0) {
+      console.log(`[Message Service] Syncing local messages to Supabase for conversation: ${conversationId}`);
+      try {
+        if (isNew) {
+          const { data: existingConv } = await supabase
+            .from("conversations")
+            .select("id")
+            .eq("id", conversationId)
+            .maybeSingle();
+
+          if (!existingConv) {
+            const localConv = await getLocalConversation(conversationId);
+            if (localConv) {
+              await supabase.from("conversations").insert([
+                {
+                  id: localConv.id,
+                  client_id: localConv.client_id || conversationId,
+                  status: localConv.status || "open",
+                  type: localConv.type || "support",
+                  chatbot_enabled: localConv.chatbot_enabled ?? true,
+                  created_at: localConv.created_at || new Date().toISOString(),
+                  updated_at: localConv.updated_at || new Date().toISOString(),
+                }
+              ]);
+            }
+          }
+
+          const msgsToInsert = localMsgs.map((m: any) => ({
+            conversation_id: conversationId,
+            sender_id: m.sender_id,
+            sender_role: m.sender_role || (m.sender_id === "admin" ? "admin" : m.sender_id === "bot" ? "admin" : "client"),
+            recipient_id: m.recipient_id || (m.sender_id === "admin" ? conversationId : "admin"),
+            message_type: m.message_type || "text",
+            text: m.text || m.content || "",
+            content: m.content || m.text || "",
+            client_message_id: m.client_message_id || `msg_${Math.random().toString(36).substring(7)}_${Date.now()}`,
+            status: m.status || "seen",
+            is_automated: m.is_automated || m.sender_id === "bot" || false,
+            created_at: m.created_at || new Date().toISOString(),
+          }));
+
+          const { data: insertedMsgs, error: insertErr } = await supabase
+            .from("messages")
+            .insert(msgsToInsert)
+            .select();
+
+          if (!insertErr && insertedMsgs) {
+            supabaseMsgs = insertedMsgs;
+          }
+        } else {
+          const msgsToInsert = localMsgs.map((m: any) => ({
+            sender_id: m.sender_id,
+            sender_role: m.sender_role || (m.sender_id === "admin" ? "admin" : m.sender_id === "bot" ? "admin" : "client"),
+            recipient_id: m.recipient_id || (m.sender_id === "admin" ? conversationId : "admin"),
+            message_type: m.message_type || "text",
+            text: m.text || m.content || "",
+            content: m.content || m.text || "",
+            client_message_id: m.client_message_id || `msg_${Math.random().toString(36).substring(7)}_${Date.now()}`,
+            status: m.status || "seen",
+            is_automated: m.is_automated || m.sender_id === "bot" || false,
+            created_at: m.created_at || new Date().toISOString(),
+          }));
+
+          const { data: insertedMsgs, error: insertErr } = await supabase
+            .from("messages")
+            .insert(msgsToInsert)
+            .select();
+
+          if (!insertErr && insertedMsgs) {
+            supabaseMsgs = insertedMsgs;
+          }
+        }
+      } catch (syncErr: any) {
+        console.warn("[Message Service] Failed to sync local messages to Supabase:", syncErr.message);
+      }
+    }
   }
 
   // Get local messages

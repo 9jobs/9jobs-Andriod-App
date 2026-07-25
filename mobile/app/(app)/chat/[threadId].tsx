@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
+import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
+import * as Contacts from "expo-contacts";
 import { router } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -381,10 +382,32 @@ export default function AdminThreadScreen() {
     }
   };
 
-  const handleInsertContact = () => {
-    setDraft((current) =>
-      `${current ? `${current}\n` : ""}9Jobs Support Contact\nPhone: +61 422 279 428\nEmail: support@9jobs.app`,
-    );
+  const handleInsertContact = async () => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Please allow contact access to pick a contact.");
+        return;
+      }
+
+      const contact = await Contacts.presentContactPickerAsync();
+      if (contact) {
+        const name = contact.name || `${contact.firstName || ""} ${contact.lastName || ""}`.trim() || "Unknown Contact";
+        const phones = (contact.phoneNumbers || []).map((p: any) => p.number).join(", ");
+        const emails = (contact.emails || []).map((e: any) => e.email).join(", ");
+
+        let contactText = `${name}`;
+        if (phones) contactText += `\nPhone: ${phones}`;
+        if (emails) contactText += `\nEmail: ${emails}`;
+
+        setDraft((current) =>
+          `${current ? `${current}\n` : ""}${contactText}`
+        );
+      }
+    } catch (error) {
+      console.error("[Chat Screen] Contact picker failed:", error);
+      Alert.alert("Error", "Could not pick a contact from this device.");
+    }
   };
 
   const handleAttachmentAction = async (action: "document" | "photos" | "camera" | "audio" | "contact") => {
@@ -498,7 +521,11 @@ export default function AdminThreadScreen() {
         </View>
       </View>
 
-      <View style={styles.chatCanvas}>
+      <KeyboardAvoidingView
+        style={styles.chatCanvas}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
         <View style={styles.patternA} />
         <View style={styles.patternB} />
         <View style={styles.patternC} />
@@ -509,7 +536,7 @@ export default function AdminThreadScreen() {
           style={styles.messageScroller}
           contentContainerStyle={[
             styles.messageStack,
-            { paddingBottom: 122 + insets.bottom },
+            { paddingBottom: 20 },
           ]}
           onScroll={handleChatScroll}
           onContentSizeChange={handleContentSizeChange}
@@ -590,7 +617,7 @@ export default function AdminThreadScreen() {
           </Pressable>
         </Modal>
 
-        <View style={[styles.composerShell, { bottom: 62 + insets.bottom }]}>
+        <View style={[styles.composerShell, { marginBottom: insets.bottom > 0 ? insets.bottom : 10 }]}>
           <View style={styles.inputWrap}>
             <Pressable onPress={handlePickAttachment} style={styles.inlineIconButton}>
               <AttachmentIcon />
@@ -633,7 +660,7 @@ export default function AdminThreadScreen() {
             <SendIcon />
           </Pressable>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Screen>
   );
 }
@@ -1128,9 +1155,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   composerShell: {
-    position: "absolute",
-    left: 10,
-    right: 10,
     flexDirection: "row",
     alignItems: "flex-end",
     gap: 10,

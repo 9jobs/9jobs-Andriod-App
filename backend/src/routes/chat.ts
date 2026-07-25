@@ -4,11 +4,13 @@ import { supabase, hasNewSchema } from "../lib/supabase";
 import {
   sendMessage,
   deleteMessage,
+  updateMessage,
   clearConversation,
   startConversation,
   getConversationsList,
   getMessagesHistory,
   getConversationDetails,
+  deleteConversation,
 } from "../services/messageService";
 
 const router = Router();
@@ -375,6 +377,28 @@ router.delete("/admin/conversations/:conversationId/messages/:id", authMiddlewar
   }
 });
 
+// Update admin message
+router.patch("/admin/conversations/:conversationId/messages/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const role = req.user?.role;
+  if (role !== "admin" && role !== "staff") {
+    return res.status(403).json({ error: "Forbidden: Admin or staff access required" });
+  }
+
+  const { conversationId, id } = req.params;
+  const { text } = req.body;
+
+  if (!text) {
+    return res.status(400).json({ error: "Missing text payload" });
+  }
+
+  const result = await updateMessage("admin", "admin", id, text, conversationId);
+  if (result.success) {
+    return res.json(result);
+  } else {
+    return res.status(400).json(result);
+  }
+});
+
 // Clear admin conversation
 router.post("/admin/conversations/:conversationId/clear", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const role = req.user?.role;
@@ -384,6 +408,22 @@ router.post("/admin/conversations/:conversationId/clear", authMiddleware, async 
 
   const { conversationId } = req.params;
   const result = await clearConversation("admin", "admin", conversationId);
+  if (result.success) {
+    return res.json(result);
+  } else {
+    return res.status(400).json(result);
+  }
+});
+
+// Delete admin conversation entirely
+router.delete("/admin/conversations/:conversationId/delete", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const role = req.user?.role;
+  if (role !== "admin" && role !== "staff") {
+    return res.status(403).json({ error: "Forbidden: Admin or staff access required" });
+  }
+
+  const { conversationId } = req.params;
+  const result = await deleteConversation("admin", "admin", conversationId);
   if (result.success) {
     return res.json(result);
   } else {

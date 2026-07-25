@@ -270,7 +270,7 @@ async function syncLocalSuccessStoriesToBackend(
   return syncedStories;
 }
 
-function connectAdminSocket(token: string, onEvent: (event: string, payload: any) => void) {
+function connectAdminSocket(token: string, activeChatUserId: string | undefined, onEvent: (event: string, payload: any) => void) {
   if (adminSocket) {
     adminSocket.disconnect();
   }
@@ -285,6 +285,9 @@ function connectAdminSocket(token: string, onEvent: (event: string, payload: any
   adminSocket.on("connect", () => {
     console.log("[Admin Socket] Connected successfully. Socket ID:", adminSocket.id);
     adminSocket.emit("join_conversation", "admins");
+    if (activeChatUserId) {
+      adminSocket.emit("join_conversation", activeChatUserId);
+    }
   });
 
   adminSocket.on("connect_error", (err: any) => {
@@ -313,6 +316,17 @@ function connectAdminSocket(token: string, onEvent: (event: string, payload: any
 
   adminSocket.on("unread_count_updated", (data: any) => {
     onEvent("unread_count_updated", data);
+  });
+  adminSocket.on("message_deleted", (data: any) => {
+    onEvent("message_deleted", data);
+  });
+
+  adminSocket.on("message_updated", (data: any) => {
+    onEvent("message_updated", data);
+  });
+
+  adminSocket.on("conversation_deleted", (data: any) => {
+    onEvent("conversation_deleted", data);
   });
 }
 
@@ -572,6 +586,9 @@ export default function App() {
   const [savedJobEntries, setSavedJobEntries] = useState<any[]>([]);
   const [successStories, setSuccessStories] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
+  const [editingMessage, setEditingMessage] = useState<any | null>(null);
+  const [activeHeaderMenuOpen, setActiveHeaderMenuOpen] = useState(false);
+  const [activeMessageMenuId, setActiveMessageMenuId] = useState<string | null>(null);
   const [services, setServices] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
   const [resumeScores, setResumeScores] = useState<any[]>([]);
@@ -747,7 +764,7 @@ export default function App() {
       void (async () => {
         const token = await ensureAdminToken();
         if (token) {
-          connectAdminSocket(token, (event, payload) => {
+          connectAdminSocket(token, activeChatUser?.id, (event, payload) => {
             console.log(`[Admin Socket Event] ${event}:`, payload);
             if (event === "conversation_created" || event === "conversation_updated") {
               void fetchChatUsers();
@@ -766,6 +783,18 @@ export default function App() {
               void fetchChatMessages(activeChatUser.id);
             } else if (event === "message_delivered" && payload.conversationId === activeChatUser?.id) {
               void fetchChatMessages(activeChatUser.id);
+            } else if (event === "message_deleted" && payload.conversationId === activeChatUser?.id) {
+              setMessages((prev) => prev.filter((m: any) => m.id !== payload.messageId && m.client_message_id !== payload.messageId));
+              void fetchChatUsers();
+            } else if (event === "message_updated" && payload.conversationId === activeChatUser?.id) {
+              setMessages((prev) => prev.map((m: any) => (m.id === payload.messageId || (payload.message && payload.message.client_message_id && m.client_message_id === payload.message.client_message_id)) ? { ...m, ...payload.message, content: payload.message.text || payload.message.content || "" } : m));
+              void fetchChatUsers();
+            } else if (event === "conversation_deleted") {
+              if (activeChatUser?.id === payload.conversationId) {
+                setActiveChatUser(null);
+                setMessages([]);
+              }
+              void fetchChatUsers();
             }
           });
         }
@@ -1828,7 +1857,7 @@ export default function App() {
       const token = localStorage.getItem("admin_auth_token");
       
       // 1. Mark messages seen on backend
-      await fetch(`${BACKEND_URL}/api/admin/conversations/${userId}/seen`, {
+      await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(userId)}/seen`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`
@@ -1836,7 +1865,7 @@ export default function App() {
       });
 
       // 2. Fetch messages from backend
-      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${userId}/messages`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(userId)}/messages`, {
         headers: {
           "Authorization": `Bearer ${token}`
         }
@@ -2975,11 +3004,57 @@ export default function App() {
     if (!chatInput.trim() || !activeChatUser) return;
 
     const trimmedText = chatInput.trim();
+    if (editingMessage) {
+      try {
+        const token = localStorage.getItem("admin_auth_token");
+        const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/messages/${editingMessage.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            text: trimmedText
+          })
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error ${res.status}`);
+        }
+
+        setChatInput("");
+        setEditingMessage(null);
+        fetchChatMessages(activeChatUser.id);
+      } catch (err: any) {
+        console.warn("handleSendChatMessage PATCH failed, falling back to direct update:", err);
+        try {
+          const { error } = await supabase
+            .from("messages")
+            .update({ text: trimmedText, content: trimmedText })
+            .eq("id", editingMessage.id);
+
+          if (error) {
+            const { error: error2 } = await supabase
+              .from("messages")
+              .update({ content: trimmedText })
+              .eq("id", editingMessage.id);
+            if (error2) throw error2;
+          }
+
+          setChatInput("");
+          setEditingMessage(null);
+          fetchChatMessages(activeChatUser.id);
+        } catch (dbErr: any) {
+          showError(dbErr.message);
+        }
+      }
+      return;
+    }
     const clientMessageId = "msg_admin_" + Math.random().toString(36).substring(2) + "_" + Date.now();
 
     try {
       const token = localStorage.getItem("admin_auth_token");
-      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${activeChatUser.id}/messages`, {
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -3058,6 +3133,153 @@ export default function App() {
         } catch (fallbackErr: any) {
           showError(fallbackErr.message);
         }
+      }
+    }
+  };
+
+  const handleDeleteChatMessage = async (messageId: string | number) => {
+    if (!activeChatUser) return;
+    if (!confirm("Are you sure you want to delete this message?")) return;
+
+    try {
+      const token = localStorage.getItem("admin_auth_token");
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/messages/${messageId}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error ${res.status}`);
+      }
+
+      if (editingMessage && editingMessage.id === messageId) {
+        setEditingMessage(null);
+        setChatInput("");
+      }
+
+      fetchChatMessages(activeChatUser.id);
+    } catch (err: any) {
+      console.warn("handleDeleteChatMessage API failed, falling back to direct Supabase delete:", err);
+      try {
+        const { error } = await supabase
+          .from("messages")
+          .delete()
+          .eq("id", messageId);
+        if (error) throw error;
+
+        if (editingMessage && editingMessage.id === messageId) {
+          setEditingMessage(null);
+          setChatInput("");
+        }
+
+        fetchChatMessages(activeChatUser.id);
+      } catch (dbErr: any) {
+        showError(dbErr.message);
+      }
+    }
+  };
+
+  const handleEditMessageClick = (message: any) => {
+    setEditingMessage(message);
+    setChatInput(message.content || message.text || "");
+  };
+
+  const handleClearChat = async () => {
+    if (!activeChatUser) return;
+    if (!confirm("Are you sure you want to clear all messages in this conversation?")) return;
+
+    try {
+      const token = localStorage.getItem("admin_auth_token");
+      await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/seen`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/clear`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error ${res.status}`);
+      }
+
+      setMessages([]);
+      setChatInput("");
+      setEditingMessage(null);
+      setActiveHeaderMenuOpen(false);
+      fetchChatMessages(activeChatUser.id);
+    } catch (err: any) {
+      console.warn("handleClearChat API failed, falling back to direct database clear:", err);
+      try {
+        const { error } = await supabase
+          .from("messages")
+          .delete()
+          .eq("conversation_id", activeChatUser.id);
+        if (error) throw error;
+
+        setMessages([]);
+        setChatInput("");
+        setEditingMessage(null);
+        setActiveHeaderMenuOpen(false);
+        fetchChatMessages(activeChatUser.id);
+      } catch (dbErr: any) {
+        showError(dbErr.message);
+      }
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!activeChatUser) return;
+    if (!confirm("Are you sure you want to delete this conversation entirely? This will delete all messages and remove the client conversation.")) return;
+
+    try {
+      const token = localStorage.getItem("admin_auth_token");
+      const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/delete`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error ${res.status}`);
+      }
+
+      setActiveChatUser(null);
+      setMessages([]);
+      setChatInput("");
+      setEditingMessage(null);
+      setActiveHeaderMenuOpen(false);
+      fetchChatUsers();
+    } catch (err: any) {
+      console.warn("handleDeleteConversation API failed, falling back to direct database delete:", err);
+      try {
+        await supabase
+          .from("messages")
+          .delete()
+          .eq("conversation_id", activeChatUser.id);
+
+        const { error } = await supabase
+          .from("conversations")
+          .delete()
+          .eq("id", activeChatUser.id);
+        if (error) throw error;
+
+        setActiveChatUser(null);
+        setMessages([]);
+        setChatInput("");
+        setEditingMessage(null);
+        setActiveHeaderMenuOpen(false);
+        fetchChatUsers();
+      } catch (dbErr: any) {
+        showError(dbErr.message);
       }
     }
   };
@@ -4636,6 +4858,9 @@ export default function App() {
                     className={`chat-user-item ${activeChatUser?.id === u.id ? "active" : ""}`}
                     onClick={() => {
                       setActiveChatUser(u);
+                      setActiveHeaderMenuOpen(false);
+                      setActiveMessageMenuId(null);
+                      setEditingMessage(null);
                       fetchChatMessages(u.id);
                     }}
                   >
@@ -4675,18 +4900,173 @@ export default function App() {
                       <h4 style={{ fontWeight: "700" }}>{activeChatUser.full_name}</h4>
                       <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{activeChatUser.email}</span>
                     </div>
+
+                    <div style={{ marginLeft: "auto", position: "relative" }}>
+                      <button
+                        type="button"
+                        onClick={() => setActiveHeaderMenuOpen(prev => !prev)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--text-primary)",
+                          fontSize: "20px",
+                          cursor: "pointer",
+                          padding: "8px",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ⋮
+                      </button>
+                      {activeHeaderMenuOpen && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            right: 0,
+                            top: "100%",
+                            backgroundColor: "var(--bg-secondary)",
+                            border: "1px solid var(--border-color)",
+                            borderRadius: "6px",
+                            boxShadow: "var(--shadow-md)",
+                            zIndex: 1000,
+                            minWidth: "150px",
+                            padding: "4px 0",
+                            marginTop: "4px",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={handleClearChat}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              padding: "8px 16px",
+                              textAlign: "left",
+                              background: "none",
+                              border: "none",
+                              color: "var(--text-primary)",
+                              fontSize: "13px",
+                              cursor: "pointer",
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--bg-primary)"}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                          >
+                            Clear Chat
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDeleteConversation}
+                            style={{
+                              display: "block",
+                              width: "100%",
+                              padding: "8px 16px",
+                              textAlign: "left",
+                              background: "none",
+                              border: "none",
+                              color: "#EF4444",
+                              fontSize: "13px",
+                              cursor: "pointer",
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--bg-primary)"}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                          >
+                            Delete Chat
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="chat-messages">
                     {messages.map((m) => (
                       <div key={m.id} className={`chat-bubble ${m.sender_role === "admin" || m.sender_id === "admin" ? "chat-bubble-sent" : "chat-bubble-received"}`}>
                         {renderChatMessageContent(m)}
-                        <span className="chat-bubble-time" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <span className="chat-bubble-time" style={{ display: "flex", alignItems: "center", gap: "4px", justifyContent: m.sender_role === "admin" || m.sender_id === "admin" ? "flex-end" : "flex-start" }}>
                           {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           {(m.sender_role === "admin" || m.sender_id === "admin") && (
-                            <span style={{ color: m.status === "seen" ? "#A3E635" : "rgba(255, 255, 255, 0.4)", fontWeight: "bold", fontSize: "12px" }}>
-                              {m.status === "seen" ? "✓✓" : m.status === "delivered" ? "✓✓" : "✓"}
-                            </span>
+                            <>
+                              <span style={{ color: m.status === "seen" ? "#A3E635" : "rgba(255, 255, 255, 0.4)", fontWeight: "bold", fontSize: "12px" }}>
+                                {m.status === "seen" ? "✓✓" : m.status === "delivered" ? "✓✓" : "✓"}
+                              </span>
+                              <div style={{ position: "relative", display: "inline-block", marginLeft: "6px" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveMessageMenuId(activeMessageMenuId === m.id ? null : m.id)}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "rgba(255, 255, 255, 0.6)",
+                                    cursor: "pointer",
+                                    fontSize: "12px",
+                                    padding: "0 4px",
+                                    lineHeight: 1
+                                  }}
+                                >
+                                  ⋮
+                                </button>
+                                {activeMessageMenuId === m.id && (
+                                  <div
+                                    style={{
+                                      position: "absolute",
+                                      right: 0,
+                                      bottom: "100%",
+                                      backgroundColor: "var(--bg-secondary)",
+                                      border: "1px solid var(--border-color)",
+                                      borderRadius: "4px",
+                                      boxShadow: "var(--shadow-md)",
+                                      zIndex: 1001,
+                                      minWidth: "80px",
+                                      padding: "2px 0",
+                                      marginBottom: "4px"
+                                    }}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleEditMessageClick(m);
+                                        setActiveMessageMenuId(null);
+                                      }}
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "6px 12px",
+                                        textAlign: "left",
+                                        background: "none",
+                                        border: "none",
+                                        color: "var(--text-primary)",
+                                        fontSize: "11px",
+                                        cursor: "pointer"
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--bg-primary)"}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleDeleteChatMessage(m.id);
+                                        setActiveMessageMenuId(null);
+                                      }}
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: "6px 12px",
+                                        textAlign: "left",
+                                        background: "none",
+                                        border: "none",
+                                        color: "#EF4444",
+                                        fontSize: "11px",
+                                        cursor: "pointer"
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--bg-primary)"}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </>
                           )}
                         </span>
                       </div>
@@ -4694,21 +5074,41 @@ export default function App() {
                     <div ref={chatEndRef} />
                   </div>
 
-                  <form onSubmit={handleSendChatMessage} className="chat-input-area">
-                    <textarea
-                      className="form-input"
-                      placeholder="Type a support reply to user..."
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendChatMessage(e as any);
-                        }
-                      }}
-                      style={{ resize: "none", height: "42px", padding: "10px 12px", borderRadius: "6px" }}
-                    />
-                    <button type="submit" className="btn btn-primary"><Send size={16} /></button>
+                  <form onSubmit={handleSendChatMessage} className="chat-input-area" style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+                    {editingMessage && (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "rgba(163, 230, 53, 0.08)", padding: "6px 12px", borderRadius: "6px", fontSize: "12px", border: "1px solid rgba(163, 230, 53, 0.2)" }}>
+                        <span style={{ color: "var(--text-primary)" }}>Editing message...</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingMessage(null);
+                            setChatInput("");
+                          }}
+                          style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: "11px", fontWeight: "bold" }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                      <textarea
+                        className="form-input"
+                        placeholder="Type a support reply to user..."
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendChatMessage(e as any);
+                          } else if (e.key === "Escape") {
+                            setEditingMessage(null);
+                            setChatInput("");
+                          }
+                        }}
+                        style={{ resize: "none", height: "42px", padding: "10px 12px", borderRadius: "6px", flexGrow: 1 }}
+                      />
+                      <button type="submit" className="btn btn-primary"><Send size={16} /></button>
+                    </div>
                   </form>
                 </>
               ) : (

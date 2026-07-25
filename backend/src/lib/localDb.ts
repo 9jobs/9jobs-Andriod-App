@@ -246,11 +246,63 @@ export async function updateLocalConversation(id: string, updates: Partial<Local
   return conv;
 }
 
-export async function deleteLocalMessage(id: number): Promise<boolean> {
+export async function deleteLocalMessage(id: number | string): Promise<boolean> {
   const db = readDb();
-  const index = db.messages.findIndex((m) => m.id === id);
+  const idStr = String(id);
+  const idNum = Number(id);
+
+  const index = db.messages.findIndex(
+    (m) =>
+      m.id === idNum ||
+      String(m.id) === idStr ||
+      m.client_message_id === idStr
+  );
+
   if (index !== -1) {
     db.messages.splice(index, 1);
+    writeDb(db);
+    return true;
+  }
+  return false;
+}
+
+export async function updateLocalMessage(id: number | string, text: string): Promise<boolean> {
+  const db = readDb();
+  const idStr = String(id);
+  const idNum = Number(id);
+
+  const msg = db.messages.find(
+    (m) =>
+      m.id === idNum ||
+      String(m.id) === idStr ||
+      m.client_message_id === idStr
+  );
+
+  if (msg) {
+    msg.text = text;
+    // Update conversation last message if it matches this one
+    const conv = db.conversations.find((c) => c.id === msg.conversation_id);
+    if (conv && (conv.last_message_id === msg.id || conv.last_message_text === msg.text)) {
+      conv.last_message_text = text.substring(0, 200);
+    }
+    writeDb(db);
+    return true;
+  }
+  return false;
+}
+
+
+export async function deleteLocalConversation(id: string): Promise<boolean> {
+  const db = readDb();
+  const index = db.conversations.findIndex((c) => c.id === id);
+  if (index !== -1) {
+    db.conversations.splice(index, 1);
+    db.messages = db.messages.filter(
+      (m) =>
+        m.conversation_id !== id &&
+        m.sender_id !== id &&
+        m.recipient_id !== id
+    );
     writeDb(db);
     return true;
   }
