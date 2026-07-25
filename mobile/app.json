@@ -24,7 +24,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_CONTACTS"
       ]
     },
     "scheme": "ninejobs",
@@ -51,7 +52,13 @@
       "@clerk/expo",
       "expo-web-browser",
       "expo-speech-recognition",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow 9Jobs to access your contacts to share them in chat."
+        }
+      ]
     ],
     "extra": {
       "router": {},

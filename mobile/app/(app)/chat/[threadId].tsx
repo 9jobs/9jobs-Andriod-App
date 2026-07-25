@@ -549,7 +549,7 @@ export default function AdminThreadScreen() {
       <KeyboardAvoidingView
         style={styles.chatCanvas}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 60}
       >
         <View style={styles.patternA} />
         <View style={styles.patternB} />
@@ -644,7 +644,7 @@ export default function AdminThreadScreen() {
 
         <View style={[
           styles.composerShell,
-          { marginBottom: isKeyboardVisible ? 10 : (insets.bottom > 0 ? insets.bottom : 10) }
+          { marginBottom: isKeyboardVisible ? 0 : (insets.bottom > 0 ? insets.bottom : 10) }
         ]}>
           <View style={styles.inputWrap}>
             <Pressable onPress={handlePickAttachment} style={styles.inlineIconButton}>
