@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { applyToJob, toggleSavedJob, updateApplicationStatus, updateProfile, updateResumeScore, markMessagesAsSeen, markMessagesAsDelivered } from "@/lib/data/mobile-sync-repository";
+import { applyToJob, toggleSavedJob, updateApplicationStatus, updateProfile, updateResumeScore, uploadAndAnalyzeResume, markMessagesAsSeen, markMessagesAsDelivered } from "@/lib/data/mobile-sync-repository";
 import { queryKeys } from "@/lib/queries";
 import { filterJobs } from "@/features/jobs/filterJobs";
 import { useJobFilters } from "@/features/jobs/useJobFilters";
@@ -94,6 +94,19 @@ export function useUpdateResumeScoreMutation() {
 
   return useMutation({
     mutationFn: (score: number) => updateResumeScore(score, user),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    },
+  });
+}
+
+export function useUploadResumeMutation() {
+  const queryClient = useQueryClient();
+  const { user } = useSession();
+
+  return useMutation({
+    mutationFn: (file: { name: string; mimeType?: string | null; uri: string; size?: number | null }) =>
+      uploadAndAnalyzeResume(file, user),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },

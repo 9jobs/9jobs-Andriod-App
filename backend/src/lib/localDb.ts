@@ -1,7 +1,44 @@
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 
-const DB_FILE = path.resolve(__dirname, "../../local_db.json");
+const SEED_FILE = path.resolve(__dirname, "../../local_db.json");
+const DB_FILE = process.env.VERCEL || __dirname.includes("/var/task")
+  ? "/tmp/local_db.json"
+  : SEED_FILE;
+
+function ensureLocalDbFile() {
+  if (DB_FILE !== SEED_FILE && !fs.existsSync(DB_FILE)) {
+    try {
+      if (fs.existsSync(SEED_FILE)) {
+        fs.copyFileSync(SEED_FILE, DB_FILE);
+        console.log(`[Local DB] Seeded ${DB_FILE} from ${SEED_FILE}`);
+      } else {
+        fs.writeFileSync(
+          DB_FILE,
+          JSON.stringify(
+            {
+              messages: [],
+              conversations: [],
+              recruiter_contacts: [],
+              interview_prep_sessions: [],
+              interview_prep_responses: [],
+              success_stories: [],
+              profiles: [],
+            },
+            null,
+            2
+          ),
+          "utf8"
+        );
+        console.log(`[Local DB] Created empty DB at ${DB_FILE}`);
+      }
+    } catch (err) {
+      console.error("[Local DB] Seeding failed:", err);
+    }
+  }
+}
+
 
 export interface LocalMessage {
   id: number;
@@ -138,8 +175,23 @@ interface LocalDbSchema {
   profiles: LocalProfile[];
 }
 
+const SYNC_SCRIPT = fs.existsSync(path.resolve(__dirname, "../syncDbHelper.js"))
+  ? path.resolve(__dirname, "../syncDbHelper.js")
+  : path.resolve(__dirname, "../syncDbHelper.ts");
+
 function readDb(): LocalDbSchema {
   try {
+    ensureLocalDbFile();
+
+    if (process.env.VERCEL || __dirname.includes("/var/task")) {
+      try {
+        console.log("[Local DB Sync] Pulling latest db file from Supabase Storage...");
+        execSync(`node "${SYNC_SCRIPT}" download "${DB_FILE}"`, { stdio: "inherit", env: process.env });
+      } catch (syncErr: any) {
+        console.error("[Local DB Sync] Pull failed:", syncErr.message);
+      }
+    }
+
     if (!fs.existsSync(DB_FILE)) {
       return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [], profiles: [] };
     }
@@ -162,6 +214,15 @@ function readDb(): LocalDbSchema {
 function writeDb(data: LocalDbSchema) {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+
+    if (process.env.VERCEL || __dirname.includes("/var/task")) {
+      try {
+        console.log("[Local DB Sync] Pushing updated db file to Supabase Storage...");
+        execSync(`node "${SYNC_SCRIPT}" upload "${DB_FILE}"`, { stdio: "inherit", env: process.env });
+      } catch (syncErr: any) {
+        console.error("[Local DB Sync] Push failed:", syncErr.message);
+      }
+    }
   } catch (err) {
     console.error("[Local DB] Write failed:", err);
   }
@@ -685,4 +746,32 @@ export async function createLocalInterviewPrepResponse(
   db.interview_prep_responses.push(created);
   writeDb(db);
   return created;
+}
+
+export async function deleteLocalInterviewPrepResponse(id: number): Promise<boolean> {
+  const db = readDb();
+  const index = db.interview_prep_responses.findIndex((r) => r.id === id);
+  if (index === -1) return false;
+  db.interview_prep_responses.splice(index, 1);
+  writeDb(db);
+  return true;
+}
+
+export async function updateLocalInterviewPrepResponse(id: number, updates: Partial<LocalInterviewPrepResponse>): Promise<LocalInterviewPrepResponse | null> {
+  const db = readDb();
+  const index = db.interview_prep_responses.findIndex((r) => r.id === id);
+  if (index === -1) return null;
+  const updated = { ...db.interview_prep_responses[index], ...updates };
+  db.interview_prep_responses[index] = updated;
+  writeDb(db);
+  return updated;
+}
+
+export async function deleteLocalInterviewPrepSession(id: number): Promise<boolean> {
+  const db = readDb();
+  const index = db.interview_prep_sessions.findIndex((s) => s.id === id);
+  if (index === -1) return false;
+  db.interview_prep_sessions.splice(index, 1);
+  writeDb(db);
+  return true;
 }

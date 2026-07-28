@@ -6,6 +6,7 @@ import { sendMessage, setMessageServiceIo } from "./services/messageService";
 import { supabase, hasNewSchema } from "./lib/supabase";
 import { createApp } from "./app";
 
+dotenv.config({ path: ".env.contact.local" });
 dotenv.config();
 
 const app = createApp();

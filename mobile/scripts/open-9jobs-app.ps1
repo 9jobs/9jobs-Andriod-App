@@ -46,7 +46,12 @@ function Test-MetroEndpoint {
   )
 
   try {
-    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/status" -UseBasicParsing -TimeoutSec 2
+    $response = $null
+    try {
+      $response = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/status" -UseBasicParsing -TimeoutSec 2
+    } catch {
+      $response = Invoke-WebRequest -Uri "http://[::1]:$Port/status" -UseBasicParsing -TimeoutSec 2
+    }
     if ($response.Content -is [byte[]]) {
       $content = [System.Text.Encoding]::UTF8.GetString($response.Content).Trim()
     } else {
@@ -76,16 +81,27 @@ function Get-ActiveMetroPort {
 
 function Get-FreeMetroPort {
   foreach ($port in $MetroPortCandidates) {
-    $listener = $null
+    $ipv4Listener = $null
+    $ipv6Listener = $null
 
     try {
-      $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
-      $listener.Start()
+      $ipv4Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+      $ipv4Listener.Start()
+      $ipv6Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::IPv6Loopback, $port)
+      $ipv6Listener.Server.SetSocketOption(
+        [System.Net.Sockets.SocketOptionLevel]::IPv6,
+        [System.Net.Sockets.SocketOptionName]::IPv6Only,
+        $true
+      )
+      $ipv6Listener.Start()
       return $port
     } catch {
     } finally {
-      if ($listener) {
-        $listener.Stop()
+      if ($ipv4Listener) {
+        $ipv4Listener.Stop()
+      }
+      if ($ipv6Listener) {
+        $ipv6Listener.Stop()
       }
     }
   }
@@ -102,7 +118,23 @@ function Ensure-EmulatorReady {
   }
 
   Write-Host "Waiting for Android emulator/device to be ready..." -ForegroundColor Cyan
-  & $AdbPath wait-for-device | Out-Null
+  $deadline = [DateTime]::UtcNow.AddMinutes(3)
+
+  while ([DateTime]::UtcNow -lt $deadline) {
+    $connectedDevices = & $AdbPath devices
+    if ($connectedDevices -match "emulator-\d+\s+device") {
+      $bootCompleted = (& $AdbPath shell getprop sys.boot_completed 2>$null | Out-String).Trim()
+      $packageService = (& $AdbPath shell service check package 2>$null | Out-String).Trim()
+
+      if ($bootCompleted -eq "1" -and $packageService -match "found") {
+        return
+      }
+    }
+
+    Start-Sleep -Seconds 2
+  }
+
+  throw "Android emulator '$AvdName' did not finish booting within 3 minutes. Close stale emulator processes and retry."
 }
 
 function Test-AppInstalled {
@@ -162,7 +194,9 @@ function Start-MetroServer {
     [int]$Port
   )
 
-  $expoArgs = "`"$LocalExpoBinary`" start --dev-client --host localhost --port $Port --clear"
+  # Bind on IPv4 as well as IPv6. On Windows, Expo's localhost mode can bind only
+  # to ::1 while the Android dev client reaches Metro through 127.0.0.1 + adb reverse.
+  $expoArgs = "`"$LocalExpoBinary`" start --dev-client --host lan --port $Port --clear"
   $logDirectory = Split-Path -Parent $ExpoLaunchLog
   if (-not (Test-Path -LiteralPath $logDirectory)) {
     New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
@@ -178,7 +212,7 @@ function Start-MetroServer {
     -ArgumentList "/c", $expoArgs `
     -WorkingDirectory $ProjectRoot `
     -RedirectStandardOutput $ExpoLaunchLog `
-    -RedirectStandardError $ExpoLaunchLog `
+    -RedirectStandardError (Join-Path $ProjectRoot ".expo\android-launch-error.log") `
     -WindowStyle Hidden | Out-Null
 }
 

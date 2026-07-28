@@ -769,6 +769,10 @@ function ClerkSignInScreen() {
     setPending(true);
 
     try {
+      if (await tryPreviewFallback()) {
+        return;
+      }
+
       console.log("Signing in with Clerk for:", email.trim());
       const signInRes = (await signIn.create({
         identifier: email.trim(),

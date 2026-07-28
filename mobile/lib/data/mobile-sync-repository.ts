@@ -400,6 +400,12 @@ export type MobileSyncSnapshot = {
     hiringManagersContacted: number;
     lastUpdatedAt: string;
   };
+  resumeAnalysis?: {
+    keywords: number;
+    formatting: number;
+    experience: number;
+    impactVerbs: number;
+  };
   notifications: LiveNotification[];
   messages: LiveMessage[];
   outreachContacts: LiveOutreachContact[];
@@ -997,6 +1003,20 @@ function buildSnapshotFromSource({
 
   const activePlanId = subscriptionRow?.plan_id ?? null;
   const resumeScore = resumeScoreRow?.score ?? 0;
+  let resumeAnalysis: MobileSyncSnapshot["resumeAnalysis"];
+  try {
+    const storedMetrics = JSON.parse(resumeScoreRow?.notes || "{}")?.metrics;
+    if (storedMetrics) {
+      resumeAnalysis = {
+        keywords: Math.max(0, Math.min(100, Number(storedMetrics.keywords) || 0)),
+        formatting: Math.max(0, Math.min(100, Number(storedMetrics.formatting) || 0)),
+        experience: Math.max(0, Math.min(100, Number(storedMetrics.experience) || 0)),
+        impactVerbs: Math.max(0, Math.min(100, Number(storedMetrics.impactVerbs) || 0)),
+      };
+    }
+  } catch {
+    resumeAnalysis = undefined;
+  }
   const profile = mapProfile(reconcileProfileRowWithActiveUser(profileRow, activeUser), activePlanId);
   const messages = mapMessages(messagesRows, activeUser.id);
   const notifications = mapNotifications(notificationRows);
@@ -1036,6 +1056,7 @@ function buildSnapshotFromSource({
         scores: clientScoresRows,
       },
     ),
+    resumeAnalysis,
     notifications,
     messages,
     outreachContacts: recruiterContactsRows.map((contact) => ({
@@ -1871,7 +1892,7 @@ export async function updateProfile(
     console.warn("Supabase updateProfile failed, updating local store:", err);
   }
 
-  const current = await getLocalSyncSnapshot();
+  const current = await getLocalSyncSnapshot(sessionUser);
   if (typeof patch.fullName === "string") current.profile.fullName = patch.fullName;
   if (typeof patch.headline === "string") current.profile.headline = patch.headline;
   if (typeof patch.location === "string") current.profile.location = patch.location;
@@ -2648,4 +2669,102 @@ export async function updateResumeScore(score: number, sessionUser?: SessionUser
   }
   inMemoryStore = { ...current };
   void AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(inMemoryStore));
+}
+
+export type ResumeAnalysisResult = {
+  atsScore: number;
+  aiMatchScore: number;
+  keywords: number;
+  formatting: number;
+  experience: number;
+  impactVerbs: number;
+  summary: string;
+  suggestions: string[];
+  resumeUrl: string;
+  fileName: string;
+  uploadedAt: string;
+};
+
+export async function uploadAndAnalyzeResume(
+  file: { name: string; mimeType?: string | null; uri: string; size?: number | null },
+  sessionUser?: SessionUser | null,
+): Promise<ResumeAnalysisResult> {
+  if (file.size && file.size > 12 * 1024 * 1024) {
+    throw new Error("Resume must be smaller than 12 MB.");
+  }
+
+  const activeUser = resolveActiveUser(sessionUser);
+  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+  const token = await ensureBackendAuthToken(activeUser, backendUrl);
+  if (!token) {
+    throw new Error("Could not authenticate resume upload.");
+  }
+
+  const fileResponse = await fetch(file.uri);
+  if (!fileResponse.ok) {
+    throw new Error("Could not read the selected resume.");
+  }
+  const blob = await fileResponse.blob();
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  const inferredMimeType = extension === "pdf"
+    ? "application/pdf"
+    : extension === "doc"
+      ? "application/msword"
+      : extension === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "";
+  const mimeType = file.mimeType && file.mimeType !== "application/octet-stream"
+    ? file.mimeType
+    : inferredMimeType;
+  if (!mimeType) {
+    throw new Error("Please select a PDF, DOC, or DOCX resume.");
+  }
+
+  const prepareResponse = await fetch(`${backendUrl}/api/mobile/resumes/upload-url`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fileName: file.name, mimeType }),
+  });
+  const prepared = await prepareResponse.json().catch(() => null);
+  if (!prepareResponse.ok || !prepared?.signedUrl || !prepared?.storagePath) {
+    throw new Error(prepared?.error || "Could not prepare resume upload.");
+  }
+
+  const storageUpload = await fetch(prepared.signedUrl, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: blob,
+  });
+  if (!storageUpload.ok) {
+    throw new Error(`Resume storage upload failed with HTTP ${storageUpload.status}.`);
+  }
+
+  const response = await fetch(`${backendUrl}/api/mobile/resumes/analyze`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      fileName: file.name,
+      mimeType,
+      storagePath: prepared.storagePath,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `Resume upload failed with HTTP ${response.status}.`);
+  }
+
+  const current = await getLocalSyncSnapshot(sessionUser);
+  if (current.trackerSummary) {
+    current.trackerSummary.atsResumeScore = payload.atsScore;
+    current.trackerSummary.aiMatchScore = payload.aiMatchScore;
+  }
+  inMemoryStore = { ...current };
+  await AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(inMemoryStore));
+  return payload as ResumeAnalysisResult;
 }

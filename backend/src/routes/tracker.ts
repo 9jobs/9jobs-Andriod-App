@@ -18,6 +18,18 @@ import { getMessagesHistory } from "../services/messageService";
 
 const router = Router();
 const SUCCESS_STORY_BUCKET = "assets";
+const RESUME_BUCKET = "assets";
+
+type ResumeAnalysis = {
+  atsScore: number;
+  aiMatchScore: number;
+  keywords: number;
+  formatting: number;
+  experience: number;
+  impactVerbs: number;
+  summary: string;
+  suggestions: string[];
+};
 
 function sanitizeAttachmentName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
@@ -377,6 +389,88 @@ function buildProfilePayload(application: any) {
     account_status: "active",
     subscription_plan: "free",
   };
+}
+
+function clampScore(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? Math.max(0, Math.min(100, Math.round(numberValue))) : 0;
+}
+
+function parseGeminiResumeAnalysis(rawText: string): ResumeAnalysis {
+  const jsonText = rawText.match(/\{[\s\S]*\}/)?.[0];
+  if (!jsonText) {
+    throw new Error("Gemini returned an invalid ATS analysis.");
+  }
+
+  const parsed = JSON.parse(jsonText);
+  const suggestions = Array.isArray(parsed.suggestions)
+    ? parsed.suggestions.map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 8)
+    : [];
+
+  const summary = String(parsed.summary || "").trim();
+  return {
+    atsScore: clampScore(parsed.atsScore),
+    aiMatchScore: clampScore(parsed.aiMatchScore),
+    keywords: clampScore(parsed.keywords),
+    formatting: clampScore(parsed.formatting),
+    experience: clampScore(parsed.experience),
+    impactVerbs: clampScore(parsed.impactVerbs),
+    summary: summary.length >= 20 && /[a-zA-Z]/.test(summary)
+      ? summary.slice(0, 600)
+      : "Resume analyzed by Gemini for ATS readiness.",
+    suggestions,
+  };
+}
+
+async function analyzeResumeWithGemini(base64: string, mimeType: string): Promise<ResumeAnalysis> {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+  if (!apiKey) {
+    throw new Error("Gemini API is not configured.");
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          role: "user",
+          parts: [
+            {
+              text: [
+                "Act as a strict Applicant Tracking System resume auditor.",
+                "Evaluate only the supplied resume. Do not invent experience or skills.",
+                "Score general ATS readiness when no job description is supplied.",
+                "Return JSON only with keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions.",
+                "All six scores must be integers from 0 to 100. suggestions must be an array of short actionable strings.",
+              ].join(" "),
+            },
+            { inlineData: { mimeType, data: base64 } },
+          ],
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
+        },
+      }),
+    },
+  );
+
+  const payload: any = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || `Gemini analysis failed with HTTP ${response.status}.`);
+  }
+
+  const rawText = payload?.candidates?.[0]?.content?.parts
+    ?.map((part: any) => part?.text || "")
+    .join("")
+    .trim();
+  if (!rawText) {
+    throw new Error("Gemini did not return an ATS analysis.");
+  }
+
+  return parseGeminiResumeAnalysis(rawText);
 }
 
 async function findLatestSupabaseApplicationId(userId: string, jobId: string) {
@@ -2000,6 +2094,46 @@ router.get("/admin/notifications", authMiddleware, async (req: AuthenticatedRequ
   }
 });
 
+router.get("/admin/resume-scores", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const { data: scores, error: scoresError } = await supabase
+      .from("resume_scores")
+      .select("*")
+      .order("updated_at", { ascending: false });
+    if (scoresError) throw scoresError;
+
+    const userIds = [...new Set((scores ?? []).map((score: any) => score.user_id).filter(Boolean))];
+    const profilesById = new Map<string, any>();
+
+    if (userIds.length > 0) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("*")
+        .in("id", userIds);
+      if (profilesError) throw profilesError;
+
+      for (const profile of profiles ?? []) {
+        profilesById.set(String(profile.id), profile);
+      }
+    }
+
+    return res.json({
+      success: true,
+      resumeScores: (scores ?? []).map((score: any) => ({
+        ...score,
+        profiles: profilesById.get(String(score.user_id)) ?? null,
+      })),
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/resume-scores failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load resume scores" });
+  }
+});
+
 router.post("/admin/notifications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdminRole(req, res)) {
     return;
@@ -2111,6 +2245,142 @@ router.delete("/admin/notifications/:id", authMiddleware, async (req: Authentica
     return res.status(500).json({ error: err.message || "Failed to delete notification" });
   }
 });
+router.post("/mobile/resumes/analyze", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const requester = req.user;
+  if (!requester?.userId) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  const fileName = sanitizeAttachmentName(String(req.body?.fileName || "resume.pdf"));
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  const inferredMimeType = extension === "pdf"
+    ? "application/pdf"
+    : extension === "doc"
+      ? "application/msword"
+      : extension === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "";
+  const mimeType = String(req.body?.mimeType || inferredMimeType);
+  const storagePath = String(req.body?.storagePath || "");
+  let base64 = String(req.body?.base64 || "").replace(/^data:[^;]+;base64,/, "");
+  const allowedTypes = new Set([
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]);
+
+  if (!allowedTypes.has(mimeType)) {
+    return res.status(400).json({ error: "Please upload a PDF, DOC, or DOCX resume." });
+  }
+
+  let fileBytes: Buffer;
+  if (storagePath) {
+    const requiredPrefix = `resumes/${sanitizeAttachmentName(requester.userId)}/`;
+    if (!storagePath.startsWith(requiredPrefix)) {
+      return res.status(403).json({ error: "Invalid resume upload path." });
+    }
+    const download = await supabase.storage.from(RESUME_BUCKET).download(storagePath);
+    if (download.error || !download.data) {
+      return res.status(400).json({ error: download.error?.message || "Uploaded resume could not be read." });
+    }
+    fileBytes = Buffer.from(await download.data.arrayBuffer());
+    base64 = fileBytes.toString("base64");
+  } else {
+    fileBytes = Buffer.from(base64, "base64");
+  }
+
+  if (!fileBytes.length || fileBytes.length > 12 * 1024 * 1024) {
+    return res.status(413).json({ error: "Resume must be smaller than 12 MB." });
+  }
+
+  try {
+    const analysis = await analyzeResumeWithGemini(base64, mimeType);
+    await ensurePublicAssetBucket();
+
+    const resolvedStoragePath = storagePath || `resumes/${sanitizeAttachmentName(requester.userId)}/${Date.now()}-${fileName}`;
+    if (!storagePath) {
+      const uploadResult = await supabase.storage
+        .from(RESUME_BUCKET)
+        .upload(resolvedStoragePath, fileBytes, { contentType: mimeType, upsert: false });
+      if (uploadResult.error) {
+        throw uploadResult.error;
+      }
+    }
+
+    const resumeUrl = supabase.storage.from(RESUME_BUCKET).getPublicUrl(resolvedStoragePath).data.publicUrl;
+    const uploadedAt = new Date().toISOString();
+    const storedNotes = JSON.stringify({
+      summary: analysis.summary,
+      resumeUrl,
+      fileName,
+      uploadedAt,
+      metrics: {
+        keywords: analysis.keywords,
+        formatting: analysis.formatting,
+        experience: analysis.experience,
+        impactVerbs: analysis.impactVerbs,
+        aiMatchScore: analysis.aiMatchScore,
+      },
+    });
+
+    const resumeResult = await supabase.from("resume_scores").upsert({
+      user_id: requester.userId,
+      score: analysis.atsScore,
+      suggestions: analysis.suggestions,
+      notes: storedNotes,
+      updated_at: uploadedAt,
+    }, { onConflict: "user_id" });
+    if (resumeResult.error) {
+      throw resumeResult.error;
+    }
+
+    const clientScoreResult = await supabase.from("client_scores").insert({
+      client_id: requester.userId,
+      application_id: null,
+      ats_score: analysis.atsScore,
+      ai_match_score: analysis.aiMatchScore,
+      score_reason: analysis.summary,
+      recommendations: analysis.suggestions,
+      calculated_at: uploadedAt,
+      updated_by: "gemini-resume-upload",
+    });
+    if (clientScoreResult.error) {
+      throw clientScoreResult.error;
+    }
+
+    return res.json({ ...analysis, resumeUrl, fileName, uploadedAt });
+  } catch (err: any) {
+    console.error("[Resume Intelligence] upload/analyze failed:", err);
+    return res.status(502).json({ error: err?.message || "Resume could not be analyzed." });
+  }
+});
+
+router.post("/mobile/resumes/upload-url", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const requester = req.user;
+  if (!requester?.userId) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  const fileName = sanitizeAttachmentName(String(req.body?.fileName || "resume.pdf"));
+  const extension = fileName.split(".").pop()?.toLowerCase();
+  if (!["pdf", "doc", "docx"].includes(extension || "")) {
+    return res.status(400).json({ error: "Please upload a PDF, DOC, or DOCX resume." });
+  }
+
+  try {
+    await ensurePublicAssetBucket();
+    const storagePath = `resumes/${sanitizeAttachmentName(requester.userId)}/${Date.now()}-${fileName}`;
+    const signedUpload = await supabase.storage.from(RESUME_BUCKET).createSignedUploadUrl(storagePath);
+    if (signedUpload.error || !signedUpload.data?.signedUrl) {
+      throw signedUpload.error || new Error("Could not prepare resume upload.");
+    }
+    return res.json({ storagePath, signedUrl: signedUpload.data.signedUrl });
+  } catch (err: any) {
+    console.error("[Resume Intelligence] signed upload failed:", err);
+    return res.status(502).json({ error: err?.message || "Could not prepare resume upload." });
+  }
+});
+
 router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const requester = req.user;
   const requestedUserId = typeof req.query.userId === "string" ? req.query.userId : undefined;

@@ -1,4 +1,4 @@
-import { ActivityIndicator, Alert, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Linking, Modal, Platform, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useEffect, useRef, useState } from "react";
@@ -42,7 +42,7 @@ const profileItems = [
   },
   {
     id: "support",
-    label: "Help & Support",
+    label: "Contact Us",
     icon: "info" as const,
     onPress: () => "/(app)/contact",
   },
@@ -58,12 +58,13 @@ export default function ProfileScreen() {
   const { signOut } = useSession();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
   const migratedAvatarUrlRef = useRef<string | null>(null);
   const { data: snapshot } = usePreviewSyncQuery();
   const profile = snapshot?.profile;
   const activePlanLabel =
     snapshot?.pricingContent.sections[0]?.items?.find((item) => item.badge === "Active")?.title ?? null;
-  const { mutate: updateProfile } = useUpdateProfileMutation();
+  const { mutate: updateProfile, mutateAsync: updateProfileAsync, isPending: isSavingAvatar } = useUpdateProfileMutation();
 
   async function convertImageUriToDataUrl(uri: string) {
     return await new Promise<string>((resolve, reject) => {
@@ -113,7 +114,7 @@ export default function ProfileScreen() {
 
               const result = await ImagePickerModule.launchImageLibraryAsync({
                 mediaTypes: ImagePickerModule.MediaTypeOptions.Images,
-                allowsEditing: true,
+                allowsEditing: true, // Re-enable native cropping for full zoom/drag/rotate support
                 aspect: [1, 1],
                 quality: 0.8,
               });
@@ -122,6 +123,7 @@ export default function ProfileScreen() {
                 const selectedUri = result.assets[0].uri;
                 const portableImageUrl = await convertImageUriToDataUrl(selectedUri);
                 setPendingAvatarUrl(portableImageUrl);
+                setShowSaveModal(true);
               }
             } catch (err) {
               console.error("Image pick error:", err);
@@ -132,9 +134,14 @@ export default function ProfileScreen() {
         {
           text: "Remove Photo",
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             const defaultPlaceholder = "https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y";
-            setPendingAvatarUrl(defaultPlaceholder);
+            try {
+              await updateProfileAsync({ avatarUrl: defaultPlaceholder } as any);
+              Alert.alert("Saved", "Profile picture removed successfully.");
+            } catch (error) {
+              Alert.alert("Save failed", error instanceof Error ? error.message : "Could not remove your profile picture.");
+            }
           },
         },
         {
@@ -143,6 +150,21 @@ export default function ProfileScreen() {
         },
       ]
     );
+  }
+
+  async function handleSaveAvatar() {
+    if (!pendingAvatarUrl || isSavingAvatar) {
+      return;
+    }
+
+    try {
+      await updateProfileAsync({ avatarUrl: pendingAvatarUrl } as any);
+      setPendingAvatarUrl(null);
+      setShowSaveModal(false);
+      Alert.alert("Saved", "Profile picture updated successfully.");
+    } catch (error) {
+      Alert.alert("Save failed", error instanceof Error ? error.message : "Could not update your profile picture.");
+    }
   }
 
   async function handleSignOut() {
@@ -206,7 +228,11 @@ export default function ProfileScreen() {
           <View style={styles.sparkFive} />
           <View style={styles.sparkSix} />
 
-          <Pressable style={styles.avatarWrap} onPress={handleAvatarPress}>
+          <Pressable
+            style={styles.avatarWrap}
+            onPress={isSavingAvatar ? undefined : handleAvatarPress}
+            disabled={isSavingAvatar}
+          >
             <View style={styles.avatarRing}>
               <Image
                 source={{
@@ -215,6 +241,19 @@ export default function ProfileScreen() {
                 style={styles.avatarImage}
                 resizeMode="cover"
               />
+              {isSavingAvatar && (
+                <View style={{
+                  position: "absolute",
+                  width: 78,
+                  height: 78,
+                  borderRadius: 39,
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                </View>
+              )}
             </View>
             <View style={styles.cameraBadge}>
               <CameraBadgeIcon />
@@ -255,43 +294,110 @@ export default function ProfileScreen() {
       </Screen>
 
       <View style={styles.signOutDock}>
-        {pendingAvatarUrl ? (
-          <View style={styles.saveCancelRow}>
+        <Pressable
+          style={styles.signOutButton}
+          disabled={isSigningOut}
+          onPress={() => {
+            void handleSignOut();
+          }}
+        >
+          {isSigningOut ? (
+            <ActivityIndicator color="#FF4D4F" />
+          ) : (
+            <View style={styles.signOutContent}>
+              <Text style={styles.signOutIcon}>↪</Text>
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
+
+      {/* Custom Crop Preview Modal with Save Button next to Crop */}
+      <Modal
+        visible={showSaveModal && !!pendingAvatarUrl}
+        animationType="fade"
+        onRequestClose={() => {
+          setPendingAvatarUrl(null);
+          setShowSaveModal(false);
+        }}
+      >
+        <View style={styles.modalRoot}>
+          {/* Header with status bar padding to prevent overlap */}
+          <View style={styles.modalHeader}>
             <Pressable
-              style={[styles.actionButton, styles.cancelButton]}
-              onPress={() => setPendingAvatarUrl(null)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.actionButton, styles.saveButton]}
               onPress={() => {
-                updateProfile({ avatarUrl: pendingAvatarUrl } as any);
                 setPendingAvatarUrl(null);
+                setShowSaveModal(false);
               }}
+              style={styles.modalHeaderLeft}
             >
-              <Text style={styles.saveButtonText}>Save</Text>
+              <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M19 12H5M5 12L12 19M5 12L12 5"
+                  stroke="#000"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
             </Pressable>
+
+            <View style={styles.modalHeaderRight}>
+              {/* Rotate Icon */}
+              <Pressable style={styles.modalIconBtn}>
+                <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                  <Path
+                    d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"
+                    stroke="#000"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </Pressable>
+
+              {/* Aspect Ratio Icon */}
+              <Pressable style={styles.modalIconBtn}>
+                <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                  <Rect x="3" y="3" width="18" height="18" rx="2" stroke="#000" strokeWidth="2" />
+                  <Path d="M9 3v18M15 3v18" stroke="#000" strokeWidth="2" />
+                </Svg>
+              </Pressable>
+
+              <Text style={styles.modalCropText}>CROP</Text>
+
+              {/* Lime Green Save Button */}
+              <Pressable
+                disabled={isSavingAvatar}
+                onPress={handleSaveAvatar}
+                style={[
+                  styles.modalSaveButton,
+                  isSavingAvatar && { opacity: 0.7 }
+                ]}
+              >
+                {isSavingAvatar ? (
+                  <ActivityIndicator size="small" color={colors.dark} />
+                ) : (
+                  <Text style={styles.modalSaveButtonText}>SAVE</Text>
+                )}
+              </Pressable>
+            </View>
           </View>
-        ) : (
-          <Pressable
-            style={styles.signOutButton}
-            disabled={isSigningOut}
-            onPress={() => {
-              void handleSignOut();
-            }}
-          >
-            {isSigningOut ? (
-              <ActivityIndicator color="#FF4D4F" />
-            ) : (
-              <View style={styles.signOutContent}>
-                <Text style={styles.signOutIcon}>↪</Text>
-                <Text style={styles.signOutText}>Sign Out</Text>
+
+          {/* Image Preview Container */}
+          <View style={styles.modalImageContainer}>
+            {pendingAvatarUrl && (
+              <View style={styles.imageWrapRelative}>
+                <Image
+                  source={{ uri: pendingAvatarUrl }}
+                  style={styles.modalImage}
+                  resizeMode="contain"
+                />
               </View>
             )}
-          </Pressable>
-        )}
-      </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -505,6 +611,28 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.dark,
   },
+  avatarSaveButton: {
+    position: "absolute",
+    left: 104,
+    bottom: 0,
+    minWidth: 58,
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: colors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.dark,
+  },
+  avatarSaveButtonDisabled: {
+    opacity: 0.7,
+  },
+  avatarSaveButtonText: {
+    color: colors.dark,
+    fontSize: 13,
+    fontWeight: "800",
+  },
   socialRow: {
     flexDirection: "row",
     gap: 12,
@@ -619,5 +747,65 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 16,
     fontWeight: "700",
+  },
+  modalRoot: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  modalHeader: {
+    height: Platform.OS === 'android' ? 64 + (StatusBar.currentHeight || 0) : 64,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  modalHeaderLeft: {
+    padding: 8,
+  },
+  modalHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  modalIconBtn: {
+    padding: 8,
+  },
+  modalCropText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#000",
+    marginRight: 8,
+  },
+  modalSaveButton: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  modalSaveButtonText: {
+    color: colors.dark,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  modalImageContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#000",
+  },
+  modalImage: {
+    width: "100%",
+    height: "80%",
+  },
+  imageWrapRelative: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
   },
 });

@@ -19,6 +19,22 @@ const previewTrackerClient = {
 const SUCCESS_STORIES_LOCAL_KEY = "admin_success_stories_preview";
 const canUseBackendSuccessStories = Boolean(BACKEND_URL);
 
+function parseResumeUploadNotes(notes: unknown) {
+  if (typeof notes !== "string" || !notes.trim().startsWith("{")) {
+    return { summary: typeof notes === "string" ? notes : "", resumeUrl: "", fileName: "" };
+  }
+  try {
+    const parsed = JSON.parse(notes);
+    return {
+      summary: String(parsed?.summary || ""),
+      resumeUrl: String(parsed?.resumeUrl || ""),
+      fileName: String(parsed?.fileName || "View resume"),
+    };
+  } catch {
+    return { summary: notes, resumeUrl: "", fileName: "" };
+  }
+}
+
 const previewTrackerJobs = [
   {
     id: "job_resume_lead",
@@ -613,7 +629,7 @@ export default function App() {
 
   // Modal / Form states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<"user" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story">("job");
+  const [modalType, setModalType] = useState<"user" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session">("job");
   const [editItem, setEditItem] = useState<any>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -665,6 +681,34 @@ export default function App() {
   const [quickUpdateForm, setQuickUpdateForm] = useState({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "", before_screenshot_url: "", after_screenshot_url: "" });
   const [successStoryForm, setSuccessStoryForm] = useState({ id: "", name: "", position: "", year: "", message: "", story_rate: 5, photo_url: "", display_order: 0, is_active: true });
   const [successStoryPhotoUploading, setSuccessStoryPhotoUploading] = useState(false);
+
+  const [interviewPrepResponseForm, setInterviewPrepResponseForm] = useState({
+    id: 0,
+    session_id: 1,
+    client_id: "",
+    question_index: 0,
+    question_text: "",
+    transcript: "",
+    ai_answer: "",
+    feedback: "",
+    clarity_score: 80,
+    impact_score: 80,
+    structure_score: 80,
+  });
+
+  const [interviewPrepSessionForm, setInterviewPrepSessionForm] = useState({
+    id: 0,
+    client_id: "",
+    interviewer_name: "AI Interviewer - Sarah",
+    interviewer_role: "Engineering Manager",
+    interviewer_company: "Google",
+    interviewer_avatar_url: "",
+    current_question_index: 0,
+    question_total: 4,
+    status: "ready" as "ready" | "in_progress" | "completed",
+    last_question: "",
+    last_question_tags: "",
+  });
 
   const ensureAdminToken = async () => {
     const existingToken = localStorage.getItem("admin_auth_token");
@@ -1944,11 +1988,24 @@ export default function App() {
   };
 
   const fetchResumeScores = async () => {
-    const { data, error } = await supabase
-      .from("resume_scores")
-      .select("*, profiles!inner(*)");
-    if (error) throw error;
-    setResumeScores(data || []);
+    const token = await ensureAdminToken();
+    if (!token) {
+      throw new Error("Admin auth token missing. Please sign in again.");
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/admin/resume-scores`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+    }
+
+    const payload = await response.json();
+    setResumeScores(payload.resumeScores || []);
   };
 
   const fetchNotifications = async () => {
@@ -2727,6 +2784,98 @@ export default function App() {
     }
   };
 
+  const handleSaveInterviewPrepResponse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
+
+      const payload = {
+        client_id: interviewPrepResponseForm.client_id,
+        session_id: Number(interviewPrepResponseForm.session_id || 1),
+        question_index: Number(interviewPrepResponseForm.question_index),
+        question_text: interviewPrepResponseForm.question_text,
+        transcript: interviewPrepResponseForm.transcript,
+        ai_answer: interviewPrepResponseForm.ai_answer,
+        feedback: interviewPrepResponseForm.feedback,
+        clarity_score: Number(interviewPrepResponseForm.clarity_score),
+        impact_score: Number(interviewPrepResponseForm.impact_score),
+        structure_score: Number(interviewPrepResponseForm.structure_score),
+      };
+
+      const url = editItem
+        ? `${BACKEND_URL}/api/admin/interview-prep/response/${encodeURIComponent(editItem.id)}`
+        : `${BACKEND_URL}/api/admin/interview-prep/response`;
+
+      const method = editItem ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || `HTTP error ${res.status}`);
+      }
+
+      showSuccess("Interview response saved successfully!");
+      setIsModalOpen(false);
+      await fetchInterviewPreparationData(selectedTrackerClientId || undefined);
+    } catch (err: any) {
+      showError(err.message);
+    }
+  };
+
+  const handleSaveInterviewPrepSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
+
+      const payload = {
+        client_id: interviewPrepSessionForm.client_id,
+        interviewer_name: interviewPrepSessionForm.interviewer_name,
+        interviewer_role: interviewPrepSessionForm.interviewer_role,
+        interviewer_company: interviewPrepSessionForm.interviewer_company,
+        interviewer_avatar_url: interviewPrepSessionForm.interviewer_avatar_url,
+        current_question_index: Number(interviewPrepSessionForm.current_question_index),
+        question_total: Number(interviewPrepSessionForm.question_total || 4),
+        status: interviewPrepSessionForm.status,
+        last_question: interviewPrepSessionForm.last_question,
+        last_question_tags: typeof interviewPrepSessionForm.last_question_tags === "string"
+          ? String(interviewPrepSessionForm.last_question_tags || "").split(",").map(t => t.trim()).filter(Boolean)
+          : interviewPrepSessionForm.last_question_tags,
+      };
+
+      const url = `${BACKEND_URL}/api/admin/interview-prep/session`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || `HTTP error ${res.status}`);
+      }
+
+      showSuccess("Interview session saved successfully!");
+      setIsModalOpen(false);
+      await fetchInterviewPreparationData(selectedTrackerClientId || undefined);
+    } catch (err: any) {
+      showError(err.message);
+    }
+  };
+
   const handleQuickUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -2899,6 +3048,48 @@ export default function App() {
 
         showSuccess("Item deleted successfully.");
         fetchNotifications();
+        return;
+      }
+
+      if (table === "interview_prep_sessions") {
+        const token = await ensureAdminToken();
+        if (!token) throw new Error("Admin auth token missing. Please sign in again.");
+
+        const res = await fetch(`${BACKEND_URL}/api/admin/interview-prep/session/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        }
+
+        showSuccess("Interview session deleted successfully.");
+        await fetchInterviewPreparationData(selectedTrackerClientId || undefined);
+        return;
+      }
+
+      if (table === "interview_prep_responses") {
+        const token = await ensureAdminToken();
+        if (!token) throw new Error("Admin auth token missing. Please sign in again.");
+
+        const res = await fetch(`${BACKEND_URL}/api/admin/interview-prep/response/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          const errorPayload = await res.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+        }
+
+        showSuccess("Interview response deleted successfully.");
+        await fetchInterviewPreparationData(selectedTrackerClientId || undefined);
         return;
       }
 
@@ -3332,6 +3523,32 @@ export default function App() {
     setScoreForm({ client_id: selectedTrackerClientId || "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
     setQuickUpdateForm({ application_id: "", status: "applied", current_stage: "applied", next_action: "", next_action_date: "", notes: "", before_screenshot_url: "", after_screenshot_url: "" });
     setSuccessStoryForm({ id: "", name: "", position: "", year: "", message: "", story_rate: 5, photo_url: "", display_order: successStories.length, is_active: true });
+    setInterviewPrepResponseForm({
+      id: 0,
+      session_id: 1,
+      client_id: selectedTrackerClientId || users[0]?.id || "",
+      question_index: 0,
+      question_text: "",
+      transcript: "",
+      ai_answer: "",
+      feedback: "",
+      clarity_score: 80,
+      impact_score: 80,
+      structure_score: 80,
+    });
+    setInterviewPrepSessionForm({
+      id: 0,
+      client_id: selectedTrackerClientId || users[0]?.id || "",
+      interviewer_name: "AI Interviewer - Sarah",
+      interviewer_role: "Engineering Manager",
+      interviewer_company: "Google",
+      interviewer_avatar_url: "",
+      current_question_index: 0,
+      question_total: 4,
+      status: "ready",
+      last_question: "",
+      last_question_tags: "",
+    });
     setIsModalOpen(true);
   };
 
@@ -3341,7 +3558,35 @@ export default function App() {
     setErrorMsg("");
     setIsModalOpen(true);
 
-    if (type === "user") {
+    if (type === "interview_prep_response") {
+      setInterviewPrepResponseForm({
+        id: item.id,
+        session_id: item.session_id || 1,
+        client_id: item.client_id || "",
+        question_index: item.question_index || 0,
+        question_text: item.question_text || "",
+        transcript: item.transcript || "",
+        ai_answer: item.ai_answer || "",
+        feedback: item.feedback || "",
+        clarity_score: item.clarity_score || 80,
+        impact_score: item.impact_score || 80,
+        structure_score: item.structure_score || 80,
+      });
+    } else if (type === "interview_prep_session") {
+      setInterviewPrepSessionForm({
+        id: item.id,
+        client_id: item.client_id || "",
+        interviewer_name: item.interviewer_name || "AI Interviewer - Sarah",
+        interviewer_role: item.interviewer_role || "Engineering Manager",
+        interviewer_company: item.interviewer_company || "Google",
+        interviewer_avatar_url: item.interviewer_avatar_url || "",
+        current_question_index: item.current_question_index || 0,
+        question_total: item.question_total || 4,
+        status: item.status || "ready",
+        last_question: item.last_question || "",
+        last_question_tags: Array.isArray(item.last_question_tags) ? item.last_question_tags.join(", ") : item.last_question_tags || "",
+      });
+    } else if (type === "user") {
       setUserForm({
         id: item.id,
         full_name: item.full_name || "",
@@ -3726,7 +3971,13 @@ export default function App() {
             {activeTab === "success_stories" && <button className="btn btn-primary" onClick={() => openAddModal("success_story")}><Plus size={16} /> Add Success Story</button>}
             {activeTab === "job_tracker" && <button className="btn btn-primary" onClick={() => openAddModal("tracker")}><Plus size={16} /> Add Tracker Entry</button>}
             {activeTab === "hiring_managers" && <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}><Plus size={16} /> Add Hiring Manager</button>}
-            {activeTab === "interview_preparation" && <button className="btn btn-primary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}><Plus size={16} /> Refresh</button>}
+            {activeTab === "interview_preparation" && (
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button className="btn btn-secondary" onClick={() => void fetchInterviewPreparationData(selectedTrackerClientId || undefined)}><Plus size={16} /> Refresh</button>
+                <button className="btn btn-primary" onClick={() => openAddModal("interview_prep_session")}><Plus size={16} /> Add Session</button>
+                <button className="btn btn-primary" onClick={() => openAddModal("interview_prep_response")}><Plus size={16} /> Add Response</button>
+              </div>
+            )}
             {activeTab === "subscriptions" && <button className="btn btn-primary" onClick={() => openAddModal("plan")}><Plus size={16} /> Add Pricing Plan</button>}
             {activeTab === "settings" && settingsSubsection === "notifications" && <button className="btn btn-primary" onClick={() => openAddModal("notification")}><Plus size={16} /> Add Notification</button>}
             {activeTab === "settings" && settingsSubsection === "personal_information" && <button className="btn btn-primary" onClick={() => openAddModal("user")}><Plus size={16} /> Add Personal Information</button>}
@@ -4784,6 +5035,7 @@ export default function App() {
                     <th>Current Question</th>
                     <th>Latest Feedback</th>
                     <th>Updated</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4800,11 +5052,14 @@ export default function App() {
                         <td>{session.current_question_index + 1} / {session.question_total}</td>
                         <td>{session.last_feedback || "No answer yet."}</td>
                         <td>{new Date(session.updated_at).toLocaleString()}</td>
+                        <td>
+                          <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interview_prep_sessions", String(session.id))} title="Delete Session"><Trash2 size={14} /></button>
+                        </td>
                       </tr>
                     );
                   })}
                   {interviewPrepSessions.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No interview preparation data available yet.</td></tr>
+                    <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No interview preparation data available yet.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -4815,11 +5070,12 @@ export default function App() {
                 <thead>
                   <tr>
                     <th>Client</th>
-                    <th>Question</th>
+                    <th>Question / User Spoke</th>
                     <th>AI Answer</th>
                     <th>Clarity</th>
                     <th>Impact</th>
                     <th>Structure</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4828,16 +5084,29 @@ export default function App() {
                     return (
                       <tr key={item.id}>
                         <td>{client?.full_name || item.client_id}</td>
-                        <td>{item.question_text}</td>
+                        <td>
+                          <div style={{ fontWeight: "600" }}>{item.question_text}</div>
+                          {item.transcript ? (
+                            <div style={{ marginTop: "4px", fontSize: "12px", fontStyle: "italic", color: "#666" }}>
+                              <strong>User asked:</strong> "{item.transcript}"
+                            </div>
+                          ) : null}
+                        </td>
                         <td style={{ maxWidth: "420px" }}>{item.ai_answer}</td>
                         <td><strong>{item.clarity_score}</strong></td>
                         <td><strong>{item.impact_score}</strong></td>
                         <td><strong>{item.structure_score}</strong></td>
+                        <td>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("interview_prep_response", item)} title="Edit Response"><Edit size={14} /></button>
+                            <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interview_prep_responses", String(item.id))} title="Delete Response"><Trash2 size={14} /></button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
                   {interviewPrepResponses.length === 0 && (
-                    <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No AI-generated interview answers yet.</td></tr>
+                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No AI-generated interview answers yet.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -5178,7 +5447,14 @@ export default function App() {
                       <td>{r.profiles?.email}</td>
                       <td><span className="badge badge-success" style={{ fontSize: "13px", fontWeight: "700" }}>{r.score}/100</span></td>
                       <td>{r.suggestions?.join(", ") || "—"}</td>
-                      <td>{r.notes || "—"}</td>
+                      <td>
+                        <div>{parseResumeUploadNotes(r.notes).summary || "—"}</div>
+                        {parseResumeUploadNotes(r.notes).resumeUrl && (
+                          <a href={parseResumeUploadNotes(r.notes).resumeUrl} target="_blank" rel="noreferrer">
+                            {parseResumeUploadNotes(r.notes).fileName}
+                          </a>
+                        )}
+                      </td>
                       <td>{new Date(r.updated_at).toLocaleDateString()}</td>
                       <td>
                         <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("resume", r)} title="Edit AI score"><Edit size={14} /></button>
@@ -5973,6 +6249,108 @@ export default function App() {
                   </select>
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>{editItem ? "Update Notification" : "Send Notification"}</button>
+              </form>
+            )}
+
+            {/* Interview Prep Response Form */}
+            {modalType === "interview_prep_response" && (
+              <form onSubmit={handleSaveInterviewPrepResponse}>
+                <div className="form-group">
+                  <label className="form-label">Client / Candidate</label>
+                  <select className="form-input" required value={interviewPrepResponseForm.client_id} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, client_id: e.target.value })}>
+                    <option value="">Select Candidate</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Question Index</label>
+                  <input type="number" className="form-input" min={0} value={interviewPrepResponseForm.question_index} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, question_index: Number(e.target.value) })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Topic / Question Template Text</label>
+                  <input type="text" className="form-input" required placeholder="Tell me about yourself..." value={interviewPrepResponseForm.question_text} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, question_text: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">User Spoke / Transcript Query</label>
+                  <input type="text" className="form-input" placeholder="Actually, I have been building react apps..." value={interviewPrepResponseForm.transcript} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, transcript: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">AI Sarah Answer</label>
+                  <textarea rows={4} className="form-input" required placeholder="Sarah's response here..." value={interviewPrepResponseForm.ai_answer} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, ai_answer: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">AI Evaluation Feedback</label>
+                  <textarea rows={3} className="form-input" placeholder="Feedback notes here..." value={interviewPrepResponseForm.feedback} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, feedback: e.target.value })} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+                  <div className="form-group">
+                    <label className="form-label">Clarity (0-100)</label>
+                    <input type="number" className="form-input" min={0} max={100} value={interviewPrepResponseForm.clarity_score} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, clarity_score: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Impact (0-100)</label>
+                    <input type="number" className="form-input" min={0} max={100} value={interviewPrepResponseForm.impact_score} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, impact_score: Number(e.target.value) })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Structure (0-100)</label>
+                    <input type="number" className="form-input" min={0} max={100} value={interviewPrepResponseForm.structure_score} onChange={(e) => setInterviewPrepResponseForm({ ...interviewPrepResponseForm, structure_score: Number(e.target.value) })} />
+                  </div>
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>{editItem ? "Update Response" : "Create Response"}</button>
+              </form>
+            )}
+
+            {/* Interview Prep Session Form */}
+            {modalType === "interview_prep_session" && (
+              <form onSubmit={handleSaveInterviewPrepSession}>
+                <div className="form-group">
+                  <label className="form-label">Client / Candidate</label>
+                  <select className="form-input" required value={interviewPrepSessionForm.client_id} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, client_id: e.target.value })}>
+                    <option value="">Select Candidate</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Interviewer Name</label>
+                  <input type="text" className="form-input" required value={interviewPrepSessionForm.interviewer_name} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, interviewer_name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Interviewer Role</label>
+                  <input type="text" className="form-input" required value={interviewPrepSessionForm.interviewer_role} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, interviewer_role: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Interviewer Company</label>
+                  <input type="text" className="form-input" required value={interviewPrepSessionForm.interviewer_company} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, interviewer_company: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Current Question Index</label>
+                  <input type="number" className="form-input" min={0} value={interviewPrepSessionForm.current_question_index} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, current_question_index: Number(e.target.value) })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Total Questions</label>
+                  <input type="number" className="form-input" min={1} value={interviewPrepSessionForm.question_total} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, question_total: Number(e.target.value) })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select className="form-input" value={interviewPrepSessionForm.status} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, status: e.target.value as any })}>
+                    <option value="ready">ready</option>
+                    <option value="in_progress">in_progress</option>
+                    <option value="completed">completed</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Last Question Text</label>
+                  <input type="text" className="form-input" value={interviewPrepSessionForm.last_question} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, last_question: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Last Question Tags (Comma separated)</label>
+                  <input type="text" className="form-input" placeholder="Behavioral, Leadership" value={interviewPrepSessionForm.last_question_tags} onChange={(e) => setInterviewPrepSessionForm({ ...interviewPrepSessionForm, last_question_tags: e.target.value })} />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Session</button>
               </form>
             )}
 

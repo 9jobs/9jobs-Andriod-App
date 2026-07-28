@@ -1,21 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View, Animated, Easing } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Animated, Easing } from "react-native";
 import { router } from "expo-router";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import * as DocumentPicker from "expo-document-picker";
-import { useUpdateResumeScoreMutation } from "@/features/jobs/hooks";
+import { useUploadResumeMutation } from "@/features/jobs/hooks";
+import { ResumeDataTransferSpline } from "@/components/resume/ResumeDataTransferSpline";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-const metrics = [
-  { label: "Keywords", value: 94 },
-  { label: "Formatting", value: 98 },
-  { label: "Experience", value: 91 },
-  { label: "Impact Verbs", value: 88 },
-];
 
 export default function ResumeScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
@@ -24,8 +18,14 @@ export default function ResumeScreen() {
   const [scoreTicker, setScoreTicker] = useState(0);
   const [matchTicker, setMatchTicker] = useState(0);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [analysisMetrics, setAnalysisMetrics] = useState({
+    keywords: 0,
+    formatting: 0,
+    experience: 0,
+    impactVerbs: 0,
+  });
 
-  const updateResumeScoreMutation = useUpdateResumeScoreMutation();
+  const uploadResumeMutation = useUploadResumeMutation();
 
   const scanAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -33,6 +33,12 @@ export default function ResumeScreen() {
 
   const atsScore = Math.max(0, Math.min(100, Math.round(Number(snapshot?.trackerSummary?.atsResumeScore ?? 0))));
   const aiMatchScore = Math.max(0, Math.min(100, Math.round(Number(snapshot?.trackerSummary?.aiMatchScore ?? 0))));
+  const metrics = [
+    { label: "Keywords", value: analysisMetrics.keywords },
+    { label: "Formatting", value: analysisMetrics.formatting },
+    { label: "Experience", value: analysisMetrics.experience },
+    { label: "Impact Verbs", value: analysisMetrics.impactVerbs },
+  ];
 
   // SVG Circle Progress parameters
   const radius = 32;
@@ -54,19 +60,19 @@ export default function ResumeScreen() {
   // Animate metrics progress bars
   const barWidth1 = progressAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0%", "94%"],
+    outputRange: ["0%", `${analysisMetrics.keywords}%`],
   });
   const barWidth2 = progressAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0%", "98%"],
+    outputRange: ["0%", `${analysisMetrics.formatting}%`],
   });
   const barWidth3 = progressAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0%", "91%"],
+    outputRange: ["0%", `${analysisMetrics.experience}%`],
   });
   const barWidth4 = progressAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["0%", "88%"],
+    outputRange: ["0%", `${analysisMetrics.impactVerbs}%`],
   });
 
   const startScan = () => {
@@ -105,9 +111,6 @@ export default function ResumeScreen() {
     }).start(() => {
       // Finished scanning
       setIsScanning(false);
-      if (loopAnimRef.current) {
-        loopAnimRef.current.stop();
-      }
       setScoreTicker(atsScore);
       setMatchTicker(aiMatchScore);
     });
@@ -142,11 +145,25 @@ export default function ResumeScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
         setFileName(file.name);
-        const newScore = Math.floor(75 + Math.random() * 22);
-        updateResumeScoreMutation.mutate(newScore);
+        const analysis = await uploadResumeMutation.mutateAsync({
+          name: file.name,
+          mimeType: file.mimeType,
+          uri: file.uri,
+          size: file.size,
+        });
+        setAnalysisMetrics({
+          keywords: analysis.keywords,
+          formatting: analysis.formatting,
+          experience: analysis.experience,
+          impactVerbs: analysis.impactVerbs,
+        });
+        setScoreTicker(analysis.atsScore);
+        setMatchTicker(analysis.aiMatchScore);
+        Alert.alert("Resume analyzed", `Your Gemini ATS score is ${analysis.atsScore}/100.`);
       }
     } catch (err) {
       console.warn("Document picker failed:", err);
+      Alert.alert("Upload failed", err instanceof Error ? err.message : "Resume could not be uploaded.");
     }
   };
 
@@ -160,6 +177,12 @@ export default function ResumeScreen() {
     };
   }, [atsScore, aiMatchScore]);
 
+  useEffect(() => {
+    if (snapshot?.resumeAnalysis) {
+      setAnalysisMetrics(snapshot.resumeAnalysis);
+    }
+  }, [snapshot?.resumeAnalysis]);
+
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
       {/* Back Button & Title */}
@@ -168,39 +191,18 @@ export default function ResumeScreen() {
 
       {/* Resume Grid Preview Card (Well-spaced to prevent overlaps) */}
       <View style={styles.chartCard}>
-        <View style={styles.chartGlow} />
-        <View style={styles.chartGrid}>
-          {/* Horizontal grid lines */}
+        <ResumeDataTransferSpline />
+        <View pointerEvents="none" style={styles.transferGrid}>
           {[0, 1, 2, 3, 4, 5, 6, 7].map((line) => (
-            <View key={`h-${line}`} style={[styles.gridLineH, { top: 16 + line * 26 }]} />
+            <View key={`transfer-h-${line}`} style={[styles.transferLineH, { top: line * 31 }]} />
           ))}
-          {/* Vertical grid lines */}
           {[0, 1, 2, 3, 4, 5, 6].map((line) => (
-            <View key={`v-${line}`} style={[styles.gridLineV, { left: 18 + line * 30 }]} />
+            <View key={`transfer-v-${line}`} style={[styles.transferLineV, { left: line * 34 }]} />
           ))}
-
-          {/* Top Header Placeholder boxes */}
-          <View style={styles.sliderThumb} />
-          <View style={styles.topBarPlaceholder} />
-
-          {/* Data Bars representing Resume details (Spaced properly at top: 36 + index * 24) */}
-          {[85, 76, 92, 66, 78].map((score, index) => (
-            <View key={score} style={[styles.scoreRow, { top: 36 + index * 24 }]}>
-              <View style={[styles.scoreBar, { width: `${score - 20}%` }]} />
-              <Text style={styles.scoreLabel}>{score}%</Text>
-            </View>
-          ))}
-
-          {/* Bottom ATS score bar (Placed clear at the bottom: 178) */}
-          <Text style={styles.chartFooter}>
-            {isScanning ? `SCANNING...` : `ATS SCORE: ${scoreTicker}`}
-          </Text>
-
-          {/* Animated Scanning Laser Line */}
-          {isScanning && (
-            <Animated.View style={[styles.scanLaserLine, { top: laserTop }]} />
-          )}
+          <Animated.View style={[styles.scanLaserLine, { top: laserTop }]} />
         </View>
+        <View pointerEvents="none" style={styles.splineBrandingCover} />
+        <Text style={styles.chartFooter}>{isScanning ? "SCANNING..." : `ATS SCORE: ${scoreTicker}`}</Text>
       </View>
 
       {/* Interactive Tab Selector */}
@@ -301,8 +303,16 @@ export default function ResumeScreen() {
           {/* Interactive Trigger Button */}
           {!isScanning && (
             <View style={{ gap: spacing.sm, marginTop: spacing.xs }}>
-              <Pressable style={styles.uploadButton} onPress={handleUploadResume}>
-                <Text style={styles.uploadButtonText}>Upload Resume from Device</Text>
+              <Pressable
+                style={[styles.uploadButton, uploadResumeMutation.isPending && styles.buttonDisabled]}
+                onPress={handleUploadResume}
+                disabled={uploadResumeMutation.isPending}
+              >
+                {uploadResumeMutation.isPending ? (
+                  <ActivityIndicator color={colors.dark} />
+                ) : (
+                  <Text style={styles.uploadButtonText}>Upload Resume from Device</Text>
+                )}
               </Pressable>
 
               {fileName && (
@@ -471,7 +481,7 @@ const styles = StyleSheet.create({
     width: 200,
     borderRadius: 20,
     backgroundColor: colors.dark,
-    padding: 16,
+    height: 232,
     overflow: "hidden",
     position: "relative",
     ...shadows.float,
@@ -484,6 +494,29 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(163,230,53,0.06)",
     top: 18,
     left: 10,
+  },
+  transferGrid: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    overflow: "hidden",
+    opacity: 0.55,
+  },
+  transferLineH: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: "rgba(163,230,53,0.26)",
+  },
+  transferLineV: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: "rgba(163,230,53,0.2)",
   },
   chartGrid: {
     height: 200,
@@ -544,11 +577,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     textAlign: "center",
-    bottom: 6,
+    bottom: 8,
+    paddingVertical: 5,
+    backgroundColor: "rgba(0,0,0,0.7)",
     fontSize: 15,
     fontWeight: "800",
     color: colors.accent,
     letterSpacing: 0.5,
+  },
+  splineBrandingCover: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    left: 0,
+    height: 64,
+    backgroundColor: colors.dark,
   },
   scanLaserLine: {
     position: "absolute",
@@ -723,6 +766,9 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 15,
     fontWeight: "800",
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   fileNameText: {
     ...typography.label,
