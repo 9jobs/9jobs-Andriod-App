@@ -8,7 +8,7 @@ import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import React, { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
-import Animated, { useAnimatedStyle, withTiming } from "react-native-reanimated";
+import Animated, { FadeIn, useAnimatedStyle, withSpring } from "react-native-reanimated";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -151,7 +151,10 @@ function TabGlyph({
     return {
       transform: [
         {
-          scale: withTiming(focused ? 1.06 : 1, { duration: 150 }),
+          scale: withSpring(focused ? 1.1 : 1, {
+            damping: 14,
+            stiffness: 260,
+          }),
         },
       ],
     };
@@ -160,7 +163,7 @@ function TabGlyph({
   return (
     <Animated.View style={[styles.iconWrap, focused && styles.iconWrapActive, animatedStyle]}>
       <AppIcon name={name} color={focused ? colors.text : color} />
-      {focused ? <View style={styles.indicator} /> : null}
+      {focused ? <Animated.View entering={FadeIn.duration(140)} style={styles.indicator} /> : null}
     </Animated.View>
   );
 }

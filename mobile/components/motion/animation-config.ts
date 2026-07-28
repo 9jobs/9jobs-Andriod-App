@@ -1,7 +1,7 @@
 export const animationConfig = {
   entrance: {
-    distance: 10,
-    duration: 320,
+    distance: 12,
+    duration: 400,
   },
   press: {
     duration: 130,
@@ -10,13 +10,13 @@ export const animationConfig = {
   },
   particles: {
     count: 14,
-    duration: 10_500,
+    duration: 9_500,
   },
   mesh: {
-    duration: 14_000,
+    duration: 10_000,
   },
   orbit: {
-    duration: 16_000,
+    duration: 12_000,
   },
 } as const;
 

@@ -6,26 +6,27 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
+  withSequence,
   withTiming,
 } from "react-native-reanimated";
 import { colors } from "@/theme";
 import { animationConfig } from "./animation-config";
 
 const PARTICLES = [
-  { left: "4%", top: "11%", size: 3, depth: 0.7, delay: 0 },
-  { left: "9%", top: "43%", size: 4, depth: 1, delay: 900 },
-  { left: "14%", top: "78%", size: 3, depth: 0.75, delay: 1600 },
-  { left: "25%", top: "24%", size: 2, depth: 0.6, delay: 400 },
-  { left: "34%", top: "68%", size: 5, depth: 1, delay: 2100 },
-  { left: "46%", top: "8%", size: 3, depth: 0.8, delay: 1200 },
-  { left: "55%", top: "89%", size: 4, depth: 0.9, delay: 2600 },
-  { left: "65%", top: "19%", size: 2, depth: 0.65, delay: 600 },
-  { left: "72%", top: "74%", size: 4, depth: 0.85, delay: 1900 },
-  { left: "82%", top: "38%", size: 3, depth: 1, delay: 300 },
-  { left: "88%", top: "63%", size: 5, depth: 0.75, delay: 2300 },
-  { left: "94%", top: "16%", size: 3, depth: 0.8, delay: 1300 },
-  { left: "96%", top: "49%", size: 2, depth: 0.65, delay: 700 },
-  { left: "91%", top: "87%", size: 4, depth: 0.9, delay: 2800 },
+  { left: "4%", top: "11%", size: 4, depth: 0.7, delay: 0 },
+  { left: "9%", top: "43%", size: 6, depth: 1, delay: 900 },
+  { left: "14%", top: "78%", size: 4, depth: 0.75, delay: 1600 },
+  { left: "25%", top: "24%", size: 3, depth: 0.6, delay: 400 },
+  { left: "34%", top: "68%", size: 7, depth: 1, delay: 2100 },
+  { left: "46%", top: "8%", size: 4, depth: 0.8, delay: 1200 },
+  { left: "55%", top: "89%", size: 5, depth: 0.9, delay: 2600 },
+  { left: "65%", top: "19%", size: 3, depth: 0.65, delay: 600 },
+  { left: "72%", top: "74%", size: 5, depth: 0.85, delay: 1900 },
+  { left: "82%", top: "38%", size: 4, depth: 1, delay: 300 },
+  { left: "88%", top: "63%", size: 7, depth: 0.75, delay: 2300 },
+  { left: "94%", top: "16%", size: 4, depth: 0.8, delay: 1300 },
+  { left: "96%", top: "49%", size: 3, depth: 0.65, delay: 700 },
+  { left: "91%", top: "87%", size: 5, depth: 0.9, delay: 2800 },
 ] as const;
 
 type FloatingParticlesBackgroundProps = {
@@ -78,24 +79,31 @@ function Particle({
       return;
     }
 
+    const halfDuration = (animationConfig.particles.duration + delay) / 2;
     progress.value = withRepeat(
-      withTiming(1, {
-        duration: animationConfig.particles.duration + delay,
-        easing: Easing.inOut(Easing.sin),
-      }),
+      withSequence(
+        withTiming(1, {
+          duration: halfDuration,
+          easing: Easing.inOut(Easing.sin),
+        }),
+        withTiming(0, {
+          duration: halfDuration,
+          easing: Easing.inOut(Easing.sin),
+        }),
+      ),
       -1,
-      true,
+      false,
     );
 
     return () => cancelAnimation(progress);
   }, [animated, delay, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: 0.12 + progress.value * 0.12 * depth,
+    opacity: 0.18 + Math.sin(progress.value * Math.PI) * 0.18 * depth,
     transform: [
-      { translateX: progress.value * (index % 2 === 0 ? 12 : -12) * depth },
-      { translateY: progress.value * -24 * depth },
-      { scale: 0.88 + progress.value * 0.24 },
+      { translateX: progress.value * (index % 2 === 0 ? 18 : -18) * depth },
+      { translateY: progress.value * -42 * depth },
+      { scale: 0.86 + progress.value * 0.28 },
     ],
   }));
 

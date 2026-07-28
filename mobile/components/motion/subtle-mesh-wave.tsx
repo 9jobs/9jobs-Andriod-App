@@ -40,10 +40,10 @@ export const SubtleMeshWave = memo(function SubtleMeshWave({
   }, [animated, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: 0.68 + progress.value * 0.18,
+    opacity: 0.72 + progress.value * 0.22,
     transform: [
-      { translateX: -12 + progress.value * 24 },
-      { translateY: progress.value * 10 },
+      { translateX: -24 + progress.value * 56 },
+      { translateY: -6 + progress.value * 18 },
     ],
   }));
 
@@ -58,7 +58,7 @@ export const SubtleMeshWave = memo(function SubtleMeshWave({
         <Path
           d="M-40 180 C70 115 145 245 250 178 S430 120 470 185"
           fill="none"
-          stroke="rgba(127,178,29,0.13)"
+          stroke="rgba(127,178,29,0.14)"
           strokeWidth={1}
         />
         <Path

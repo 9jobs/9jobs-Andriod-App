@@ -3,6 +3,7 @@ import { Pressable, PressableProps, StyleProp, ViewStyle } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
+  withSpring,
   withTiming,
   Easing,
 } from "react-native-reanimated";
@@ -57,9 +58,9 @@ export function AnimatedPressable({
 
   const handlePressOut = (e: any) => {
     if (!disabled) {
-      scale.value = withTiming(1, {
-        duration,
-        easing: Easing.out(Easing.quad),
+      scale.value = withSpring(1, {
+        damping: 14,
+        stiffness: 260,
       });
       opacity.value = withTiming(1, {
         duration,
