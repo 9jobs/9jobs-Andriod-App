@@ -9,14 +9,14 @@ export const animationConfig = {
     scale: 0.98,
   },
   particles: {
-    count: 8,
-    duration: 12_000,
+    count: 14,
+    duration: 10_500,
   },
   mesh: {
-    duration: 18_000,
+    duration: 14_000,
   },
   orbit: {
-    duration: 20_000,
+    duration: 16_000,
   },
 } as const;
 

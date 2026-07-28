@@ -12,14 +12,20 @@ import { colors } from "@/theme";
 import { animationConfig } from "./animation-config";
 
 const PARTICLES = [
-  { left: "8%", top: "13%", size: 2, depth: 0.7, delay: 0 },
-  { left: "22%", top: "72%", size: 3, depth: 1, delay: 900 },
-  { left: "37%", top: "31%", size: 2, depth: 0.6, delay: 1600 },
-  { left: "51%", top: "84%", size: 2, depth: 0.8, delay: 400 },
-  { left: "64%", top: "18%", size: 3, depth: 1, delay: 2100 },
-  { left: "76%", top: "58%", size: 2, depth: 0.65, delay: 1200 },
-  { left: "88%", top: "27%", size: 2, depth: 0.85, delay: 2600 },
-  { left: "93%", top: "79%", size: 3, depth: 0.7, delay: 600 },
+  { left: "4%", top: "11%", size: 3, depth: 0.7, delay: 0 },
+  { left: "9%", top: "43%", size: 4, depth: 1, delay: 900 },
+  { left: "14%", top: "78%", size: 3, depth: 0.75, delay: 1600 },
+  { left: "25%", top: "24%", size: 2, depth: 0.6, delay: 400 },
+  { left: "34%", top: "68%", size: 5, depth: 1, delay: 2100 },
+  { left: "46%", top: "8%", size: 3, depth: 0.8, delay: 1200 },
+  { left: "55%", top: "89%", size: 4, depth: 0.9, delay: 2600 },
+  { left: "65%", top: "19%", size: 2, depth: 0.65, delay: 600 },
+  { left: "72%", top: "74%", size: 4, depth: 0.85, delay: 1900 },
+  { left: "82%", top: "38%", size: 3, depth: 1, delay: 300 },
+  { left: "88%", top: "63%", size: 5, depth: 0.75, delay: 2300 },
+  { left: "94%", top: "16%", size: 3, depth: 0.8, delay: 1300 },
+  { left: "96%", top: "49%", size: 2, depth: 0.65, delay: 700 },
+  { left: "91%", top: "87%", size: 4, depth: 0.9, delay: 2800 },
 ] as const;
 
 type FloatingParticlesBackgroundProps = {
@@ -39,7 +45,7 @@ export const FloatingParticlesBackground = memo(
         importantForAccessibility="no-hide-descendants"
         style={StyleSheet.absoluteFill}
       >
-        {PARTICLES.slice(0, minimal ? 4 : animationConfig.particles.count).map(
+        {PARTICLES.slice(0, minimal ? 6 : animationConfig.particles.count).map(
           (particle, index) => (
             <Particle
               key={`${particle.left}-${particle.top}`}
@@ -85,11 +91,11 @@ function Particle({
   }, [animated, delay, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: 0.08 + progress.value * 0.1 * depth,
+    opacity: 0.12 + progress.value * 0.12 * depth,
     transform: [
-      { translateX: progress.value * (index % 2 === 0 ? 5 : -5) * depth },
-      { translateY: progress.value * -12 * depth },
-      { scale: 0.9 + progress.value * 0.18 },
+      { translateX: progress.value * (index % 2 === 0 ? 12 : -12) * depth },
+      { translateY: progress.value * -24 * depth },
+      { scale: 0.88 + progress.value * 0.24 },
     ],
   }));
 
@@ -110,7 +116,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.accent,
     shadowColor: colors.accent,
-    shadowOpacity: 0.18,
-    shadowRadius: 3,
+    shadowOpacity: 0.28,
+    shadowRadius: 4,
   },
 });

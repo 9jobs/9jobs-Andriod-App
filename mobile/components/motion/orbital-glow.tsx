@@ -62,8 +62,8 @@ export const OrbitalGlow = memo(function OrbitalGlow({
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    right: -86,
-    top: 82,
+    right: -28,
+    top: 96,
     width: 220,
     height: 220,
     alignItems: "center",
@@ -74,17 +74,17 @@ const styles = StyleSheet.create({
     width: 132,
     height: 132,
     borderRadius: 999,
-    backgroundColor: "rgba(163,230,53,0.035)",
+    backgroundColor: "rgba(163,230,53,0.08)",
     shadowColor: colors.accent,
-    shadowOpacity: 0.08,
-    shadowRadius: 22,
+    shadowOpacity: 0.16,
+    shadowRadius: 28,
   },
   orbit: {
     width: 184,
     height: 184,
     borderRadius: 999,
     borderWidth: 0.6,
-    borderColor: "rgba(163,230,53,0.09)",
+    borderColor: "rgba(127,178,29,0.18)",
   },
   dot: {
     position: "absolute",
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     width: 3,
     height: 3,
     borderRadius: 999,
-    backgroundColor: "rgba(163,230,53,0.28)",
+    backgroundColor: "rgba(127,178,29,0.46)",
   },
   dotSecondary: {
     position: "absolute",
@@ -102,6 +102,6 @@ const styles = StyleSheet.create({
     width: 2,
     height: 2,
     borderRadius: 999,
-    backgroundColor: "rgba(163,230,53,0.18)",
+    backgroundColor: "rgba(163,230,53,0.34)",
   },
 });
