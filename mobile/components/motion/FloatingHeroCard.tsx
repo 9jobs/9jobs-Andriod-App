@@ -1,11 +1,19 @@
 import { PropsWithChildren, useEffect, useRef } from "react";
 import { Animated, Easing } from "react-native";
+import { useReducedMotionPreference } from "./ReducedMotion";
 
 export function FloatingHeroCard({ children }: PropsWithChildren) {
+  const reducedMotion = useReducedMotionPreference();
   const translateY = useRef(new Animated.Value(0)).current;
   const rotate = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reducedMotion) {
+      translateY.setValue(0);
+      rotate.setValue(0);
+      return;
+    }
+
     const yAnimation = Animated.loop(
       Animated.sequence([
         Animated.timing(translateY, {
@@ -47,7 +55,7 @@ export function FloatingHeroCard({ children }: PropsWithChildren) {
       yAnimation.stop();
       rotateAnimation.stop();
     };
-  }, [rotate, translateY]);
+  }, [reducedMotion, rotate, translateY]);
 
   const rotateStr = rotate.interpolate({
     inputRange: [-2, 2],

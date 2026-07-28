@@ -4,6 +4,8 @@ import { ScrollView, StyleSheet, View, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing } from "@/theme";
+import { AnimatedScreenContainer } from "@/components/motion/animated-screen-container";
+import { ScreenBackground } from "@/components/motion/screen-background";
 
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
@@ -57,10 +59,15 @@ export function Screen({
     }, [preserveScroll, restoreOffset, saveOffset])
   );
 
-  const body = <View style={[styles.content, contentStyle]}>{children}</View>;
+  const body = (
+    <AnimatedScreenContainer style={[styles.content, contentStyle]}>
+      {children}
+    </AnimatedScreenContainer>
+  );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
+      <ScreenBackground />
       {scroll ? (
         <ScrollView
           ref={scrollRef}

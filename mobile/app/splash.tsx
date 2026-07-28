@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { colors, spacing, typography } from "@/theme";
+import { FadeInView } from "@/components/motion/FadeInView";
 
 export default function SplashScreen() {
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function SplashScreen() {
           />
         ))}
       </View>
-      <View style={styles.center}>
+      <FadeInView type="fade-up" duration={360} style={styles.center}>
         <View style={styles.logoWrap}>
           <BrandLogo size={148} />
         </View>
@@ -40,7 +41,7 @@ export default function SplashScreen() {
           <View style={styles.dot} />
           <View style={styles.dot} />
         </View>
-      </View>
+      </FadeInView>
     </View>
   );
 }

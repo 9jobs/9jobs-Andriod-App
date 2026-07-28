@@ -6,6 +6,7 @@ import { LogBox } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { clerkPublishableKey, isClerkConfigured } from "@/lib/clerk/config";
 import { SessionProvider } from "@/providers/SessionProvider";
+import { BackgroundAnimationProvider } from "@/components/motion/background-animation-provider";
 
 export function AppProviders({ children }: PropsWithChildren) {
   const [queryClient] = useState(
@@ -28,9 +29,11 @@ export function AppProviders({ children }: PropsWithChildren) {
 
   const app = (
     <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        <SessionProvider>{children}</SessionProvider>
-      </QueryClientProvider>
+      <BackgroundAnimationProvider>
+        <QueryClientProvider client={queryClient}>
+          <SessionProvider>{children}</SessionProvider>
+        </QueryClientProvider>
+      </BackgroundAnimationProvider>
     </SafeAreaProvider>
   );
 

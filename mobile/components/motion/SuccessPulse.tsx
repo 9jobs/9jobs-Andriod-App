@@ -8,17 +8,24 @@ import Animated, {
 } from "react-native-reanimated";
 import { View, StyleSheet } from "react-native";
 import { colors } from "@/theme";
+import { useReducedMotionPreference } from "./ReducedMotion";
 
 export function SuccessPulse() {
   const scale = useSharedValue(1);
+  const reducedMotion = useReducedMotionPreference();
 
   useEffect(() => {
+    if (reducedMotion) {
+      scale.value = 1;
+      return;
+    }
+
     scale.value = withRepeat(
       withSequence(withTiming(1.18, { duration: 800 }), withTiming(1)),
       -1,
       false,
     );
-  }, [scale]);
+  }, [reducedMotion, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

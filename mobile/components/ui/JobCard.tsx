@@ -4,6 +4,7 @@ import { Pill } from "@/components/ui/Pill";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import type { Job } from "@/types/jobs";
 import { SuccessPulse } from "@/components/motion/SuccessPulse";
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 
 type JobCardProps = {
   job: Job;
@@ -13,7 +14,7 @@ type JobCardProps = {
 
 export function JobCard({ job, onPress, onToggleSave }: JobCardProps) {
   return (
-    <Pressable onPress={onPress} style={styles.card}>
+    <AnimatedPressable onPress={onPress} style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.matchBadge}>
           <Text style={styles.matchValue}>{job.matchScore}</Text>
@@ -45,7 +46,7 @@ export function JobCard({ job, onPress, onToggleSave }: JobCardProps) {
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

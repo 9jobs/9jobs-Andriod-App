@@ -1,14 +1,24 @@
 import { useEffect, useRef } from "react";
 import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import { colors, radii } from "@/theme";
+import { useReducedMotionPreference } from "@/components/motion/ReducedMotion";
 
 export default function ContactRobotAnimation() {
+  const reducedMotion = useReducedMotionPreference();
   const float = useRef(new Animated.Value(0)).current;
   const wave = useRef(new Animated.Value(0)).current;
   const blink = useRef(new Animated.Value(1)).current;
   const pillMotion = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reducedMotion) {
+      float.setValue(0);
+      wave.setValue(0);
+      blink.setValue(1);
+      pillMotion.setValue(0);
+      return;
+    }
+
     const floatLoop = Animated.loop(
       Animated.sequence([
         Animated.timing(float, {
@@ -66,7 +76,7 @@ export default function ContactRobotAnimation() {
       blinkLoop.stop();
       pillLoop.stop();
     };
-  }, [blink, float, pillMotion, wave]);
+  }, [blink, float, pillMotion, reducedMotion, wave]);
 
   return (
     <View style={styles.stage} accessibilityLabel="Animated 9Jobs contact robot">

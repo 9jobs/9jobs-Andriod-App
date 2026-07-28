@@ -20,6 +20,10 @@ jest.mock("@/components/brand/BrandLogo", () => ({
   BrandLogo: () => null,
 }));
 
+jest.mock("@/components/motion/FadeInView", () => ({
+  FadeInView: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 import TestRenderer, { act } from "react-test-renderer";
 import IndexScreen from "@/app/index";
 import SplashScreen from "@/app/splash";
