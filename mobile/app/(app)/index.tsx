@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View, Image, TextInput } from "react-native";
 import { router } from "expo-router";
 import Svg, { Path } from "react-native-svg";
@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const jobFilters = useJobFilters();
   const profile = snapshot?.profile;
   const metrics = snapshot?.homeMetrics;
-  const [searchQuery, setSearchQuery] = useState(jobFilters.query);
+  const [searchQuery, setSearchQuery] = useState("");
   const recommendedJobs = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const jobs = snapshot?.jobs ?? [];
@@ -42,13 +42,10 @@ export default function HomeScreen() {
   const hasUnreadNotifications = snapshot?.notifications.some((item) => item.unread) ?? false;
   const applyMutation = useApplyMutation();
 
-  useEffect(() => {
-    setSearchQuery(jobFilters.query);
-  }, [jobFilters.query]);
-
   function openSearchScreen() {
     const normalizedQuery = searchQuery.trim();
     jobFilters.setQuery(normalizedQuery);
+    setSearchQuery("");
     router.push(resolveHomeSearchDestination(normalizedQuery) as never);
   }
 
@@ -89,10 +86,7 @@ export default function HomeScreen() {
             <AppIcon name="search" size={20} color={colors.mutedText} />
             <TextInput
               value={searchQuery}
-              onChangeText={(value) => {
-                setSearchQuery(value);
-                jobFilters.setQuery(value);
-              }}
+              onChangeText={setSearchQuery}
               onSubmitEditing={openSearchScreen}
               placeholder="Search jobs, companies..."
               placeholderTextColor={colors.subtleText}
