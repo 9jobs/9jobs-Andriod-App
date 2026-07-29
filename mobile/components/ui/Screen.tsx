@@ -1,6 +1,10 @@
 import { PropsWithChildren, useCallback, useRef } from "react";
 import { useFocusEffect, usePathname } from "expo-router";
-import { ScrollView, StyleSheet, View, ViewStyle } from "react-native";
+import { ScrollView, StyleSheet, ViewStyle } from "react-native";
+import Animated, {
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing } from "@/theme";
@@ -26,6 +30,12 @@ export function Screen({
   const pathname = usePathname();
   const scrollRef = useRef<ScrollView | null>(null);
   const lastOffsetRef = useRef(screenScrollOffsets.get(pathname) ?? 0);
+  const scrollOffset = useSharedValue(lastOffsetRef.current);
+  const animatedScrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollOffset.value = event.contentOffset.y;
+    },
+  });
 
   const saveOffset = useCallback(
     (y: number) => {
@@ -61,7 +71,7 @@ export function Screen({
 
   const body = (
     <AnimatedScreenContainer style={[styles.content, contentStyle]}>
-      <ScreenBackground />
+      <ScreenBackground scrollOffset={scrollOffset} />
       {children}
     </AnimatedScreenContainer>
   );
@@ -69,14 +79,20 @@ export function Screen({
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
       {scroll ? (
-        <ScrollView
+        <Animated.ScrollView
           ref={scrollRef}
           {...verticalScrollProps}
-          onScroll={preserveScroll ? (event) => saveOffset(event.nativeEvent.contentOffset.y) : undefined}
+          onScroll={animatedScrollHandler}
+          onScrollEndDrag={(event) =>
+            saveOffset(event.nativeEvent.contentOffset.y)
+          }
+          onMomentumScrollEnd={(event) =>
+            saveOffset(event.nativeEvent.contentOffset.y)
+          }
           contentContainerStyle={styles.scrollInner}
         >
           {body}
-        </ScrollView>
+        </Animated.ScrollView>
       ) : (
         body
       )}
