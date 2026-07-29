@@ -1,6 +1,7 @@
 import React, { PropsWithChildren, useEffect, useRef } from "react";
 import { StyleProp, ViewStyle } from "react-native";
 import Animated, {
+  Easing,
   FadeIn,
   FadeInDown,
   FadeInLeft,
@@ -34,7 +35,9 @@ export function FadeInView({
 }: FadeInViewProps) {
   const isReducedMotion = useReducedMotionPreference();
   const hasAnimatedRef = useRef(false);
-  const effectiveDelay = Math.min(delay, 250);
+  const effectiveDelay = Math.min(delay, 180);
+  const effectiveDuration = Math.min(Math.max(duration, 240), 320);
+  const distance = Math.min(8, animationConfig.entrance.distance);
 
   useEffect(() => {
     hasAnimatedRef.current = true;
@@ -47,28 +50,38 @@ export function FadeInView({
   let enteringAnimation;
   switch (type) {
     case "fade-down":
-      enteringAnimation = FadeInDown.duration(duration).delay(effectiveDelay);
+      enteringAnimation = FadeInDown.duration(effectiveDuration)
+        .delay(effectiveDelay)
+        .withInitialValues({ opacity: 0, transform: [{ translateY: -distance }] })
+        .easing(Easing.out(Easing.cubic));
       break;
     case "fade-left":
-      enteringAnimation = FadeInLeft.duration(duration).delay(effectiveDelay);
+      enteringAnimation = FadeInLeft.duration(effectiveDuration)
+        .delay(effectiveDelay)
+        .withInitialValues({ opacity: 0, transform: [{ translateX: -distance }] })
+        .easing(Easing.out(Easing.cubic));
       break;
     case "fade-right":
-      enteringAnimation = FadeInRight.duration(duration).delay(effectiveDelay);
+      enteringAnimation = FadeInRight.duration(effectiveDuration)
+        .delay(effectiveDelay)
+        .withInitialValues({ opacity: 0, transform: [{ translateX: distance }] })
+        .easing(Easing.out(Easing.cubic));
       break;
     case "scale-in":
-      enteringAnimation = FadeIn.duration(duration).delay(effectiveDelay);
+      enteringAnimation = FadeIn.duration(effectiveDuration).delay(effectiveDelay);
       break;
     case "fade":
-      enteringAnimation = FadeIn.duration(duration).delay(effectiveDelay);
+      enteringAnimation = FadeIn.duration(effectiveDuration).delay(effectiveDelay);
       break;
     case "fade-up":
     default:
-      enteringAnimation = FadeInUp.duration(duration)
+      enteringAnimation = FadeInUp.duration(effectiveDuration)
         .delay(effectiveDelay)
         .withInitialValues({
           opacity: 0,
-          transform: [{ translateY: Math.min(8, animationConfig.entrance.distance) }],
-        });
+          transform: [{ translateY: distance }],
+        })
+        .easing(Easing.out(Easing.cubic));
       break;
   }
 

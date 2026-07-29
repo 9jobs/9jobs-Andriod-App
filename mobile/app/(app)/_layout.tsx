@@ -9,12 +9,14 @@ import React, { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
 import Animated, { FadeIn, useAnimatedStyle, withSpring } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
   (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
 
 export default function AppLayout() {
+  const insets = useSafeAreaInsets();
   const { user, hasCompletedOnboarding } = useSession();
   const { data: snapshot } = usePreviewSyncQuery();
   const queryClient = useQueryClient();
@@ -52,7 +54,7 @@ export default function AppLayout() {
           position: "absolute",
           left: 14,
           right: 14,
-          bottom: 10,
+          bottom: Math.max(10, insets.bottom),
           backgroundColor: colors.tabBackground,
           borderTopWidth: 0,
           borderRadius: radii.xl,
