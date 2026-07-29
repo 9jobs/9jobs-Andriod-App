@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View, Image, Animated, TextInput } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, StyleSheet, Text, View, Image, TextInput } from "react-native";
 import { router } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -10,34 +10,9 @@ import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { useApplyMutation } from "@/features/jobs/hooks";
 import { useJobFilters } from "@/features/jobs/useJobFilters";
 
-// Twinkling Spark component for background stars animation
-function TwinklingSpark({ style }: { style: any }) {
-  const opacity = useRef(new Animated.Value(Math.random())).current;
-
-  useEffect(() => {
-    const startTwinkle = () => {
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0.15 + Math.random() * 0.85,
-          duration: 800 + Math.random() * 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.05 + Math.random() * 0.2,
-          duration: 800 + Math.random() * 1500,
-          useNativeDriver: true,
-        }),
-      ]).start(() => startTwinkle());
-    };
-
-    startTwinkle();
-  }, [opacity]);
-
-  return <Animated.View style={[style, { opacity }]} />;
-}
-
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { FadeInView } from "@/components/motion/FadeInView";
+import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
 
 export default function HomeScreen() {
   const { user } = useSession();
@@ -213,20 +188,7 @@ export default function HomeScreen() {
       <FadeInView type="fade-up" delay={200}>
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
-          <View style={StyleSheet.absoluteFill}>
-            {Array.from({ length: 18 }).map((_, index) => (
-              <TwinklingSpark
-                key={index}
-                style={[
-                  styles.heroSpark,
-                  {
-                    top: `${10 + (index * 7) % 80}%`,
-                    left: `${5 + (index * 19) % 90}%`,
-                  },
-                ]}
-              />
-            ))}
-          </View>
+          <CardFloatingParticles />
 
           {/* Hero Content */}
           <View style={styles.heroBadgeContainer}>

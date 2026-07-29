@@ -9,6 +9,9 @@ import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { useUpdateProfileMutation } from "@/features/jobs/hooks";
 import { colors, shadows, spacing, typography } from "@/theme";
 import { FadeInView } from "@/components/motion/FadeInView";
+import { OrbitalGlow } from "@/components/motion/orbital-glow";
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
+import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
 
 const profileItems = [
   {
@@ -212,6 +215,7 @@ export default function ProfileScreen() {
     <View style={[styles.root, { backgroundColor: colors.background }]}>
       <Screen contentStyle={styles.screenContent}>
         <View style={[styles.hero, { backgroundColor: "#090A08" }]}>
+          <CardFloatingParticles />
           <View style={styles.heroHeader}>
             <Text style={styles.title}>Profile</Text>
             <Pressable
@@ -234,6 +238,7 @@ export default function ProfileScreen() {
             onPress={isSavingAvatar ? undefined : handleAvatarPress}
             disabled={isSavingAvatar}
           >
+            <OrbitalGlow animated compact style={styles.avatarOrbit} />
             <View style={styles.avatarRing}>
               <Image
                 source={{
@@ -272,9 +277,10 @@ export default function ProfileScreen() {
         <View style={[styles.menuWrap, { backgroundColor: colors.surface }]}>
           {profileItems.map((item, index) => (
             <FadeInView key={item.id} type="fade-up" delay={index * 40}>
-              <Pressable
+              <AnimatedPressable
                 style={styles.menuRow}
                 onPress={() => router.push(item.onPress() as never)}
+                scaleTo={0.985}
               >
                 <View style={styles.menuLeft}>
                   <View style={[styles.menuIconBubble, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(10, 10, 8, 0.04)" }]}>
@@ -287,7 +293,7 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
                 <Text style={[styles.chevron, { color: colors.subtleText }]}>›</Text>
-              </Pressable>
+              </AnimatedPressable>
               {index < profileItems.length - 1 ? <View style={[styles.divider, { backgroundColor: colors.border }]} /> : null}
             </FadeInView>
           ))}
@@ -582,6 +588,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 6,
     marginBottom: 18,
+  },
+  avatarOrbit: {
+    position: "absolute",
   },
   avatarRing: {
     width: 92,

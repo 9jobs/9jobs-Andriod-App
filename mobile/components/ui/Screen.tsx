@@ -61,8 +61,8 @@ export function Screen({
 
   const body = (
     <AnimatedScreenContainer style={[styles.content, contentStyle]}>
-      {children}
       <ScreenBackground />
+      {children}
     </AnimatedScreenContainer>
   );
 

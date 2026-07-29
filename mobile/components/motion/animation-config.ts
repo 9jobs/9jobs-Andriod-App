@@ -1,7 +1,7 @@
 export const animationConfig = {
   entrance: {
     distance: 12,
-    duration: 400,
+    duration: 300,
   },
   press: {
     duration: 130,
@@ -10,10 +10,15 @@ export const animationConfig = {
   },
   particles: {
     count: 14,
-    duration: 9_500,
+    duration: 8_600,
+    lightOpacity: 0.18,
+    lightOpacityPeak: 0.28,
+    cardOpacity: 0.28,
+    cardOpacityPeak: 0.48,
   },
   mesh: {
-    duration: 10_000,
+    duration: 11_500,
+    lightOpacity: 0.12,
   },
   orbit: {
     duration: 12_000,
@@ -21,5 +26,10 @@ export const animationConfig = {
 } as const;
 
 export function shouldShowOrbitalGlow(pathname: string): boolean {
-  return true;
+  return (
+    pathname === "/splash" ||
+    pathname === "/(public)" ||
+    pathname.includes("/resume") ||
+    pathname.includes("/interview")
+  );
 }

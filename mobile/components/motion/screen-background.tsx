@@ -21,6 +21,8 @@ export function ScreenBackground() {
 
   const shouldAnimate = animationsEnabled && isFocused;
   const showOrbit = shouldShowOrbitalGlow(pathname);
+  const minimalParticles =
+    pathname.includes("/chat/") || pathname.includes("/messages");
 
   return (
     <View
@@ -30,7 +32,10 @@ export function ScreenBackground() {
       style={StyleSheet.absoluteFill}
     >
       <SubtleMeshWave animated={shouldAnimate} />
-      <FloatingParticlesBackground animated={shouldAnimate} />
+      <FloatingParticlesBackground
+        animated={shouldAnimate}
+        minimal={minimalParticles}
+      />
       {showOrbit ? <OrbitalGlow animated={shouldAnimate} /> : null}
     </View>
   );

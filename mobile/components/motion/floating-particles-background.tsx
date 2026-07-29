@@ -99,7 +99,12 @@ function Particle({
   }, [animated, delay, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: 0.18 + Math.sin(progress.value * Math.PI) * 0.18 * depth,
+    opacity:
+      animationConfig.particles.lightOpacity +
+      Math.sin(progress.value * Math.PI) *
+        (animationConfig.particles.lightOpacityPeak -
+          animationConfig.particles.lightOpacity) *
+        depth,
     transform: [
       { translateX: progress.value * (index % 2 === 0 ? 18 : -18) * depth },
       { translateY: progress.value * -42 * depth },

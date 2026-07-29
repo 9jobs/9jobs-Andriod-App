@@ -4,6 +4,7 @@ import { AnimatedScreenShell } from "@/components/motion/AnimatedScreenShell";
 import { CTAReveal } from "@/components/motion/CTAReveal";
 import { Screen } from "@/components/ui/Screen";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
 
 type PremiumScaffoldProps = PropsWithChildren<{
   title: string;
@@ -50,7 +51,10 @@ export function PremiumScaffold({
 export function DarkHeroCard({ children }: PropsWithChildren) {
   return (
     <View style={styles.darkHeroWrap}>
-      <View style={styles.darkHero}>{children}</View>
+      <View style={styles.darkHero}>
+        <CardFloatingParticles />
+        {children}
+      </View>
     </View>
   );
 }
@@ -104,6 +108,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     padding: spacing.xl,
     gap: spacing.md,
+    overflow: "hidden",
     ...shadows.float,
   },
   panel: {

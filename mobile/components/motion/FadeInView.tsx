@@ -8,6 +8,7 @@ import Animated, {
   FadeInUp,
 } from "react-native-reanimated";
 import { useReducedMotionPreference } from "./ReducedMotion";
+import { animationConfig } from "./animation-config";
 
 export type AnimationType =
   | "fade"
@@ -62,7 +63,12 @@ export function FadeInView({
       break;
     case "fade-up":
     default:
-      enteringAnimation = FadeInUp.duration(duration).delay(effectiveDelay);
+      enteringAnimation = FadeInUp.duration(duration)
+        .delay(effectiveDelay)
+        .withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: Math.min(8, animationConfig.entrance.distance) }],
+        });
       break;
   }
 

@@ -1,5 +1,6 @@
 import { memo, useEffect } from "react";
 import { StyleSheet, View } from "react-native";
+import type { StyleProp, ViewStyle } from "react-native";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -10,18 +11,25 @@ import Animated, {
 } from "react-native-reanimated";
 import { colors } from "@/theme";
 import { animationConfig } from "./animation-config";
+import { useReducedMotionPreference } from "./ReducedMotion";
 
 type OrbitalGlowProps = {
   animated: boolean;
+  compact?: boolean;
+  style?: StyleProp<ViewStyle>;
 };
 
 export const OrbitalGlow = memo(function OrbitalGlow({
   animated,
+  compact = false,
+  style,
 }: OrbitalGlowProps) {
   const rotation = useSharedValue(0);
+  const reducedMotion = useReducedMotionPreference();
+  const shouldAnimate = animated && !reducedMotion;
 
   useEffect(() => {
-    if (!animated) {
+    if (!shouldAnimate) {
       cancelAnimation(rotation);
       rotation.value = 0;
       return;
@@ -37,7 +45,7 @@ export const OrbitalGlow = memo(function OrbitalGlow({
     );
 
     return () => cancelAnimation(rotation);
-  }, [animated, rotation]);
+  }, [rotation, shouldAnimate]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
@@ -48,10 +56,10 @@ export const OrbitalGlow = memo(function OrbitalGlow({
       pointerEvents="none"
       accessible={false}
       importantForAccessibility="no-hide-descendants"
-      style={styles.container}
+      style={[styles.container, compact && styles.compactContainer, style]}
     >
-      <View style={styles.glow} />
-      <Animated.View style={[styles.orbit, animatedStyle]}>
+      <View style={[styles.glow, compact && styles.compactGlow]} />
+      <Animated.View style={[styles.orbit, compact && styles.compactOrbit, animatedStyle]}>
         <View style={styles.dot} />
         <View style={styles.dotSecondary} />
       </Animated.View>
@@ -103,5 +111,19 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 999,
     backgroundColor: "rgba(163,230,53,0.52)",
+  },
+  compactContainer: {
+    width: 104,
+    height: 104,
+    right: undefined,
+    top: undefined,
+  },
+  compactGlow: {
+    width: 72,
+    height: 72,
+  },
+  compactOrbit: {
+    width: 98,
+    height: 98,
   },
 });

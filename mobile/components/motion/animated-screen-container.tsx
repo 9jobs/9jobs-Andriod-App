@@ -22,6 +22,10 @@ export function AnimatedScreenContainer({
   const entering = reducedMotion
     ? FadeIn.duration(120).reduceMotion(ReduceMotion.Always)
     : FadeInUp.duration(animationConfig.entrance.duration)
+        .withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: animationConfig.entrance.distance }],
+        })
         .easing(Easing.out(Easing.cubic))
         .reduceMotion(ReduceMotion.System);
 
