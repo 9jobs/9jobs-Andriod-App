@@ -9,19 +9,19 @@ export const animationConfig = {
     scale: 0.98,
   },
   particles: {
-    count: 14,
-    duration: 8_600,
-    lightOpacity: 0.18,
-    lightOpacityPeak: 0.28,
-    cardOpacity: 0.28,
-    cardOpacityPeak: 0.48,
+    count: 16,
+    duration: 5_800,
+    lightOpacity: 0.24,
+    lightOpacityPeak: 0.42,
+    cardOpacity: 0.34,
+    cardOpacityPeak: 0.64,
   },
   mesh: {
-    duration: 11_500,
-    lightOpacity: 0.12,
+    duration: 6_800,
+    lightOpacity: 0.18,
   },
   orbit: {
-    duration: 12_000,
+    duration: 6_500,
   },
 } as const;
 

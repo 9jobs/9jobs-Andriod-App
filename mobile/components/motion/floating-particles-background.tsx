@@ -27,6 +27,8 @@ const PARTICLES = [
   { left: "94%", top: "16%", size: 4, depth: 0.8, delay: 1300 },
   { left: "96%", top: "49%", size: 3, depth: 0.65, delay: 700 },
   { left: "91%", top: "87%", size: 5, depth: 0.9, delay: 2800 },
+  { left: "42%", top: "37%", size: 5, depth: 0.95, delay: 350 },
+  { left: "77%", top: "91%", size: 4, depth: 0.8, delay: 1450 },
 ] as const;
 
 type FloatingParticlesBackgroundProps = {
@@ -79,7 +81,7 @@ function Particle({
       return;
     }
 
-    const halfDuration = (animationConfig.particles.duration + delay) / 2;
+    const halfDuration = (animationConfig.particles.duration + delay * 0.35) / 2;
     progress.value = withRepeat(
       withSequence(
         withTiming(1, {
@@ -106,9 +108,9 @@ function Particle({
           animationConfig.particles.lightOpacity) *
         depth,
     transform: [
-      { translateX: progress.value * (index % 2 === 0 ? 18 : -18) * depth },
-      { translateY: progress.value * -42 * depth },
-      { scale: 0.86 + progress.value * 0.28 },
+      { translateX: progress.value * (index % 2 === 0 ? 34 : -34) * depth },
+      { translateY: progress.value * -76 * depth },
+      { scale: 0.78 + progress.value * 0.48 },
     ],
   }));
 
@@ -140,7 +142,7 @@ const styles = StyleSheet.create({
   particle: {
     position: "absolute",
     borderRadius: 999,
-    shadowOpacity: 0.28,
-    shadowRadius: 4,
+    shadowOpacity: 0.52,
+    shadowRadius: 7,
   },
 });
