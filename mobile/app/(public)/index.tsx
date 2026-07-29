@@ -8,6 +8,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import { ScreenBackground } from "@/components/motion/screen-background";
+import { StableEntranceView } from "@/components/motion/StableEntranceView";
 
 const { width } = Dimensions.get("window");
 
@@ -46,7 +47,7 @@ export default function OnboardingScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <StableEntranceView direction="none" duration={520} style={styles.container}>
       <ScreenBackground />
       <View style={styles.header}>
         <BrandLogo size={112} />
@@ -93,7 +94,7 @@ export default function OnboardingScreen() {
           style={styles.ghostButton}
         />
       </View>
-    </View>
+    </StableEntranceView>
   );
 }
 

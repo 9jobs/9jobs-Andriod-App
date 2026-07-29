@@ -1,14 +1,6 @@
-import React, { PropsWithChildren, useEffect, useRef } from "react";
+import React, { PropsWithChildren } from "react";
 import { StyleProp, ViewStyle } from "react-native";
-import Animated, {
-  FadeIn,
-  FadeInDown,
-  FadeInLeft,
-  FadeInRight,
-  FadeInUp,
-} from "react-native-reanimated";
-import { useReducedMotionPreference } from "./ReducedMotion";
-import { animationConfig } from "./animation-config";
+import { EntranceDirection, StableEntranceView } from "./StableEntranceView";
 
 export type AnimationType =
   | "fade"
@@ -32,49 +24,23 @@ export function FadeInView({
   duration = 320,
   style,
 }: FadeInViewProps) {
-  const isReducedMotion = useReducedMotionPreference();
-  const hasAnimatedRef = useRef(false);
-  const effectiveDelay = Math.min(delay, 250);
-
-  useEffect(() => {
-    hasAnimatedRef.current = true;
-  }, []);
-
-  if (isReducedMotion || hasAnimatedRef.current) {
-    return <Animated.View style={style}>{children}</Animated.View>;
-  }
-
-  let enteringAnimation;
-  switch (type) {
-    case "fade-down":
-      enteringAnimation = FadeInDown.duration(duration).delay(effectiveDelay);
-      break;
-    case "fade-left":
-      enteringAnimation = FadeInLeft.duration(duration).delay(effectiveDelay);
-      break;
-    case "fade-right":
-      enteringAnimation = FadeInRight.duration(duration).delay(effectiveDelay);
-      break;
-    case "scale-in":
-      enteringAnimation = FadeIn.duration(duration).delay(effectiveDelay);
-      break;
-    case "fade":
-      enteringAnimation = FadeIn.duration(duration).delay(effectiveDelay);
-      break;
-    case "fade-up":
-    default:
-      enteringAnimation = FadeInUp.duration(duration)
-        .delay(effectiveDelay)
-        .withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: Math.min(8, animationConfig.entrance.distance) }],
-        });
-      break;
-  }
+  const directionByType: Record<AnimationType, EntranceDirection> = {
+    fade: "none",
+    "fade-up": "up",
+    "fade-down": "down",
+    "fade-left": "left",
+    "fade-right": "right",
+    "scale-in": "scale",
+  };
 
   return (
-    <Animated.View entering={enteringAnimation} style={style}>
+    <StableEntranceView
+      direction={directionByType[type]}
+      delay={delay}
+      duration={duration}
+      style={style}
+    >
       {children}
-    </Animated.View>
+    </StableEntranceView>
   );
 }

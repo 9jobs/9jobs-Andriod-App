@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { useSession } from "@/providers/SessionProvider";
 import { colors, spacing, typography } from "@/theme";
+import { StableEntranceView } from "@/components/motion/StableEntranceView";
 
 export default function SsoCallbackScreen() {
   const { isBooting, user } = useSession();
@@ -25,11 +26,11 @@ export default function SsoCallbackScreen() {
   }, [isBooting, user]);
 
   return (
-    <View style={styles.container}>
+    <StableEntranceView direction="none" duration={520} style={styles.container}>
       <ActivityIndicator color={colors.accentDark} size="large" />
       <Text style={styles.title}>Completing Google sign-in...</Text>
       <Text style={styles.subtitle}>Please wait while we finish your session.</Text>
-    </View>
+    </StableEntranceView>
   );
 }
 
