@@ -9,8 +9,6 @@ import {
   usePreviewSyncQuery,
 } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
-import { FadeInView } from "@/components/motion/FadeInView";
-import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 
 type NotificationVisual = {
   icon: "check" | "bell" | "star" | "alert" | "trending-up" | "mail";
@@ -86,9 +84,9 @@ export default function NotificationsScreen() {
         </Pressable>
       ) : (
         <View style={styles.listStack}>
-          {notifications.map((item, index) => (
-            <FadeInView key={item.id} type="fade-up" delay={index * 45}>
-            <AnimatedPressable
+          {notifications.map((item) => (
+            <Pressable
+              key={item.id}
               onPress={() => {
                 if (item.unread && !markOneReadMutation.isPending) {
                   markOneReadMutation.mutate(item.id);
@@ -96,7 +94,6 @@ export default function NotificationsScreen() {
                 setSelectedNotificationId(item.id);
               }}
               style={styles.previewCard}
-              scaleTo={0.985}
             >
               {item.unread ? <View style={[styles.previewAccentBar, { backgroundColor: item.accentColor }]} /> : null}
               <View style={[styles.previewIconCircle, { backgroundColor: item.bg }]}>
@@ -113,8 +110,7 @@ export default function NotificationsScreen() {
                   </Text>
                 ) : null}
               </View>
-            </AnimatedPressable>
-            </FadeInView>
+            </Pressable>
           ))}
 
           {notifications.length === 0 ? (
