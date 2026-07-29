@@ -3,8 +3,10 @@ import { StyleProp, ViewStyle } from "react-native";
 import Animated, {
   Easing,
   FadeIn,
+  FadeInUp,
   ReduceMotion,
 } from "react-native-reanimated";
+import { animationConfig } from "./animation-config";
 import { useReducedMotionPreference } from "./ReducedMotion";
 
 type AnimatedScreenContainerProps = PropsWithChildren<{
@@ -19,7 +21,11 @@ export function AnimatedScreenContainer({
 
   const entering = reducedMotion
     ? FadeIn.duration(120).reduceMotion(ReduceMotion.Always)
-    : FadeIn.duration(180)
+    : FadeInUp.duration(animationConfig.entrance.duration)
+        .withInitialValues({
+          opacity: 0,
+          transform: [{ translateY: animationConfig.entrance.distance }],
+        })
         .easing(Easing.out(Easing.cubic))
         .reduceMotion(ReduceMotion.System);
 

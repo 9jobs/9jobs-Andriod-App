@@ -1,5 +1,5 @@
 import { PropsWithChildren, useEffect, useRef } from "react";
-import Animated, { Easing, FadeInUp } from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 export function CTAReveal({ children }: PropsWithChildren) {
   const isFirstRender = useRef(true);
@@ -10,12 +10,7 @@ export function CTAReveal({ children }: PropsWithChildren) {
 
   if (isFirstRender.current) {
     return (
-      <Animated.View
-        entering={FadeInUp.duration(280)
-          .delay(80)
-          .withInitialValues({ opacity: 0, transform: [{ translateY: 8 }] })
-          .easing(Easing.out(Easing.cubic))}
-      >
+      <Animated.View entering={FadeInUp.delay(120).springify().damping(15)}>
         {children}
       </Animated.View>
     );
