@@ -87,11 +87,7 @@ export default function NotificationsScreen() {
       ) : (
         <View style={styles.listStack}>
           {notifications.map((item, index) => (
-            <FadeInView
-              key={item.id}
-              type={(["fade-right", "fade-left", "fade-up", "fade-down"] as const)[index % 4]}
-              delay={index * 45}
-            >
+            <FadeInView key={item.id} type="fade-up" delay={index * 45}>
             <AnimatedPressable
               onPress={() => {
                 if (item.unread && !markOneReadMutation.isPending) {

@@ -85,7 +85,7 @@ export default function HomeScreen() {
       </FadeInView>
 
       {/* 2. Search Bar Row */}
-      <FadeInView type="fade-right" delay={50}>
+      <FadeInView type="fade-up" delay={50}>
         <View style={styles.searchRow}>
           <Pressable style={styles.searchInputContainer} onPress={openSearchScreen}>
             <AppIcon name="search" size={20} color={colors.mutedText} />
@@ -121,7 +121,7 @@ export default function HomeScreen() {
       </FadeInView>
 
       {/* 3. Stat Cards Row */}
-      <FadeInView type="fade-left" delay={100}>
+      <FadeInView type="fade-up" delay={100}>
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statValue}>{String(metrics?.totalApplications ?? 0)}</Text>
@@ -147,7 +147,7 @@ export default function HomeScreen() {
       </FadeInView>
 
       {/* 4. Quick Action Grid Row */}
-      <FadeInView type="fade-right" delay={150}>
+      <FadeInView type="fade-up" delay={150}>
         <View style={styles.quickActionRow}>
           <AnimatedPressable
             style={styles.quickActionCard}
@@ -185,7 +185,7 @@ export default function HomeScreen() {
       </FadeInView>
 
       {/* 5. Pro Tip Hero Card with Star Twinkle Background */}
-      <FadeInView type="fade-left" delay={200}>
+      <FadeInView type="fade-up" delay={200}>
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
           <CardFloatingParticles />
@@ -222,11 +222,7 @@ export default function HomeScreen() {
 
         <View style={styles.jobStack}>
           {recommendedJobs.map((job, idx) => (
-            <FadeInView
-              key={job.id}
-              type={(["fade-right", "fade-left", "fade-up", "fade-down"] as const)[idx % 4]}
-              delay={280 + idx * 40}
-            >
+            <FadeInView key={job.id} type="fade-up" delay={280 + idx * 40}>
               <View style={styles.recommendedCard}>
                 <View style={styles.cardTopRow}>
                   <View style={styles.avatarCircle}>

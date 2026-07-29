@@ -276,11 +276,7 @@ export default function ProfileScreen() {
 
         <View style={[styles.menuWrap, { backgroundColor: colors.surface }]}>
           {profileItems.map((item, index) => (
-            <FadeInView
-              key={item.id}
-              type={(["fade-right", "fade-left", "fade-up", "fade-down"] as const)[index % 4]}
-              delay={index * 40}
-            >
+            <FadeInView key={item.id} type="fade-up" delay={index * 40}>
               <AnimatedPressable
                 style={styles.menuRow}
                 onPress={() => router.push(item.onPress() as never)}

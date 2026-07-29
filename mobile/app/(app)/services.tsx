@@ -103,7 +103,7 @@ export default function ServicesScreen() {
       </FadeInView>
 
       {/* 2. Hero Card (Job Search Command Center) */}
-      <FadeInView type="fade-right" delay={60}>
+      <FadeInView type="fade-up" delay={60}>
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
           <CardFloatingParticles />
@@ -173,11 +173,7 @@ export default function ServicesScreen() {
               service.icon === "mail";
 
             return (
-              <FadeInView
-                key={service.id}
-                type={(["fade-right", "fade-left", "fade-up", "fade-down"] as const)[index % 4]}
-                delay={120 + index * 40}
-              >
+              <FadeInView key={service.id} type="fade-up" delay={120 + index * 40}>
                 <AnimatedPressable
                   style={styles.serviceCard}
                   onPress={() => router.push(service.route as never)}

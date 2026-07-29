@@ -514,11 +514,7 @@ export default function TrackerScreen() {
             const hasBeforeScreenshot = Boolean(resolvedBeforeScreenshot);
             const hasAfterScreenshot = Boolean(resolvedAfterScreenshot);
             return (
-              <FadeInView
-                key={job.id}
-                type={(["fade-right", "fade-left", "fade-up", "fade-down"] as const)[index % 4]}
-                delay={index * 50}
-              >
+              <FadeInView key={job.id} type="fade-up" delay={index * 50}>
                 <SoftPanel>
                 <Pressable
                   onPress={() =>

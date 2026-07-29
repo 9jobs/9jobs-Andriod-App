@@ -47,28 +47,13 @@ export function FadeInView({
   let enteringAnimation;
   switch (type) {
     case "fade-down":
-      enteringAnimation = FadeInDown.duration(duration)
-        .delay(effectiveDelay)
-        .withInitialValues({
-          opacity: 0,
-          transform: [{ translateY: -animationConfig.entrance.distance }],
-        });
+      enteringAnimation = FadeInDown.duration(duration).delay(effectiveDelay);
       break;
     case "fade-left":
-      enteringAnimation = FadeInLeft.duration(duration)
-        .delay(effectiveDelay)
-        .withInitialValues({
-          opacity: 0,
-          transform: [{ translateX: animationConfig.entrance.distance }],
-        });
+      enteringAnimation = FadeInLeft.duration(duration).delay(effectiveDelay);
       break;
     case "fade-right":
-      enteringAnimation = FadeInRight.duration(duration)
-        .delay(effectiveDelay)
-        .withInitialValues({
-          opacity: 0,
-          transform: [{ translateX: -animationConfig.entrance.distance }],
-        });
+      enteringAnimation = FadeInRight.duration(duration).delay(effectiveDelay);
       break;
     case "scale-in":
       enteringAnimation = FadeIn.duration(duration).delay(effectiveDelay);
