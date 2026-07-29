@@ -1,5 +1,5 @@
 import { memo, useEffect } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import Animated, {
   cancelAnimation,
@@ -15,19 +15,39 @@ type SubtleMeshWaveProps = {
   animated: boolean;
 };
 
+const TOP_WAVES = Array.from({ length: 12 }, (_, index) => {
+  const y = 142 + index * 9;
+  const lift = index * 2;
+  return `M-90 ${y} C18 ${80 + lift} 118 ${250 - lift} 230 ${164 + lift} S430 ${98 + lift} 500 ${180 + lift}`;
+});
+
+const BOTTOM_WAVES = Array.from({ length: 12 }, (_, index) => {
+  const y = 586 + index * 10;
+  const lift = index * 2;
+  return `M-95 ${y} C25 ${520 + lift} 132 ${716 - lift} 252 ${620 + lift} S438 ${548 + lift} 505 ${646 + lift}`;
+});
+
+const CROSS_WAVES = Array.from({ length: 7 }, (_, index) => {
+  const y = 322 + index * 12;
+  return `M-120 ${y} C20 ${270 + index * 4} 128 ${430 - index * 3} 246 ${344 + index * 4} S432 ${292 + index * 3} 520 ${370 + index * 4}`;
+});
+
 export const SubtleMeshWave = memo(function SubtleMeshWave({
   animated,
 }: SubtleMeshWaveProps) {
-  const progress = useSharedValue(0);
+  const primaryProgress = useSharedValue(0);
+  const secondaryProgress = useSharedValue(1);
 
   useEffect(() => {
     if (!animated) {
-      cancelAnimation(progress);
-      progress.value = 0;
+      cancelAnimation(primaryProgress);
+      cancelAnimation(secondaryProgress);
+      primaryProgress.value = 0.35;
+      secondaryProgress.value = 0.65;
       return;
     }
 
-    progress.value = withRepeat(
+    primaryProgress.value = withRepeat(
       withTiming(1, {
         duration: animationConfig.mesh.duration,
         easing: Easing.inOut(Easing.sin),
@@ -35,75 +55,89 @@ export const SubtleMeshWave = memo(function SubtleMeshWave({
       -1,
       true,
     );
+    secondaryProgress.value = withRepeat(
+      withTiming(0, {
+        duration: Math.round(animationConfig.mesh.duration * 1.18),
+        easing: Easing.inOut(Easing.sin),
+      }),
+      -1,
+      true,
+    );
 
-    return () => cancelAnimation(progress);
-  }, [animated, progress]);
+    return () => {
+      cancelAnimation(primaryProgress);
+      cancelAnimation(secondaryProgress);
+    };
+  }, [animated, primaryProgress, secondaryProgress]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: 0.9 + progress.value * 0.1,
+  const primaryStyle = useAnimatedStyle(() => ({
+    opacity: 0.78 + primaryProgress.value * 0.22,
     transform: [
-      { translateX: -42 + progress.value * 96 },
-      { translateY: -12 + progress.value * 34 },
+      { translateX: -54 + primaryProgress.value * 108 },
+      { translateY: -16 + primaryProgress.value * 38 },
+      { rotate: `${-1.4 + primaryProgress.value * 2.8}deg` },
+    ],
+  }));
+
+  const secondaryStyle = useAnimatedStyle(() => ({
+    opacity: 0.42 + secondaryProgress.value * 0.26,
+    transform: [
+      { translateX: 44 - secondaryProgress.value * 88 },
+      { translateY: 18 - secondaryProgress.value * 32 },
+      { rotate: `${1.2 - secondaryProgress.value * 2.4}deg` },
     ],
   }));
 
   return (
-    <Animated.View
+    <View
       pointerEvents="none"
       accessible={false}
       importantForAccessibility="no-hide-descendants"
-      style={[styles.container, animatedStyle]}
+      style={styles.container}
     >
-      <Svg width="100%" height="100%" viewBox="0 0 390 780">
-        <Path
-          d="M-40 180 C70 115 145 245 250 178 S430 120 470 185"
-          fill="none"
-          stroke="rgba(127,178,29,0.22)"
-          strokeWidth={1.15}
-        />
-        <Path
-          d="M-55 196 C55 131 140 260 248 194 S425 138 470 201"
-          fill="none"
-          stroke="rgba(163,230,53,0.18)"
-          strokeWidth={1}
-        />
-        <Path
-          d="M-30 225 C75 160 160 285 265 220 S420 165 455 225"
-          fill="none"
-          stroke="rgba(163,230,53,0.18)"
-          strokeWidth={1}
-        />
-        <Path
-          d="M-45 242 C65 177 151 302 260 237 S425 182 468 243"
-          fill="none"
-          stroke="rgba(127,178,29,0.15)"
-          strokeWidth={0.9}
-        />
-        <Path
-          d="M-55 645 C65 575 150 705 265 632 S430 585 470 650"
-          fill="none"
-          stroke="rgba(127,178,29,0.17)"
-          strokeWidth={1}
-        />
-        <Path
-          d="M-55 620 C58 550 146 682 258 608 S428 560 470 625"
-          fill="none"
-          stroke="rgba(163,230,53,0.14)"
-          strokeWidth={0.9}
-        />
-        <Path
-          d="M-45 670 C72 598 158 727 272 656 S432 608 474 672"
-          fill="none"
-          stroke="rgba(127,178,29,0.13)"
-          strokeWidth={0.85}
-        />
-      </Svg>
-    </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, primaryStyle]}>
+        <Svg width="100%" height="100%" viewBox="0 0 390 780">
+          {TOP_WAVES.map((path, index) => (
+            <Path
+              key={`top-${index}`}
+              d={path}
+              fill="none"
+              stroke={`rgba(151, 214, 39, ${0.2 - index * 0.008})`}
+              strokeWidth={index % 4 === 0 ? 1.15 : 0.72}
+            />
+          ))}
+          {BOTTOM_WAVES.map((path, index) => (
+            <Path
+              key={`bottom-${index}`}
+              d={path}
+              fill="none"
+              stroke={`rgba(127, 178, 29, ${0.18 - index * 0.007})`}
+              strokeWidth={index % 4 === 0 ? 1.05 : 0.68}
+            />
+          ))}
+        </Svg>
+      </Animated.View>
+
+      <Animated.View style={[StyleSheet.absoluteFill, secondaryStyle]}>
+        <Svg width="100%" height="100%" viewBox="0 0 390 780">
+          {CROSS_WAVES.map((path, index) => (
+            <Path
+              key={`cross-${index}`}
+              d={path}
+              fill="none"
+              stroke={`rgba(183, 236, 84, ${0.13 - index * 0.009})`}
+              strokeWidth={index % 3 === 0 ? 0.95 : 0.62}
+            />
+          ))}
+        </Svg>
+      </Animated.View>
+    </View>
   );
 });
 
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFill,
+    overflow: "hidden",
   },
 });

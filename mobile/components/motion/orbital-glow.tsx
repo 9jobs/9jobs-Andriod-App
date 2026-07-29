@@ -25,13 +25,16 @@ export const OrbitalGlow = memo(function OrbitalGlow({
   style,
 }: OrbitalGlowProps) {
   const rotation = useSharedValue(0);
+  const pulse = useSharedValue(0);
   const reducedMotion = useReducedMotionPreference();
   const shouldAnimate = animated && !reducedMotion;
 
   useEffect(() => {
     if (!shouldAnimate) {
       cancelAnimation(rotation);
+      cancelAnimation(pulse);
       rotation.value = 0;
+      pulse.value = 0;
       return;
     }
 
@@ -43,12 +46,30 @@ export const OrbitalGlow = memo(function OrbitalGlow({
       -1,
       false,
     );
+    pulse.value = withRepeat(
+      withTiming(1, {
+        duration: 1_900,
+        easing: Easing.inOut(Easing.sin),
+      }),
+      -1,
+      true,
+    );
 
-    return () => cancelAnimation(rotation);
-  }, [rotation, shouldAnimate]);
+    return () => {
+      cancelAnimation(rotation);
+      cancelAnimation(pulse);
+    };
+  }, [pulse, rotation, shouldAnimate]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+  const reverseAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value * -0.72}deg` }],
+  }));
+  const pulseAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: 0.48 + pulse.value * 0.34,
+    transform: [{ scale: 0.9 + pulse.value * 0.16 }],
   }));
 
   return (
@@ -58,10 +79,20 @@ export const OrbitalGlow = memo(function OrbitalGlow({
       importantForAccessibility="no-hide-descendants"
       style={[styles.container, compact && styles.compactContainer, style]}
     >
-      <View style={[styles.glow, compact && styles.compactGlow]} />
+      <Animated.View style={[styles.glow, compact && styles.compactGlow, pulseAnimatedStyle]} />
+      <View style={[styles.outerRing, compact && styles.compactOuterRing]} />
       <Animated.View style={[styles.orbit, compact && styles.compactOrbit, animatedStyle]}>
         <View style={styles.dot} />
         <View style={styles.dotSecondary} />
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.innerOrbit,
+          compact && styles.compactInnerOrbit,
+          reverseAnimatedStyle,
+        ]}
+      >
+        <View style={styles.dotTertiary} />
       </Animated.View>
     </View>
   );
@@ -94,6 +125,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(127,178,29,0.46)",
   },
+  outerRing: {
+    position: "absolute",
+    width: 212,
+    height: 212,
+    borderRadius: 999,
+    borderWidth: 0.7,
+    borderColor: "rgba(163,230,53,0.28)",
+  },
+  innerOrbit: {
+    position: "absolute",
+    width: 146,
+    height: 146,
+    borderRadius: 999,
+    borderWidth: 0.8,
+    borderColor: "rgba(127,178,29,0.36)",
+  },
   dot: {
     position: "absolute",
     left: 34,
@@ -112,6 +159,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: "rgba(163,230,53,0.86)",
   },
+  dotTertiary: {
+    position: "absolute",
+    right: 8,
+    top: 38,
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(163,230,53,0.94)",
+  },
   compactContainer: {
     width: 104,
     height: 104,
@@ -125,5 +181,13 @@ const styles = StyleSheet.create({
   compactOrbit: {
     width: 98,
     height: 98,
+  },
+  compactOuterRing: {
+    width: 104,
+    height: 104,
+  },
+  compactInnerOrbit: {
+    width: 78,
+    height: 78,
   },
 });
