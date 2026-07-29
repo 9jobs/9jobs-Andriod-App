@@ -8,20 +8,20 @@ export const colors = {
   text: "#0A0A08",
   mutedText: "#6F7268",
   subtleText: "#8B8F82",
-  accent: "#A3E635",
-  accentDark: "#7FB21D",
+  accent: "#C0FF00",
+  accentDark: "#0DCE06",
   border: "#E8E5DB",
   borderStrong: "#DAD6C8",
   shadow: "rgba(10, 10, 8, 0.12)",
   chip: "#171816",
   chipMuted: "rgba(23, 24, 22, 0.08)",
   success: "#6EE7B7",
-  dark: "#090A08",
-  darkCard: "#11120F",
+  dark: "#000000",
+  darkCard: "#1A1A1A",
   darkMuted: "#A1A595",
   heroSurface: "#F2EFE6",
   deviceShell: "#1B1C18",
-  glow: "rgba(163, 230, 53, 0.38)",
+  glow: "rgba(2, 254, 0, 0.38)",
   softAccent: "#E6F7BB",
   panel: "#F9F7F0",
   tabBackground: "rgba(252, 252, 248, 0.96)",
@@ -133,17 +133,17 @@ export const typography = {
 
 export function setTheme(isDark: boolean) {
   if (isDark) {
-    colors.background = "#090A08";
-    colors.surface = "#11120F";
-    colors.surfaceMuted = "#171816";
-    colors.surfaceRaised = "#1F201C";
-    colors.text = "#FFFEFA";
+    colors.background = "#000000";
+    colors.surface = "#1A1A1A";
+    colors.surfaceMuted = "#242424";
+    colors.surfaceRaised = "#2E2E2E";
+    colors.text = "#FFFFFF";
     colors.mutedText = "#A1A595";
     colors.subtleText = "#6F7268";
     colors.border = "#2A2B27";
     colors.borderStrong = "#3A3B36";
-    colors.tabBackground = "rgba(17, 18, 15, 0.96)";
-    colors.panel = "#171816";
+    colors.tabBackground = "rgba(26, 26, 26, 0.96)";
+    colors.panel = "#1A1A1A";
   } else {
     colors.background = "#F4F1E8";
     colors.surface = "#FFFFFF";

@@ -8,6 +8,7 @@ import { useSession } from "@/providers/SessionProvider";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { useUpdateProfileMutation } from "@/features/jobs/hooks";
 import { colors, shadows, spacing, typography } from "@/theme";
+import { FadeInView } from "@/components/motion/FadeInView";
 
 const profileItems = [
   {
@@ -270,7 +271,7 @@ export default function ProfileScreen() {
 
         <View style={[styles.menuWrap, { backgroundColor: colors.surface }]}>
           {profileItems.map((item, index) => (
-            <View key={item.id}>
+            <FadeInView key={item.id} type="fade-up" delay={index * 40}>
               <Pressable
                 style={styles.menuRow}
                 onPress={() => router.push(item.onPress() as never)}
@@ -288,7 +289,7 @@ export default function ProfileScreen() {
                 <Text style={[styles.chevron, { color: colors.subtleText }]}>›</Text>
               </Pressable>
               {index < profileItems.length - 1 ? <View style={[styles.divider, { backgroundColor: colors.border }]} /> : null}
-            </View>
+            </FadeInView>
           ))}
         </View>
       </Screen>

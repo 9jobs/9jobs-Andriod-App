@@ -8,8 +8,45 @@ import { colors, radii, shadows, spacing, typography } from "@/theme";
 import * as DocumentPicker from "expo-document-picker";
 import { useUploadResumeMutation } from "@/features/jobs/hooks";
 import { ResumeDataTransferSpline } from "@/components/resume/ResumeDataTransferSpline";
+import { AppIcon } from "@/components/ui/AppIcon";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+function CircularScanner() {
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const rotation = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 3500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    rotation.start();
+    return () => rotation.stop();
+  }, [rotateAnim]);
+
+  const rotationInterpolate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
+
+  return (
+    <View style={styles.scannerWrapper}>
+      {/* Outer rotating ring */}
+      <Animated.View style={[styles.scannerRing, { transform: [{ rotate: rotationInterpolate }] }]}>
+        <View style={styles.scannerDot} />
+        <View style={styles.scannerDotSecondary} />
+      </Animated.View>
+      {/* Central document icon */}
+      <View style={styles.scannerCenterIcon}>
+        <AppIcon name="resume" size={32} color={colors.accent} />
+      </View>
+    </View>
+  );
+}
 
 export default function ResumeScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
@@ -30,6 +67,17 @@ export default function ResumeScreen() {
   const scanAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const loopAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  const [progressVal, setProgressVal] = useState(0);
+
+  useEffect(() => {
+    const listener = progressAnim.addListener(({ value }) => {
+      setProgressVal(value);
+    });
+    return () => {
+      progressAnim.removeListener(listener);
+    };
+  }, [progressAnim]);
 
   const atsScore = Math.max(0, Math.min(100, Math.round(Number(snapshot?.trackerSummary?.atsResumeScore ?? 0))));
   const aiMatchScore = Math.max(0, Math.min(100, Math.round(Number(snapshot?.trackerSummary?.aiMatchScore ?? 0))));
@@ -182,6 +230,51 @@ export default function ResumeScreen() {
       setAnalysisMetrics(snapshot.resumeAnalysis);
     }
   }, [snapshot?.resumeAnalysis]);
+
+  if (isScanning) {
+    return (
+      <Screen scroll={true} contentStyle={styles.screenContent}>
+        <BackHeader label="Back" />
+        <Text style={styles.title}>Resume Intelligence</Text>
+        <View style={styles.scanningContainer}>
+          <View style={styles.scanningHeader}>
+            <Text style={styles.scanningSubtitle}>Analyzing Your Resume</Text>
+            <Text style={styles.scanningDescription}>
+              Please wait while we scan your resume and calculate your ATS score.
+            </Text>
+          </View>
+
+          <CircularScanner />
+
+          <View style={styles.scanningProgressContainer}>
+            <View style={styles.scanningProgressBarTrack}>
+              <View style={[styles.scanningProgressBarFill, { width: `${Math.round(progressVal * 100)}%` }]} />
+            </View>
+            <Text style={styles.scanningProgressText}>{Math.round(progressVal * 100)}%</Text>
+          </View>
+
+          <View style={styles.scanningMetricsRow}>
+            <View style={styles.scanningMetricItem}>
+              <Text style={styles.scanningMetricLabel}>Content</Text>
+              <Text style={styles.scanningMetricValue}>92%</Text>
+            </View>
+            <View style={styles.scanningMetricItem}>
+              <Text style={styles.scanningMetricLabel}>Structure</Text>
+              <Text style={styles.scanningMetricValue}>88%</Text>
+            </View>
+            <View style={styles.scanningMetricItem}>
+              <Text style={styles.scanningMetricLabel}>Keywords</Text>
+              <Text style={styles.scanningMetricValue}>95%</Text>
+            </View>
+          </View>
+
+          <Text style={styles.scanningFooter}>
+            AI is analyzing your resume deeply to give you the best improvement tips.
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>
@@ -850,5 +943,143 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 11,
     fontWeight: "600",
+  },
+  scannerWrapper: {
+    width: 200,
+    height: 200,
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    marginVertical: spacing.md,
+  },
+  scannerRing: {
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    borderWidth: 1.5,
+    borderColor: "rgba(163, 230, 53, 0.25)",
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    position: "absolute",
+  },
+  scannerDot: {
+    position: "absolute",
+    top: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  scannerDotSecondary: {
+    position: "absolute",
+    bottom: -4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(163, 230, 53, 0.6)",
+  },
+  scannerCenterIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(163, 230, 53, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(163, 230, 53, 0.3)",
+    shadowColor: colors.accent,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+  },
+  scanningContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.xl,
+    gap: spacing.lg,
+  },
+  scanningHeader: {
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  scanningSubtitle: {
+    ...typography.title,
+    color: colors.text,
+    fontSize: 22,
+    textAlign: "center",
+  },
+  scanningDescription: {
+    ...typography.body,
+    color: colors.mutedText,
+    textAlign: "center",
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: spacing.sm,
+  },
+  scanningProgressContainer: {
+    width: "100%",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xl,
+  },
+  scanningProgressBarTrack: {
+    width: "100%",
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  scanningProgressBarFill: {
+    height: "100%",
+    backgroundColor: colors.accent,
+    borderRadius: 3,
+  },
+  scanningProgressText: {
+    ...typography.label,
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  scanningMetricsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    paddingHorizontal: spacing.xl,
+    marginTop: spacing.sm,
+  },
+  scanningMetricItem: {
+    alignItems: "center",
+    width: "30%",
+    backgroundColor: colors.surfaceRaised,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  scanningMetricLabel: {
+    ...typography.label,
+    color: colors.mutedText,
+    fontSize: 11,
+  },
+  scanningMetricValue: {
+    ...typography.title,
+    color: colors.text,
+    fontSize: 18,
+  },
+  scanningFooter: {
+    ...typography.body,
+    color: colors.mutedText,
+    textAlign: "center",
+    fontSize: 12.5,
+    fontStyle: "italic",
+    paddingHorizontal: spacing.xl,
+    marginTop: spacing.md,
   },
 });

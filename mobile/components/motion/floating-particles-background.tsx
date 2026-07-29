@@ -107,11 +107,24 @@ function Particle({
     ],
   }));
 
+  const isDark = colors.background === "#000000" || colors.background === "#090A08";
+  const isWhiteParticle = index % 3 === 0;
+  const particleColor = isWhiteParticle
+    ? (isDark ? "#FFFFFF" : "#8B8F82")
+    : colors.accent;
+
   return (
     <Animated.View
       style={[
         styles.particle,
-        { height: size, left, top, width: size },
+        {
+          height: size,
+          left,
+          top,
+          width: size,
+          backgroundColor: particleColor,
+          shadowColor: particleColor,
+        },
         animatedStyle,
       ]}
     />
@@ -122,8 +135,6 @@ const styles = StyleSheet.create({
   particle: {
     position: "absolute",
     borderRadius: 999,
-    backgroundColor: colors.accent,
-    shadowColor: colors.accent,
     shadowOpacity: 0.28,
     shadowRadius: 4,
   },

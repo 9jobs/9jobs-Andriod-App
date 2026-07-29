@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { colors, spacing, typography } from "@/theme";
 import { FadeInView } from "@/components/motion/FadeInView";
+import { ScreenBackground } from "@/components/motion/screen-background";
 
 export default function SplashScreen() {
   useEffect(() => {
@@ -16,20 +17,7 @@ export default function SplashScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.sparkField}>
-        {Array.from({ length: 18 }).map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.spark,
-              {
-                top: `${8 + (index * 5) % 82}%`,
-                left: `${10 + (index * 13) % 74}%`,
-              },
-            ]}
-          />
-        ))}
-      </View>
+      <ScreenBackground />
       <FadeInView type="fade-up" duration={360} style={styles.center}>
         <View style={styles.logoWrap}>
           <BrandLogo size={148} />
@@ -53,19 +41,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.dark,
   },
-  sparkField: {
-    ...StyleSheet.absoluteFill,
-  },
-  spark: {
-    position: "absolute",
-    width: 4,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.9,
-    shadowRadius: 12,
-  },
+
   center: {
     alignItems: "center",
     gap: spacing.md,

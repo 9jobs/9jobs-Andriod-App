@@ -1023,7 +1023,7 @@ function buildSnapshotFromSource({
   const systemSettings = {
     maintenanceMode: systemSettingsRow?.maintenance_mode ?? false,
     pushNotificationsEnabled: systemSettingsRow?.push_notifications_enabled ?? true,
-    darkModeOverride: systemSettingsRow?.dark_mode_override ?? false,
+    darkModeOverride: false,
   };
 
   return {
@@ -1206,6 +1206,10 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
         inMemoryStore.rawApplications = [];
       }
       if (inMemoryStore) {
+        const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
+        if (localDarkModeOverride !== null) {
+          inMemoryStore.profile.darkMode = localDarkModeOverride === "true";
+        }
         return inMemoryStore;
       }
     }
@@ -1380,6 +1384,11 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
     activePlanId,
   };
 
+  const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
+  if (localDarkModeOverride !== null) {
+    inMemoryStore.profile.darkMode = localDarkModeOverride === "true";
+  }
+
   return inMemoryStore;
 }
 
@@ -1413,6 +1422,11 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           notificationRows: (backendSnapshot.notifications as NotificationRow[]) ?? [],
           activityLogRows: (backendSnapshot.activityLogs as ActivityLogRow[]) ?? [],
         });
+
+        const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
+        if (localDarkModeOverride !== null) {
+          snapshot.profile.darkMode = localDarkModeOverride === "true";
+        }
 
         const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
         setTheme(isDarkMode);
@@ -1541,6 +1555,11 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       notificationRows: (notificationsResult.data as NotificationRow[] | null) ?? [],
       activityLogRows: (activityLogsResult.data as ActivityLogRow[] | null) ?? [],
     });
+
+    const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
+    if (localDarkModeOverride !== null) {
+      snapshot.profile.darkMode = localDarkModeOverride === "true";
+    }
 
     const isDarkMode = (snapshot.profile.darkMode ?? false) && !(snapshot.systemSettings.darkModeOverride ?? false);
     setTheme(isDarkMode);
@@ -1836,6 +1855,9 @@ export async function updateProfile(
   sessionUser?: SessionUser | null,
 ) {
   const activeUser = resolveActiveUser(sessionUser);
+  if (typeof patch.darkMode === "boolean") {
+    await AsyncStorage.setItem("user_dark_mode_override", patch.darkMode ? "true" : "false");
+  }
   try {
     const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
     const token = await ensureBackendAuthToken(activeUser, backendUrl);

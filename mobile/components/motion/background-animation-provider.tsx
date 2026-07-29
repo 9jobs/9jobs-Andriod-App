@@ -24,7 +24,8 @@ export function BackgroundAnimationProvider({
 }: PropsWithChildren) {
   const reducedMotion = useReducedMotionPreference();
   const [isAppActive, setIsAppActive] = useState(
-    AppState.currentState === "active",
+    AppState.currentState !== "background" &&
+      AppState.currentState !== "inactive",
   );
 
   useEffect(() => {

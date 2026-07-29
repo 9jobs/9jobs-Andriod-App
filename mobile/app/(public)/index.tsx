@@ -7,6 +7,7 @@ import { onboardingSlides } from "@/features/onboarding/content";
 import { useSession } from "@/providers/SessionProvider";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { ScreenBackground } from "@/components/motion/screen-background";
 
 const { width } = Dimensions.get("window");
 
@@ -46,6 +47,7 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.container}>
+      <ScreenBackground />
       <View style={styles.header}>
         <BrandLogo size={112} />
       </View>

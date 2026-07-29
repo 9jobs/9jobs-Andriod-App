@@ -62,12 +62,12 @@ export function Screen({
   const body = (
     <AnimatedScreenContainer style={[styles.content, contentStyle]}>
       {children}
+      <ScreenBackground />
     </AnimatedScreenContainer>
   );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
-      <ScreenBackground />
       {scroll ? (
         <ScrollView
           ref={scrollRef}

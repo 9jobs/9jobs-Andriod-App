@@ -1,17 +1,16 @@
 import { use, useCallback, useState } from "react";
 import { useFocusEffect, usePathname } from "expo-router";
 import { StyleSheet, View } from "react-native";
-import { getBackgroundEffect } from "./animation-config";
 import { BackgroundAnimationContext } from "./background-animation-provider";
 import { FloatingParticlesBackground } from "./floating-particles-background";
-import { OrbitalGlow } from "./orbital-glow";
 import { SubtleMeshWave } from "./subtle-mesh-wave";
+import { OrbitalGlow } from "./orbital-glow";
+import { shouldShowOrbitalGlow } from "./animation-config";
 
 export function ScreenBackground() {
   const pathname = usePathname();
   const { animationsEnabled } = use(BackgroundAnimationContext);
   const [isFocused, setIsFocused] = useState(true);
-  const effect = getBackgroundEffect(pathname);
 
   useFocusEffect(
     useCallback(() => {
@@ -21,6 +20,7 @@ export function ScreenBackground() {
   );
 
   const shouldAnimate = animationsEnabled && isFocused;
+  const showOrbit = shouldShowOrbitalGlow(pathname);
 
   return (
     <View
@@ -29,16 +29,9 @@ export function ScreenBackground() {
       importantForAccessibility="no-hide-descendants"
       style={StyleSheet.absoluteFill}
     >
-      <FloatingParticlesBackground
-        animated={shouldAnimate}
-        minimal={effect === "minimal"}
-      />
-      {effect === "mesh" ? (
-        <SubtleMeshWave animated={shouldAnimate} />
-      ) : null}
-      {effect === "orbital" ? (
-        <OrbitalGlow animated={shouldAnimate} />
-      ) : null}
+      <SubtleMeshWave animated={shouldAnimate} />
+      <FloatingParticlesBackground animated={shouldAnimate} />
+      {showOrbit ? <OrbitalGlow animated={shouldAnimate} /> : null}
     </View>
   );
 }

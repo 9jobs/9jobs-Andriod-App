@@ -20,35 +20,6 @@ export const animationConfig = {
   },
 } as const;
 
-export type BackgroundEffect = "minimal" | "particles" | "mesh" | "orbital";
-
-export function getBackgroundEffect(pathname: string): BackgroundEffect {
-  if (
-    pathname.includes("/auth") ||
-    pathname.includes("/chat/") ||
-    pathname.includes("/security") ||
-    pathname.includes("/personal-information") ||
-    pathname.includes("/contact")
-  ) {
-    return "minimal";
-  }
-
-  if (
-    pathname.includes("/resume") ||
-    pathname.includes("/interview") ||
-    pathname.includes("/pricing")
-  ) {
-    return "orbital";
-  }
-
-  if (
-    pathname === "/" ||
-    pathname === "/(app)" ||
-    pathname.endsWith("/(app)") ||
-    pathname.endsWith("/services")
-  ) {
-    return "mesh";
-  }
-
-  return "particles";
+export function shouldShowOrbitalGlow(pathname: string): boolean {
+  return true;
 }

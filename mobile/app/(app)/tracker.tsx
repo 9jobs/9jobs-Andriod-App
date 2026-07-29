@@ -8,6 +8,7 @@ import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing, typography, radii, shadows } from "@/theme";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { FadeInView } from "@/components/motion/FadeInView";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const submittedTrackerStatuses = new Set([
@@ -503,7 +504,7 @@ export default function TrackerScreen() {
       {/* Job list */}
       <View style={styles.stack}>
         {filteredJobs.length > 0 ? (
-          filteredJobs.map((job) => {
+          filteredJobs.map((job, index) => {
             const rawApplication = applicationsByJobId.get(job.id);
             const syncedBeforeScreenshot = rawApplication?.before_screenshot_url?.trim() || "";
             const syncedAfterScreenshot = rawApplication?.after_screenshot_url?.trim() || "";
@@ -513,7 +514,8 @@ export default function TrackerScreen() {
             const hasBeforeScreenshot = Boolean(resolvedBeforeScreenshot);
             const hasAfterScreenshot = Boolean(resolvedAfterScreenshot);
             return (
-              <SoftPanel key={job.id}>
+              <FadeInView key={job.id} type="fade-up" delay={index * 50}>
+                <SoftPanel>
                 <Pressable
                   onPress={() =>
                     setSelectedJob({
@@ -565,7 +567,8 @@ export default function TrackerScreen() {
                 </Pressable>
                 <Text style={styles.time}>{job.postedAt}</Text>
                 <Text style={styles.tapHint}>Tap to update stage and sync with admin</Text>
-              </SoftPanel>
+                </SoftPanel>
+              </FadeInView>
             );
           })
         ) : (

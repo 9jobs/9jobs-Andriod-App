@@ -24,6 +24,10 @@ jest.mock("@/components/motion/FadeInView", () => ({
   FadeInView: ({ children }: { children: React.ReactNode }) => children,
 }));
 
+jest.mock("@/components/motion/screen-background", () => ({
+  ScreenBackground: () => null,
+}));
+
 import TestRenderer, { act } from "react-test-renderer";
 import IndexScreen from "@/app/index";
 import SplashScreen from "@/app/splash";
