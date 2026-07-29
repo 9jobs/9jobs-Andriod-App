@@ -13,6 +13,7 @@ import { useJobFilters } from "@/features/jobs/useJobFilters";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { FadeInView } from "@/components/motion/FadeInView";
 import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
+import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
 
 export default function HomeScreen() {
   const { user } = useSession();
@@ -48,10 +49,7 @@ export default function HomeScreen() {
   function openSearchScreen() {
     const normalizedQuery = searchQuery.trim();
     jobFilters.setQuery(normalizedQuery);
-    router.push({
-      pathname: "/(app)/jobs/search",
-      params: normalizedQuery ? { query: normalizedQuery } : undefined,
-    } as never);
+    router.push(resolveHomeSearchDestination(normalizedQuery) as never);
   }
 
   return (
