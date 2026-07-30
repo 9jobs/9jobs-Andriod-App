@@ -2509,12 +2509,22 @@ export default function App() {
         admin_notes: interviewForm.admin_notes,
       };
 
-      if (editItem) {
-        const { error } = await supabase.from("interviews").update(payload).eq("id", editItem.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("interviews").insert([payload]);
-        if (error) throw error;
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/interviews`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ...payload, ...(editItem?.id ? { id: editItem.id } : {}) }),
+      });
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
       }
 
       await logActivity(payload.client_id, payload.application_id, "interview_saved", "Interview saved", "Interview details updated from admin panel.", editItem ?? null, payload);

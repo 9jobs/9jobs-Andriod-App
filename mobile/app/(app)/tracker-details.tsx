@@ -535,6 +535,7 @@ export default function TrackerDetailsScreen() {
               screenshotMap[job.id];
             const hasBeforeScreenshot = Boolean(beforeScreenshotUri);
             const hasAfterScreenshot = Boolean(afterScreenshotUri);
+            const shouldShowScreenshots = activeFilter !== "Interview Completed";
 
             return (
               <View key={job.id} style={styles.detailCard}>
@@ -568,25 +569,27 @@ export default function TrackerDetailsScreen() {
                   <FactPill label="Match" value={`${job.matchScore ?? 0}%`} />
                   <FactPill label="Salary" value={job.salary || "N/A"} />
                   <FactPill label="Applied" value={syncedDate ? toTimezoneDateKey(syncedDate) : "Live"} />
-                  <FactPill
-                    label="Screenshots"
-                    value={
-                      hasBeforeScreenshot && hasAfterScreenshot
-                        ? "Before & After"
-                        : hasBeforeScreenshot
-                        ? "Before"
-                        : hasAfterScreenshot
-                        ? "After"
-                        : "Pending"
-                    }
-                  />
+                  {shouldShowScreenshots ? (
+                    <FactPill
+                      label="Screenshots"
+                      value={
+                        hasBeforeScreenshot && hasAfterScreenshot
+                          ? "Before & After"
+                          : hasBeforeScreenshot
+                          ? "Before"
+                          : hasAfterScreenshot
+                          ? "After"
+                          : "Pending"
+                      }
+                    />
+                  ) : null}
                 </View>
 
                 <Text style={styles.description}>
                   {job.description || "Admin-managed tracker updates for this role appear here as soon as they sync."}
                 </Text>
 
-                {hasBeforeScreenshot || hasAfterScreenshot ? (
+                {shouldShowScreenshots && (hasBeforeScreenshot || hasAfterScreenshot) ? (
                   <View style={styles.screenshotPair}>
                     {hasBeforeScreenshot ? (
                       <View style={styles.screenshotBlock}>

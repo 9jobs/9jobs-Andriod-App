@@ -1250,6 +1250,52 @@ router.get("/admin/tracker/client-data", authMiddleware, async (req: Authenticat
   }
 });
 
+router.post("/admin/tracker/interviews", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const interview = req.body || {};
+  const applicationId = Number(interview.application_id);
+  if (!interview.client_id || !Number.isFinite(applicationId) || !interview.interview_date) {
+    return res.status(400).json({ error: "Missing required interview details" });
+  }
+
+  const payload = {
+    client_id: String(interview.client_id),
+    application_id: applicationId,
+    interview_type: String(interview.interview_type || "video"),
+    interview_round: String(interview.interview_round || ""),
+    interview_date: interview.interview_date,
+    status: String(interview.status || "scheduled"),
+    interviewer_name: String(interview.interviewer_name || ""),
+    interviewer_email: String(interview.interviewer_email || ""),
+    admin_notes: String(interview.admin_notes || ""),
+  };
+
+  try {
+    const interviewId = Number(interview.id);
+    const query = Number.isFinite(interviewId) && interviewId > 0
+      ? supabase.from("interviews").update(payload).eq("id", interviewId).select().single()
+      : supabase.from("interviews").insert([payload]).select().single();
+    const { data, error } = await query;
+    if (error) throw error;
+
+    if (payload.status === "completed") {
+      const { error: applicationError } = await supabase
+        .from("applications")
+        .update({ status: "interview_completed", current_stage: "interview_completed" })
+        .eq("id", applicationId);
+      if (applicationError) throw applicationError;
+    }
+
+    return res.json({ success: true, interview: data });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/interviews failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save interview" });
+  }
+});
+
 router.patch("/admin/tracker/applications/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdminRole(req, res)) {
     return;
