@@ -38,9 +38,16 @@ type SavedJobRow = {
 };
 
 type InterviewRow = {
+  id?: number;
+  client_id?: string;
   application_id: number;
   interview_date: string;
   status: string | null;
+  interview_type?: string | null;
+  interview_round?: string | null;
+  interviewer_name?: string | null;
+  interviewer_email?: string | null;
+  admin_notes?: string | null;
 };
 
 type FollowUpRow = {

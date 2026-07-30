@@ -132,6 +132,15 @@ export default function TrackerDetailsScreen() {
   }, [snapshot?.rawApplications]);
 
   const jobsById = useMemo(() => new Map(jobs.map((job) => [job.id, job])), [jobs]);
+  const completedInterviewAppIds = useMemo(() => {
+    const ids = new Set<number>();
+    (snapshot?.trackerInterviews ?? []).forEach((interview) => {
+      if (interview.status === "completed" && typeof interview.application_id === "number") {
+        ids.add(interview.application_id);
+      }
+    });
+    return ids;
+  }, [snapshot?.trackerInterviews]);
   const applicationScreenshotMap = useMemo(() => {
     const mapped = new Map<number, { before?: string; after?: string }>();
 
@@ -202,7 +211,7 @@ export default function TrackerDetailsScreen() {
         case "Shortlisted":
           return job.isApplied && normalizedStatus === "shortlisted";
         case "Interview Completed":
-          return job.isApplied && normalizedStatus === "interview_completed";
+          return job.isApplied && (normalizedStatus === "interview_completed" || (rawApplication && completedInterviewAppIds.has(rawApplication.id)));
         case "Hired":
           return job.isApplied && (normalizedStatus === "hired" || Boolean(rawApplication?.hired_at));
         case "Rejected":
@@ -225,7 +234,7 @@ export default function TrackerDetailsScreen() {
       const rightDate = new Date(rightApplication?.application_date ?? rightApplication?.applied_at ?? rightApplication?.created_at ?? 0).getTime();
       return rightDate - leftDate;
     });
-  }, [activeFilter, applicationsByJobId, jobs, todayApplicationJobIds]);
+  }, [activeFilter, applicationsByJobId, jobs, todayApplicationJobIds, completedInterviewAppIds]);
 
   const detailEntries = useMemo(() => {
     if (activeFilter === "Follow-ups Due") {
@@ -536,6 +545,13 @@ export default function TrackerDetailsScreen() {
             const hasBeforeScreenshot = Boolean(beforeScreenshotUri);
             const hasAfterScreenshot = Boolean(afterScreenshotUri);
             const shouldShowScreenshots = activeFilter !== "Interview Completed";
+            const completedInterviews = rawApplication
+              ? (snapshot?.trackerInterviews ?? []).filter(
+                  (interview) =>
+                    interview.application_id === rawApplication.id &&
+                    interview.status === "completed"
+                )
+              : [];
 
             return (
               <View key={job.id} style={styles.detailCard}>
@@ -550,6 +566,7 @@ export default function TrackerDetailsScreen() {
                       job.status === "offer" && styles.offerBadge,
                       job.status === "interviewing" && styles.interviewBadge,
                       job.status === "rejected" && styles.rejectedBadge,
+                      job.status === "interview_completed" && styles.interviewCompletedBadge,
                     ]}
                   >
                     <Text
@@ -558,9 +575,10 @@ export default function TrackerDetailsScreen() {
                         job.status === "offer" && styles.offerBadgeText,
                         job.status === "interviewing" && styles.interviewBadgeText,
                         job.status === "rejected" && styles.rejectedBadgeText,
+                        job.status === "interview_completed" && styles.interviewCompletedBadgeText,
                       ]}
                     >
-                      {job.status}
+                      {job.status === "interview_completed" ? "Interview Completed" : job.status}
                     </Text>
                   </View>
                 </View>
@@ -611,6 +629,36 @@ export default function TrackerDetailsScreen() {
                         />
                       </View>
                     ) : null}
+                  </View>
+                ) : null}
+
+                {activeFilter === "Interview Completed" && completedInterviews.length > 0 ? (
+                  <View style={styles.completedInterviewsSection}>
+                    <Text style={styles.sectionTitle}>Completed Interviews</Text>
+                    {completedInterviews.map((interview) => (
+                      <View key={interview.id} style={styles.interviewDetailRow}>
+                        <View style={styles.interviewDot} />
+                        <View style={styles.interviewInfo}>
+                          <Text style={styles.interviewRoundText}>
+                            {interview.interview_round || "Completed Round"} ({interview.interview_type || "video"})
+                          </Text>
+                          <Text style={styles.interviewDateText}>
+                            Date: {interview.interview_date ? toTimezoneDateKey(interview.interview_date) : "N/A"}
+                          </Text>
+                          {interview.interviewer_name || interview.interviewer_email ? (
+                            <Text style={styles.interviewerText}>
+                              Interviewer: {interview.interviewer_name || "N/A"}{" "}
+                              {interview.interviewer_email ? `(${interview.interviewer_email})` : ""}
+                            </Text>
+                          ) : null}
+                          {interview.admin_notes ? (
+                            <Text style={styles.interviewNotesText}>
+                              Notes: {interview.admin_notes}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    ))}
                   </View>
                 ) : null}
 
@@ -888,6 +936,13 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     fontWeight: "700",
   },
+  interviewCompletedBadge: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+  },
+  interviewCompletedBadgeText: {
+    color: "#10B981",
+    fontWeight: "700",
+  },
   factGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1065,5 +1120,64 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 14,
+  },
+  completedInterviewsSection: {
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    ...typography.title,
+    fontSize: 14,
+    color: colors.text,
+  },
+  interviewDetailRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    backgroundColor: colors.background,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  interviewDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accentDark,
+    marginTop: 6,
+  },
+  interviewInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  interviewRoundText: {
+    ...typography.title,
+    fontSize: 13,
+    color: colors.text,
+    textTransform: "capitalize",
+  },
+  interviewDateText: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.mutedText,
+  },
+  interviewerText: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.mutedText,
+  },
+  interviewNotesText: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.text,
+    backgroundColor: "rgba(163, 230, 53, 0.04)",
+    padding: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 4,
   },
 });
