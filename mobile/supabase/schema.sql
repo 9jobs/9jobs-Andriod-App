@@ -164,6 +164,8 @@ alter table applications add column if not exists rejection_reason text default 
 alter table applications add column if not exists offer_amount numeric(12,2);
 alter table applications add column if not exists offer_received_at timestamptz;
 alter table applications add column if not exists hired_at timestamptz;
+alter table applications add column if not exists before_screenshot_url text default '';
+alter table applications add column if not exists after_screenshot_url text default '';
 alter table applications add column if not exists updated_at timestamptz default now();
 
 update applications

@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
     "migrate": "ts-node src/migrate.ts",
+    "migrate:tracker-screenshots": "ts-node src/migrateTrackerScreenshots.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

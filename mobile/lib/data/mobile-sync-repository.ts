@@ -8,6 +8,10 @@ import type { Job } from "@/types/jobs";
 import type { CandidateProfile } from "@/types/profile";
 import type { SessionUser } from "@/types/auth";
 import { storageKeys } from "@/lib/utils/storage";
+import {
+  latestApplicationsByJob,
+  mergeApplicationScreenshotsFromActivity,
+} from "@/lib/data/tracker-screenshot-sync";
 
 type ProfileRow = {
   id: string;
@@ -297,7 +301,7 @@ const seedPricingPlans = [
 const supportWelcomeMessage = "Welcome to the live 9Jobs preview. This thread is synced with the admin panel.";
 const fallbackSupportReply =
   "Thanks for contacting 9Jobs. Your message has been received and shared with our support team. An admin will respond shortly.";
-const SNAPSHOT_CACHE_SCHEMA_VERSION = "2026-07-23-1";
+const SNAPSHOT_CACHE_SCHEMA_VERSION = "2026-07-30-screenshots-2";
 
 export type LiveServiceCard = {
   id: string;
@@ -996,10 +1000,15 @@ function buildSnapshotFromSource({
     categoriesById,
   );
 
-  const rawApplications = applicationsRows.map((application) => ({
-    ...application,
-    status: application.status === "interview" ? "interviewing" : application.status,
-  }));
+  const rawApplications = mergeApplicationScreenshotsFromActivity(
+    latestApplicationsByJob(
+      applicationsRows.map((application) => ({
+        ...application,
+        status: application.status === "interview" ? "interviewing" : application.status,
+      })),
+    ),
+    activityLogRows,
+  );
 
   const activePlanId = subscriptionRow?.plan_id ?? null;
   const resumeScore = resumeScoreRow?.score ?? 0;

@@ -223,6 +223,7 @@ body {
 /* Main Content Area */
 .main-content {
   flex-grow: 1;
+  min-width: 0;
   margin-left: 280px;
   padding: 40px;
   min-height: 100vh;
@@ -373,6 +374,7 @@ body {
 
 /* Section Cards */
 .card {
+  min-width: 0;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -435,6 +437,41 @@ body {
 
 .table tbody tr:hover {
   background-color: rgba(0, 0, 0, 0.01);
+}
+
+.tracker-applications-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.tracker-applications-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.tracker-applications-table th,
+.tracker-applications-table td {
+  white-space: nowrap;
+}
+
+.tracker-applications-table .tracker-actions-column {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  min-width: 136px;
+  background-color: var(--bg-secondary);
+  box-shadow: -8px 0 12px -12px rgba(15, 23, 42, 0.45);
+}
+
+.tracker-applications-table th.tracker-actions-column {
+  z-index: 3;
+  background-color: var(--bg-primary);
+}
+
+.tracker-applications-table tbody tr:hover .tracker-actions-column {
+  background-color: var(--bg-secondary);
 }
 
 /* Badges / Tags */

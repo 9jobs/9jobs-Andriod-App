@@ -172,7 +172,7 @@ async function createCompressedImageDataUrl(file: File) {
       const image = new Image();
       image.onload = () => {
         const canvas = document.createElement("canvas");
-        const maxSize = 160;
+        const maxSize = 1280;
         const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
         canvas.width = Math.max(1, Math.round(image.width * scale));
         canvas.height = Math.max(1, Math.round(image.height * scale));
@@ -184,7 +184,7 @@ async function createCompressedImageDataUrl(file: File) {
         }
 
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.55));
+        resolve(canvas.toDataURL("image/jpeg", 0.9));
       };
       image.onerror = () => reject(new Error("Could not process selected image."));
       image.src = reader.result;
@@ -344,19 +344,6 @@ function connectAdminSocket(token: string, activeChatUserId: string | undefined,
   adminSocket.on("conversation_deleted", (data: any) => {
     onEvent("conversation_deleted", data);
   });
-}
-
-function mergePreviewJobs(existingJobs: any[]) {
-  const jobMap = new Map<string, any>();
-  for (const job of existingJobs) {
-    jobMap.set(job.id, job);
-  }
-  for (const job of previewTrackerJobs) {
-    if (!jobMap.has(job.id)) {
-      jobMap.set(job.id, job);
-    }
-  }
-  return Array.from(jobMap.values());
 }
 
 function mergeSavedJobEntriesFromRows({
@@ -637,6 +624,7 @@ export default function App() {
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [trackerMetricFilter, setTrackerMetricFilter] = useState("all");
 
   // Chat state
   const [activeChatUser, setActiveChatUser] = useState<any>(null);
@@ -1482,10 +1470,30 @@ export default function App() {
   };
 
   const fetchJobs = async () => {
+    try {
+      const token = await ensureAdminToken();
+      if (token && BACKEND_URL) {
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/jobs`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        setJobs((payload?.jobs || []) as any[]);
+        return;
+      }
+    } catch (backendError) {
+      console.warn("fetchJobs backend load failed, falling back to direct Supabase query:", backendError);
+    }
+
     const { data: jobsData, error: jobsError } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
     if (jobsError && !isRowLevelSecurityError(jobsError) && !isMissingRelationError(jobsError)) throw jobsError;
-    const resolvedJobs = mergePreviewJobs((jobsData || []) as any[]);
-    setJobs(resolvedJobs);
+    setJobs((jobsData || []) as any[]);
   };
 
   const fetchApplications = async () => {
@@ -1661,6 +1669,30 @@ export default function App() {
   };
 
   const fetchTrackerClientData = async (clientId: string) => {
+    const token = await ensureAdminToken();
+    if (token && BACKEND_URL) {
+      const response = await fetch(
+        `${BACKEND_URL}/api/admin/tracker/client-data?clientId=${encodeURIComponent(clientId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+
+      if (response.ok) {
+        const payload = await response.json();
+        setApplications(payload.applications || []);
+        setTrackerInterviews(payload.interviews || []);
+        setTrackerFollowUps(payload.followUps || []);
+        setTrackerContacts(payload.contacts || []);
+        setTrackerColdEmails(payload.coldEmails || []);
+        setTrackerScores(payload.scores || []);
+        setTrackerActivities(payload.activity || []);
+        return;
+      }
+    }
+
     const fetchTrackerDataset = async (path: string, fallbackQuery: () => Promise<{ data: any; error: any }>, key: string) => {
       const directResult = await fallbackQuery();
 
@@ -2169,7 +2201,7 @@ export default function App() {
       }
 
       showSuccess(jobForm.user_id ? "Saved role synced to the app successfully!" : "Job saved successfully!");
-      void Promise.all([fetchJobs(), fetchUsers(), fetchSavedJobs()]);
+      await Promise.all([fetchJobs(), fetchUsers(), fetchSavedJobs()]);
     } catch (err: any) {
       showError(err.message);
     }
@@ -2383,11 +2415,9 @@ export default function App() {
         work_type: selectedJob.job_type || "Full-time",
         employment_type: selectedJob.job_type || "Full-time",
         job_description: selectedJob.description || "",
-        created_by_admin_id: user?.id || "admin",
-      };
-      const screenshotPayload = {
         before_screenshot_url: trackerForm.before_screenshot_url || "",
         after_screenshot_url: trackerForm.after_screenshot_url || "",
+        created_by_admin_id: user?.id || "admin",
       };
       let savedApplicationId = editItem?.id ? Number(editItem.id) : null;
 
@@ -2429,7 +2459,7 @@ export default function App() {
         "Application saved",
         "Application tracker entry created or updated from admin panel.",
         editItem ?? null,
-        { ...payload, ...screenshotPayload },
+        payload,
       );
       showSuccess("Job tracker updated successfully!");
       if (payload.user_id) {
@@ -2886,6 +2916,8 @@ export default function App() {
         next_action: quickUpdateForm.next_action,
         next_action_date: quickUpdateForm.next_action_date || null,
         notes: quickUpdateForm.notes,
+        before_screenshot_url: quickUpdateForm.before_screenshot_url || "",
+        after_screenshot_url: quickUpdateForm.after_screenshot_url || "",
         is_saved: quickUpdateForm.status === "saved",
         is_active: !["hired", "rejected", "withdrawn", "closed"].includes(quickUpdateForm.status),
       };
@@ -2894,11 +2926,24 @@ export default function App() {
       if (quickUpdateForm.status === "hired") payload.hired_at = new Date().toISOString();
 
       const currentApplication = applications.find((application) => application.id === applicationId);
-      const { error } = await supabase.from("applications").update(payload).eq("id", applicationId);
-      if (error) throw error;
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
+      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/applications/${applicationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+      }
 
       await logActivity(currentApplication?.user_id || selectedTrackerClientId, applicationId, "application_quick_update", "Application quick updated", "Status and next action updated from quick update modal.", currentApplication ?? null, payload);
       showSuccess("Application updated successfully!");
+      setIsModalOpen(false);
       await fetchTrackerClientData(currentApplication?.user_id || selectedTrackerClientId);
     } catch (err: any) {
       showError(err.message);
@@ -2970,6 +3015,54 @@ export default function App() {
 
         showSuccess("Item deleted successfully.");
         await fetchSuccessStories();
+        return;
+      }
+
+      if (table === "applications") {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/applications/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+
+        showSuccess("Application deleted successfully.");
+        if (selectedTrackerClientId) {
+          await fetchTrackerClientData(selectedTrackerClientId);
+        } else {
+          await fetchApplications();
+        }
+        return;
+      }
+
+      if (table === "jobs") {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/jobs/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+
+        showSuccess("Opportunity deleted successfully.");
+        await Promise.all([fetchJobs(), fetchApplications(), fetchSavedJobs()]);
         return;
       }
 
@@ -3160,10 +3253,19 @@ export default function App() {
       if (status === "offer_received") patch.offer_received_at = new Date().toISOString();
       if (status === "hired") patch.hired_at = new Date().toISOString();
       const targetApplication = applications.find((application) => application.id === appId);
-      const { error } = await supabase.from("applications").update(patch).eq("id", appId);
-      if (error) throw error;
-      if (targetApplication?.user_id && targetApplication?.job_id) {
-        await syncSavedJobFlag(targetApplication.user_id, targetApplication.job_id, status === "saved");
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
+      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/applications/${appId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
       }
       if (targetApplication) {
         await logActivity(targetApplication.user_id, appId, "status_changed", "Application status changed", `Application moved to ${status}.`, targetApplication, patch);
@@ -3685,6 +3787,8 @@ export default function App() {
     return matchesSearch && j.job_type === filterType;
   });
 
+  const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
+
   const filteredApplications = applications.filter((a) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
@@ -3694,8 +3798,41 @@ export default function App() {
       a.company_name?.toLowerCase?.().includes(query) ||
       selectedTrackerClient?.full_name?.toLowerCase().includes(query) ||
       selectedTrackerClient?.email?.toLowerCase().includes(query);
-    if (filterType === "all") return matchesSearch;
-    return matchesSearch && a.status === filterType;
+    if (!matchesSearch) return false;
+    if (filterType !== "all" && a.status !== filterType) return false;
+
+    const normalizedStatus = String(a.status || "").toLowerCase();
+    const normalizedStage = String(a.current_stage || "").toLowerCase();
+    const submittedStatuses = [
+      "applied", "under_review", "recruiter_contacted", "shortlisted",
+      "phone_interview", "video_interview", "face_to_face_interview",
+      "interview_scheduled", "interview_completed", "second_interview",
+      "reference_check", "offer_received", "hired", "rejected",
+      "withdrawn", "closed", "contacted", "interviewing", "offer",
+    ];
+    const interviewStatuses = [
+      "phone_interview", "video_interview", "face_to_face_interview",
+      "interview_scheduled", "second_interview", "reference_check", "interviewing",
+    ];
+
+    if (trackerMetricFilter === "all") return true;
+    if (trackerMetricFilter === "active") {
+      return a.is_active !== false && !["hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus);
+    }
+    if (trackerMetricFilter === "submitted") return submittedStatuses.includes(normalizedStatus);
+    if (trackerMetricFilter === "interviewing") return interviewStatuses.includes(normalizedStatus);
+    if (trackerMetricFilter === "today") {
+      const timezone = selectedTrackerClient?.timezone || "Australia/Melbourne";
+      const applicationDate = a.application_date || a.applied_at || a.created_at;
+      return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date(applicationDate)) ===
+        new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+    }
+    if (trackerMetricFilter === "interview_completed") {
+      return normalizedStatus === "interview_completed" ||
+        normalizedStage === "interview_completed" ||
+        trackerInterviews.some((interview) => interview.application_id === a.id && interview.status === "completed");
+    }
+    return normalizedStatus === trackerMetricFilter || normalizedStage === trackerMetricFilter;
   });
 
   const filteredSavedJobs = savedJobEntries.filter((application) => {
@@ -3726,8 +3863,6 @@ export default function App() {
       .some((value) => String(value || "").toLowerCase().includes(query));
   });
 
-
-  const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
   const buildSavedJobModalItem = (item: any, title: string, company: string, location: string, salary: string, tags: string[], jobLink: string) => ({
     ...(item.jobs || {}),
     id: item.job_id,
@@ -3756,6 +3891,30 @@ export default function App() {
     scores: trackerScores,
     timezone: selectedTrackerClient?.timezone || "Australia/Melbourne",
   });
+  const openTrackerMetric = (metric: string) => {
+    setSearchQuery("");
+    setFilterType("all");
+
+    if (metric === "follow_ups") {
+      setTrackerSection("follow_ups");
+      return;
+    }
+    if (metric === "scores") {
+      setTrackerSection("scores");
+      return;
+    }
+    if (metric === "cold_emails") {
+      setTrackerSection("cold_emails");
+      return;
+    }
+    if (metric === "contacts") {
+      setTrackerSection("contacts");
+      return;
+    }
+
+    setTrackerMetricFilter(metric);
+    setTrackerSection("applications");
+  };
   const trackerApplicationOptions = applications
     .filter((application) => !selectedTrackerClientId || application.user_id === selectedTrackerClientId || application.client_id === selectedTrackerClientId)
     .map((application) => ({
@@ -4545,7 +4704,7 @@ export default function App() {
               <div className="controls-row" style={{ marginBottom: 0 }}>
                 <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                   <label className="form-label">Select Client</label>
-                  <select className="form-input" value={selectedTrackerClientId} onChange={(e) => setSelectedTrackerClientId(e.target.value)}>
+                  <select className="form-input" value={selectedTrackerClientId} onChange={(e) => { setSelectedTrackerClientId(e.target.value); setTrackerMetricFilter("all"); }}>
                     <option value="">Choose client</option>
                     {users.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
@@ -4571,27 +4730,27 @@ export default function App() {
             </div>
 
             <div className="stats-grid">
-              <div className="stat-card">
+              <div className="stat-card" role="button" tabIndex={0} data-testid="tracker-metric-active" onClick={() => openTrackerMetric("active")}>
                 <div className="stat-icon"><Layers size={22} /></div>
                 <div className="stat-value">{selectedTrackerMetrics.currentFocus.totalActiveRoles}</div>
                 <div className="stat-label">Total Active Roles</div>
               </div>
-              <div className="stat-card">
+              <div className="stat-card" role="button" tabIndex={0} data-testid="tracker-metric-applied" onClick={() => openTrackerMetric("submitted")}>
                 <div className="stat-icon"><Layers size={22} /></div>
                 <div className="stat-value">{selectedTrackerMetrics.applied}</div>
                 <div className="stat-label">Applied</div>
               </div>
-              <div className="stat-card">
+              <div className="stat-card" role="button" tabIndex={0} data-testid="tracker-metric-interviewing" onClick={() => openTrackerMetric("interviewing")}>
                 <div className="stat-icon"><MessageSquare size={22} /></div>
                 <div className="stat-value">{selectedTrackerMetrics.interviewing}</div>
                 <div className="stat-label">Interviewing</div>
               </div>
-              <div className="stat-card">
+              <div className="stat-card" role="button" tabIndex={0} data-testid="tracker-metric-offers" onClick={() => openTrackerMetric("offer_received")}>
                 <div className="stat-icon"><DollarSign size={22} /></div>
                 <div className="stat-value">{selectedTrackerMetrics.offers}</div>
                 <div className="stat-label">Offers</div>
               </div>
-              <div className="stat-card">
+              <div className="stat-card" role="button" tabIndex={0} data-testid="tracker-metric-saved" onClick={() => openTrackerMetric("saved")}>
                 <div className="stat-icon"><FileText size={22} /></div>
                 <div className="stat-value">{selectedTrackerMetrics.saved}</div>
                 <div className="stat-label">Saved</div>
@@ -4604,22 +4763,29 @@ export default function App() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px" }}>
                 {[
-                  ["Applications Today", selectedTrackerMetrics.applicationsToday],
-                  ["Under Review", selectedTrackerMetrics.underReview],
-                  ["Recruiter Contacted", selectedTrackerMetrics.recruiterContacted],
-                  ["Shortlisted", selectedTrackerMetrics.shortlisted],
-                  ["Interview Completed", selectedTrackerMetrics.interviewCompleted],
-                  ["Hired", selectedTrackerMetrics.hired],
-                  ["Rejected", selectedTrackerMetrics.rejected],
-                  ["Success Rate", `${selectedTrackerMetrics.successRate}%`],
-                  ["Response Rate", `${selectedTrackerMetrics.responseRate}%`],
-                  ["Follow-ups Due", selectedTrackerMetrics.followUpsDue],
-                  ["AI Match Score", `${selectedTrackerMetrics.aiMatchScore}%`],
-                  ["ATS Score", `${selectedTrackerMetrics.atsScore}/100`],
-                  ["Cold Emails Sent", selectedTrackerMetrics.coldEmailsSent],
-                  ["Contacts Reached", selectedTrackerMetrics.contactsReached],
-                ].map(([label, value]) => (
-                  <div key={String(label)} style={{ border: "1px solid var(--border-color)", borderRadius: "18px", padding: "16px 18px", background: "var(--surface)" }}>
+                  ["Applications Today", selectedTrackerMetrics.applicationsToday, "today"],
+                  ["Under Review", selectedTrackerMetrics.underReview, "under_review"],
+                  ["Recruiter Contacted", selectedTrackerMetrics.recruiterContacted, "recruiter_contacted"],
+                  ["Shortlisted", selectedTrackerMetrics.shortlisted, "shortlisted"],
+                  ["Interview Completed", selectedTrackerMetrics.interviewCompleted, "interview_completed"],
+                  ["Hired", selectedTrackerMetrics.hired, "hired"],
+                  ["Rejected", selectedTrackerMetrics.rejected, "rejected"],
+                  ["Success Rate", `${selectedTrackerMetrics.successRate}%`, "submitted"],
+                  ["Response Rate", `${selectedTrackerMetrics.responseRate}%`, "submitted"],
+                  ["Follow-ups Due", selectedTrackerMetrics.followUpsDue, "follow_ups"],
+                  ["AI Match Score", `${selectedTrackerMetrics.aiMatchScore}%`, "scores"],
+                  ["ATS Score", `${selectedTrackerMetrics.atsScore}/100`, "scores"],
+                  ["Cold Emails Sent", selectedTrackerMetrics.coldEmailsSent, "cold_emails"],
+                  ["Contacts Reached", selectedTrackerMetrics.contactsReached, "contacts"],
+                ].map(([label, value, metric]) => (
+                  <div
+                    key={String(label)}
+                    role="button"
+                    tabIndex={0}
+                    data-testid={`tracker-metric-${String(metric)}`}
+                    onClick={() => openTrackerMetric(String(metric))}
+                    style={{ border: "1px solid var(--border-color)", borderRadius: "18px", padding: "16px 18px", background: "var(--surface)" }}
+                  >
                     <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
                     <div style={{ fontSize: "28px", fontWeight: 700 }}>{value}</div>
                   </div>
@@ -4646,7 +4812,7 @@ export default function App() {
                     key={value}
                     className={trackerSection === value ? "btn btn-primary" : "btn btn-secondary"}
                     style={{ padding: "8px 14px" }}
-                    onClick={() => setTrackerSection(value as any)}
+                    onClick={() => { setTrackerSection(value as any); if (value === "applications") setTrackerMetricFilter("all"); }}
                   >
                     {label}
                   </button>
@@ -4687,7 +4853,7 @@ export default function App() {
                 </div>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                   <Filter size={16} style={{ color: "var(--text-secondary)" }} />
-                  <select className="form-input" style={{ width: "190px" }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                  <select className="form-input" style={{ width: "190px" }} value={filterType} onChange={(e) => { setFilterType(e.target.value); setTrackerMetricFilter("all"); }}>
                     <option value="all">All Stages</option>
                     {applicationStatusOptions.map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
@@ -4696,17 +4862,28 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="table-responsive">
-                <table className="table">
+              <div className="table-responsive tracker-applications-table-wrap">
+                <table className="table tracker-applications-table">
                   <thead>
                     <tr>
                       <th>Candidate</th>
                       <th>Job Title</th>
                       <th>Company</th>
+                      <th>Location</th>
                       <th>Status</th>
                       <th>Next Action</th>
+                      <th>Current Stage</th>
+                      <th>Work Type</th>
+                      <th>Priority</th>
+                      <th>Source</th>
+                      <th>Recruiter</th>
+                      <th>Hiring Manager</th>
+                      <th>Next Action Date</th>
                       <th>Applied Date</th>
-                      <th>Actions</th>
+                      <th>Before Screenshot</th>
+                      <th>After Screenshot</th>
+                      <th>Notes</th>
+                      <th className="tracker-actions-column">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4719,6 +4896,7 @@ export default function App() {
                         </td>
                         <td>{a.job_title || a.jobs?.title}</td>
                         <td>{a.company_name || a.jobs?.company}</td>
+                        <td>{a.job_location || a.jobs?.location || "—"}</td>
                         <td>
                           <select
                             className="form-input"
@@ -4732,8 +4910,18 @@ export default function App() {
                           </select>
                         </td>
                         <td>{a.next_action || "—"}</td>
+                        <td>{a.current_stage || a.status || "—"}</td>
+                        <td>{a.work_type || a.employment_type || a.jobs?.job_type || "—"}</td>
+                        <td>{a.priority || "—"}</td>
+                        <td>{a.source || "—"}</td>
+                        <td>{a.recruiter_name || a.recruiter_email || a.recruiter_phone || "—"}</td>
+                        <td>{a.hiring_manager_name || a.hiring_manager_email || "—"}</td>
+                        <td>{a.next_action_date ? new Date(a.next_action_date).toLocaleString() : "—"}</td>
                         <td>{new Date(a.application_date || a.created_at).toLocaleDateString()}</td>
-                        <td>
+                        <td>{a.before_screenshot_url ? <a href={a.before_screenshot_url} target="_blank" rel="noreferrer">View</a> : "—"}</td>
+                        <td>{a.after_screenshot_url ? <a href={a.after_screenshot_url} target="_blank" rel="noreferrer">View</a> : "—"}</td>
+                        <td>{a.notes || "—"}</td>
+                        <td className="tracker-actions-column">
                           <div style={{ display: "flex", gap: "8px" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("tracker", a)} title="Edit tracker">
                               <Edit size={14} />
@@ -4749,7 +4937,7 @@ export default function App() {
                       </tr>
                     ))}
                     {filteredApplications.length === 0 && (
-                      <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No tracker records found.</td></tr>
+                      <tr><td colSpan={18} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No tracker records found.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -6162,6 +6350,32 @@ export default function App() {
                 <div className="form-group">
                   <label className="form-label">Notes</label>
                   <textarea rows={4} className="form-input" value={quickUpdateForm.notes} onChange={(e) => setQuickUpdateForm({ ...quickUpdateForm, notes: e.target.value })} />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Before Screenshot</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="form-input"
+                      onChange={(e) => void handleTrackerScreenshotChange(e, "before_screenshot_url")}
+                    />
+                    {quickUpdateForm.before_screenshot_url ? (
+                      <img src={quickUpdateForm.before_screenshot_url} alt="Before screenshot" style={{ width: "100%", maxHeight: "140px", objectFit: "contain", marginTop: "10px", borderRadius: "12px", border: "1px solid var(--border-color)" }} />
+                    ) : null}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">After Screenshot</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="form-input"
+                      onChange={(e) => void handleTrackerScreenshotChange(e, "after_screenshot_url")}
+                    />
+                    {quickUpdateForm.after_screenshot_url ? (
+                      <img src={quickUpdateForm.after_screenshot_url} alt="After screenshot" style={{ width: "100%", maxHeight: "140px", objectFit: "contain", marginTop: "10px", borderRadius: "12px", border: "1px solid var(--border-color)" }} />
+                    ) : null}
+                  </div>
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Quick Update</button>
               </form>

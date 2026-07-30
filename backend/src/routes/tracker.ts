@@ -133,6 +133,8 @@ function normalizeApplicationPayload(application: any) {
     offer_amount: application.offer_amount ?? null,
     offer_received_at: application.offer_received_at || null,
     hired_at: application.hired_at || null,
+    before_screenshot_url: String(application.before_screenshot_url || ""),
+    after_screenshot_url: String(application.after_screenshot_url || ""),
     created_by_admin_id: String(application.created_by_admin_id || "admin"),
   };
 }
@@ -319,6 +321,17 @@ async function ensureJobsTableColumns(client: any) {
   await client.query(`
     alter table if exists jobs
     add column if not exists job_link text default ''
+  `);
+}
+
+async function ensureApplicationScreenshotColumns(client: any) {
+  await client.query(`
+    alter table if exists applications
+    add column if not exists before_screenshot_url text default ''
+  `);
+  await client.query(`
+    alter table if exists applications
+    add column if not exists after_screenshot_url text default ''
   `);
 }
 
@@ -765,6 +778,7 @@ async function createApplicationWithPostgres(application: any) {
   const client = await pool.connect();
 
   try {
+    await ensureApplicationScreenshotColumns(client);
     const result = await client.query(
       `
       insert into applications (
@@ -784,9 +798,11 @@ async function createApplicationWithPostgres(application: any) {
         work_type,
         employment_type,
         job_description,
+        before_screenshot_url,
+        after_screenshot_url,
         created_by_admin_id
       ) values (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
       )
       returning *
       `,
@@ -807,6 +823,8 @@ async function createApplicationWithPostgres(application: any) {
         application.work_type || "",
         application.employment_type || "",
         application.job_description || "",
+        application.before_screenshot_url || "",
+        application.after_screenshot_url || "",
         application.created_by_admin_id || "admin",
       ],
     );
@@ -823,6 +841,7 @@ async function updateApplicationWithPostgres(applicationId: number, application:
   const client = await pool.connect();
 
   try {
+    await ensureApplicationScreenshotColumns(client);
     const result = await client.query(
       `
       update applications set
@@ -842,7 +861,9 @@ async function updateApplicationWithPostgres(applicationId: number, application:
         work_type = $15,
         employment_type = $16,
         job_description = $17,
-        created_by_admin_id = $18,
+        before_screenshot_url = $18,
+        after_screenshot_url = $19,
+        created_by_admin_id = $20,
         updated_at = now()
       where id = $1
       returning *
@@ -865,6 +886,8 @@ async function updateApplicationWithPostgres(applicationId: number, application:
         application.work_type || "",
         application.employment_type || "",
         application.job_description || "",
+        application.before_screenshot_url || "",
+        application.after_screenshot_url || "",
         application.created_by_admin_id || "admin",
       ],
     );
@@ -1076,8 +1099,14 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
         }
       }
 
-      const query = application.id
-        ? supabase.from("applications").update(normalizedApplication).eq("id", Number(application.id)).select().single()
+      const existingApplicationId = application.id
+        ? Number(application.id)
+        : await findLatestSupabaseApplicationId(
+            normalizedApplication.user_id,
+            normalizedApplication.job_id,
+          );
+      const query = existingApplicationId
+        ? supabase.from("applications").update(normalizedApplication).eq("id", existingApplicationId).select().single()
         : supabase.from("applications").insert([normalizedApplication]).select().single();
       const { data, error } = await query;
       if (error) throw error;
@@ -1114,8 +1143,14 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
       await upsertJobWithPostgres(normalizedJob);
     }
 
-    const saved = application.id
-      ? await updateApplicationWithPostgres(Number(application.id), normalizedApplication)
+    const existingApplication = application.id
+      ? { id: Number(application.id) }
+      : await getApplicationByUserAndJobWithPostgres(
+          normalizedApplication.user_id,
+          normalizedApplication.job_id,
+        );
+    const saved = existingApplication?.id
+      ? await updateApplicationWithPostgres(Number(existingApplication.id), normalizedApplication)
       : await createApplicationWithPostgres(normalizedApplication);
     if (normalizedApplication.is_saved) {
       await upsertSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
@@ -1126,6 +1161,197 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/tracker/applications failed:", err);
     return res.status(500).json({ error: err.message || "Failed to create tracker application" });
+  }
+});
+
+router.get("/admin/tracker/client-data", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const clientId = String(req.query.clientId || "").trim();
+  if (!clientId) {
+    return res.status(400).json({ error: "Missing tracker client id" });
+  }
+
+  try {
+    const [
+      applicationsResult,
+      interviewsResult,
+      followUpsResult,
+      contactsResult,
+      coldEmailsResult,
+      scoresResult,
+      activityResult,
+    ] = await Promise.all([
+      supabase
+        .from("applications")
+        .select("*, jobs(*)")
+        .eq("user_id", clientId)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("interviews")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("interview_date", { ascending: false }),
+      supabase
+        .from("follow_ups")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("due_date", { ascending: true }),
+      supabase
+        .from("recruiter_contacts")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("contact_date", { ascending: false }),
+      supabase
+        .from("cold_emails")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("sent_at", { ascending: false }),
+      supabase
+        .from("client_scores")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("calculated_at", { ascending: false }),
+      supabase
+        .from("activity_logs")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    const results = [
+      applicationsResult,
+      interviewsResult,
+      followUpsResult,
+      contactsResult,
+      coldEmailsResult,
+      scoresResult,
+      activityResult,
+    ];
+    const firstError = results.find((result) => result.error)?.error;
+    if (firstError) {
+      throw firstError;
+    }
+
+    return res.json({
+      applications: applicationsResult.data ?? [],
+      interviews: interviewsResult.data ?? [],
+      followUps: followUpsResult.data ?? [],
+      contacts: contactsResult.data ?? [],
+      coldEmails: coldEmailsResult.data ?? [],
+      scores: scoresResult.data ?? [],
+      activity: activityResult.data ?? [],
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/client-data failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch tracker client data" });
+  }
+});
+
+router.patch("/admin/tracker/applications/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const applicationId = Number(req.params.id);
+  if (!Number.isFinite(applicationId)) {
+    return res.status(400).json({ error: "Invalid tracker application id" });
+  }
+
+  const allowedFields = [
+    "status",
+    "current_stage",
+    "is_saved",
+    "is_active",
+    "next_action",
+    "next_action_date",
+    "notes",
+    "offer_received_at",
+    "hired_at",
+    "before_screenshot_url",
+    "after_screenshot_url",
+  ];
+  const patch = Object.fromEntries(
+    allowedFields
+      .filter((field) => Object.prototype.hasOwnProperty.call(req.body || {}, field))
+      .map((field) => [field, req.body[field]]),
+  );
+
+  if (Object.keys(patch).length === 0) {
+    return res.status(400).json({ error: "No tracker application fields supplied" });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("applications")
+      .update(patch)
+      .eq("id", applicationId)
+      .select()
+      .single();
+    if (error) throw error;
+
+    if (data?.user_id && data?.job_id) {
+      if (data.is_saved || data.status === "saved") {
+        const { error: savedJobError } = await supabase
+          .from("saved_jobs")
+          .upsert([{ user_id: data.user_id, job_id: data.job_id }], { onConflict: "user_id,job_id" });
+        if (savedJobError) throw savedJobError;
+      } else {
+        const { error: savedJobDeleteError } = await supabase
+          .from("saved_jobs")
+          .delete()
+          .eq("user_id", data.user_id)
+          .eq("job_id", data.job_id);
+        if (savedJobDeleteError) throw savedJobDeleteError;
+      }
+    }
+
+    return res.json({ success: true, application: data });
+  } catch (err: any) {
+    console.error("[Tracker Route] PATCH /admin/tracker/applications/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to update tracker application" });
+  }
+});
+
+router.delete("/admin/tracker/applications/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const applicationId = Number(req.params.id);
+  if (!Number.isFinite(applicationId)) {
+    return res.status(400).json({ error: "Invalid tracker application id" });
+  }
+
+  try {
+    const { data: application, error: readError } = await supabase
+      .from("applications")
+      .select("id,user_id,job_id")
+      .eq("id", applicationId)
+      .maybeSingle();
+    if (readError) throw readError;
+
+    const { error: deleteError } = await supabase
+      .from("applications")
+      .delete()
+      .eq("id", applicationId);
+    if (deleteError) throw deleteError;
+
+    if (application?.user_id && application?.job_id) {
+      const { error: savedJobDeleteError } = await supabase
+        .from("saved_jobs")
+        .delete()
+        .eq("user_id", application.user_id)
+        .eq("job_id", application.job_id);
+      if (savedJobDeleteError) throw savedJobDeleteError;
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/applications/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete tracker application" });
   }
 });
 
@@ -1687,6 +1913,66 @@ router.get("/admin/tracker/saved-jobs", authMiddleware, async (req: Authenticate
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/tracker/saved-jobs failed:", err);
     return res.status(500).json({ error: err.message || "Failed to load saved jobs" });
+  }
+});
+
+router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+
+    return res.json({ success: true, jobs: data ?? [] });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/jobs failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to load tracker opportunities" });
+  }
+});
+
+router.delete("/admin/tracker/jobs/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const jobId = String(req.params.id || "").trim();
+  if (!jobId) {
+    return res.status(400).json({ error: "Invalid opportunity id" });
+  }
+
+  try {
+    const { error: savedJobsError } = await supabase
+      .from("saved_jobs")
+      .delete()
+      .eq("job_id", jobId);
+    if (savedJobsError) throw savedJobsError;
+
+    const { error: applicationsError } = await supabase
+      .from("applications")
+      .delete()
+      .eq("job_id", jobId);
+    if (applicationsError) throw applicationsError;
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .delete()
+      .eq("id", jobId)
+      .select("id")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      return res.status(404).json({ error: "Opportunity not found" });
+    }
+
+    return res.json({ success: true, id: data.id });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/jobs/:id failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete opportunity" });
   }
 });
 
