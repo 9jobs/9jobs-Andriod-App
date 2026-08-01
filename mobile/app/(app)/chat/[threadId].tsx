@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { Alert, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, KeyboardAvoidingView, Keyboard, type NativeSyntheticEvent, type NativeScrollEvent } from "react-native";
 let Contacts: any = null;
 try {
@@ -9,7 +9,7 @@ try {
 import { router } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery, useSendMessageToAdminMutation } from "@/features/mobile-sync/hooks";
@@ -81,6 +81,37 @@ export default function AdminThreadScreen() {
   const scrollViewRef = useRef<ScrollView | null>(null);
   const stickToBottomRef = useRef(true);
   const initialMessageIdsRef = useRef<Set<number | string>>(new Set());
+
+  const bubbleStyles = useMemo(() => {
+    const isDark = colors.background === "#000000";
+    return {
+      incoming: {
+        backgroundColor: isDark ? "#1A1A1A" : "#FFFFFF",
+        borderColor: isDark ? "#2A2B27" : "#E8E5DB",
+      },
+      outgoing: {
+        backgroundColor: isDark ? "#2A2B27" : "#DDF6D3",
+      },
+      incomingText: {
+        color: isDark ? "#FFFFFF" : "#0A0A08",
+      },
+      outgoingText: {
+        color: isDark ? "#FFFFFF" : "#0A0A08",
+      },
+      incomingTime: {
+        color: isDark ? "#A1A595" : "#6F7268",
+      },
+      outgoingTime: {
+        color: isDark ? "#A1A595" : "#6F7268",
+      },
+      statusText: {
+        color: isDark ? "#A1A595" : "#6F7268",
+      },
+      statusSeen: {
+        color: "#22A447",
+      }
+    };
+  }, [colors.background]);
 
   useEffect(() => {
     if (messages.length > 0 && initialMessageIdsRef.current.size === 0) {
@@ -545,14 +576,13 @@ export default function AdminThreadScreen() {
             <BackIcon />
           </Pressable>
 
-          <View style={styles.brandAvatar}>
-            <Text style={styles.brandAvatarText}>9Jobs</Text>
+          <View style={[styles.brandAvatar, { backgroundColor: bubbleStyles.incoming.backgroundColor, borderWidth: 1, borderColor: bubbleStyles.incoming.borderColor }]}>
+            <AdvisorAvatarIcon color={bubbleStyles.statusSeen.color} />
           </View>
 
           <View style={styles.headerCopy}>
             <View style={styles.titleRow}>
-              <Text style={styles.headerTitle}>9Jobs AI Assistant</Text>
-              <VerifiedIcon />
+              <Text style={styles.headerTitle}>9Jobs Career Advisor</Text>
             </View>
             <View style={styles.onlineRow}>
               <View style={styles.onlineDot} />
@@ -586,63 +616,82 @@ export default function AdminThreadScreen() {
           onScroll={handleChatScroll}
           onContentSizeChange={handleContentSizeChange}
         >
-          <View style={styles.dayChip}>
-            <Text style={styles.dayChipText}>Today</Text>
-          </View>
+          {(() => {
+            let lastDateLabel = "";
+            return messages.map((message) => {
+              const msgDate = new Date(message.created_at);
+              let dateLabel = "";
+              if (!Number.isNaN(msgDate.getTime())) {
+                dateLabel = getWhatsAppStyleDateString(msgDate);
+              }
 
-          {messages.map((message) => {
-            const isIncoming = message.direction === "incoming";
-            const isNewlyAdded = !initialMessageIdsRef.current.has(message.id);
+              const showDateDivider = dateLabel && dateLabel !== lastDateLabel;
+              if (showDateDivider) {
+                lastDateLabel = dateLabel;
+              }
 
-            const rowContent = (
-              <Pressable
-                key={message.id}
-                onLongPress={() => handleLongPressMessage(message)}
-                delayLongPress={500}
-                style={[styles.messageRow, isIncoming ? styles.incomingRow : styles.outgoingRow]}
-              >
-                {isIncoming ? (
-                  <View style={styles.messageAvatar}>
-                    <Text style={styles.messageAvatarText}>9J</Text>
-                  </View>
-                ) : null}
+              const isIncoming = message.direction === "incoming";
+              const isNewlyAdded = !initialMessageIdsRef.current.has(message.id);
 
-                <View style={[styles.bubble, isIncoming ? styles.incomingBubble : styles.outgoingBubble]}>
-                  {renderMessageBody(message, isIncoming)}
+              const rowContent = (
+                <Pressable
+                  key={message.id}
+                  onLongPress={() => handleLongPressMessage(message)}
+                  delayLongPress={500}
+                  style={[styles.messageRow, isIncoming ? styles.incomingRow : styles.outgoingRow]}
+                >
+                  {isIncoming ? (
+                    <View style={[styles.messageAvatar, { backgroundColor: bubbleStyles.incoming.backgroundColor, borderWidth: 1, borderColor: bubbleStyles.incoming.borderColor }]}>
+                      <AdvisorAvatarIcon color={bubbleStyles.statusSeen.color} />
+                    </View>
+                  ) : null}
 
-                  <View style={styles.metaRow}>
-                    <Text style={[styles.timestamp, !isIncoming && styles.outgoingTimestamp]}>
-                      {new Date(message.created_at).toLocaleTimeString([], {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })}
-                    </Text>
-                    {!isIncoming ? (
-                      <Text style={[styles.statusText, message.status === "seen" && styles.statusSeen]}>
-                        {message.status === "sending"
-                          ? "..."
-                          : message.status === "seen"
-                          ? "vv"
-                          : message.status === "delivered"
-                          ? "vv"
-                          : "v"}
+                  <View style={[styles.bubble, isIncoming ? styles.incomingBubble : styles.outgoingBubble, isIncoming ? bubbleStyles.incoming : bubbleStyles.outgoing]}>
+                    {renderMessageBody(message, isIncoming, isIncoming ? bubbleStyles.incomingText : bubbleStyles.outgoingText)}
+
+                    <View style={styles.metaRow}>
+                      <Text style={[styles.timestamp, isIncoming ? bubbleStyles.incomingTime : bubbleStyles.outgoingTime]}>
+                        {new Date(message.created_at).toLocaleTimeString([], {
+                          hour: "numeric",
+                          minute: "2-digit",
+                        })}
                       </Text>
-                    ) : null}
+                      {!isIncoming ? (
+                        <Text style={[styles.statusText, message.status === "seen" && styles.statusSeen, { color: message.status === "seen" ? bubbleStyles.statusSeen.color : bubbleStyles.statusText.color }]}>
+                          {message.status === "sending"
+                            ? "..."
+                            : message.status === "seen"
+                            ? "vv"
+                            : message.status === "delivered"
+                            ? "vv"
+                            : "v"}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              </Pressable>
-            );
+                </Pressable>
+              );
 
-            if (isNewlyAdded) {
-              return (
+              const msgElement = isNewlyAdded ? (
                 <FadeInView key={message.id} type={isIncoming ? "fade-right" : "fade-left"} duration={240}>
                   {rowContent}
                 </FadeInView>
+              ) : (
+                rowContent
               );
-            }
 
-            return rowContent;
-          })}
+              if (showDateDivider) {
+                return [
+                  <View key={`divider-${message.id}`} style={styles.dayChip}>
+                    <Text style={styles.dayChipText}>{dateLabel}</Text>
+                  </View>,
+                  msgElement,
+                ];
+              }
+
+              return msgElement;
+            });
+          })()}
         </ScrollView>
 
         <Modal
@@ -666,11 +715,11 @@ export default function AdminThreadScreen() {
           styles.composerShell,
           { marginBottom: isKeyboardVisible ? 0 : (insets.bottom > 0 ? insets.bottom : 10) }
         ]}>
-          <View style={styles.inputWrap}>
-            <Pressable onPress={handlePickAttachment} style={styles.inlineIconButton}>
-              <AttachmentIcon />
-            </Pressable>
+          <Pressable onPress={handlePickAttachment} style={styles.composerExternalButton}>
+            <AttachmentIcon />
+          </Pressable>
 
+          <View style={styles.inputWrap}>
             {!!pendingAttachment && (
               <View style={[styles.attachmentChip, styles.attachmentChipInline]}>
                 <Text style={styles.attachmentChipText} numberOfLines={1}>
@@ -685,28 +734,34 @@ export default function AdminThreadScreen() {
             <TextInput
               value={draft}
               onChangeText={setDraft}
-              placeholder="Type a message..."
+              placeholder="Write a message..."
               placeholderTextColor="#8A9388"
               style={styles.input}
               multiline
               maxLength={1000}
             />
 
-            <Pressable onPress={handlePreviewDraftVoice} style={styles.inlineIconButton}>
-              <MicIcon />
+            <Pressable onPress={() => Alert.alert("Emojis", "Smiley keyboard selected")} style={styles.inlineEmojiButton}>
+              <SmileyIcon />
             </Pressable>
           </View>
 
-          <Pressable
-            style={[
-              styles.sendButton,
-              (!draft.trim() && !pendingAttachment) || sendMessage.isPending ? styles.sendButtonDisabled : null,
-            ]}
-            disabled={(!draft.trim() && !pendingAttachment) || sendMessage.isPending}
-            onPress={handleSend}
-          >
-            <SendIcon />
-          </Pressable>
+          {draft.trim() || pendingAttachment ? (
+            <Pressable
+              style={styles.composerExternalButton}
+              disabled={sendMessage.isPending}
+              onPress={handleSend}
+            >
+              <SendIcon color="#22A447" />
+            </Pressable>
+          ) : (
+            <Pressable
+              style={styles.composerExternalButton}
+              onPress={handlePreviewDraftVoice}
+            >
+              <MicIcon />
+            </Pressable>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -721,13 +776,13 @@ function isImageMessage(message: any) {
   );
 }
 
-function renderMessageBody(message: any, isIncoming: boolean) {
+function renderMessageBody(message: any, isIncoming: boolean, textStyleOverride: any) {
   if (isImageMessage(message) && message.attachment_url) {
     return (
       <View style={styles.mediaWrap}>
         <Image source={{ uri: message.attachment_url }} style={styles.messageImage} resizeMode="cover" />
         {!!message.content ? (
-          <Text style={[styles.bubbleText, isIncoming ? styles.incomingText : styles.outgoingText, styles.mediaCaption]}>
+          <Text style={[styles.bubbleText, textStyleOverride, styles.mediaCaption]}>
             {message.content}
           </Text>
         ) : null}
@@ -738,11 +793,11 @@ function renderMessageBody(message: any, isIncoming: boolean) {
   if (message?.attachment_url && message?.message_type === "document") {
     return (
       <View style={styles.documentWrap}>
-        <Text style={[styles.documentLabel, isIncoming ? styles.incomingText : styles.outgoingText]}>
+        <Text style={[styles.documentLabel, textStyleOverride]}>
           {message.attachment_name || "Attachment"}
         </Text>
         {!!message.content ? (
-          <Text style={[styles.bubbleText, isIncoming ? styles.incomingText : styles.outgoingText]}>
+          <Text style={[styles.bubbleText, textStyleOverride]}>
             {message.content}
           </Text>
         ) : null}
@@ -751,9 +806,25 @@ function renderMessageBody(message: any, isIncoming: boolean) {
   }
 
   return (
-    <Text style={[styles.bubbleText, isIncoming ? styles.incomingText : styles.outgoingText]}>
+    <Text style={[styles.bubbleText, textStyleOverride]}>
       {message.content}
     </Text>
+  );
+}
+
+function AdvisorAvatarIcon({ color }: { color: string }) {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      {/* Sparkles/Stars on left and right */}
+      <Path d="M4 6L4.5 7.5L6 8L4.5 8.5L4 10L3.5 8.5L2 8L3.5 7.5L4 6Z" fill={color} />
+      <Path d="M20 4L20.5 5.5L22 6L20.5 6.5L20 8L19.5 6.5L18 6L19.5 5.5L20 4Z" fill={color} />
+      {/* Main user silhouette inside shield or badge */}
+      <Circle cx="12" cy="8" r="3.5" stroke={color} strokeWidth={2} />
+      <Path d="M6 18.5C6 15.5 8.5 13.5 12 13.5C15.5 13.5 18 15.5 18 18.5" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      {/* Advisor tie/decoration inside body */}
+      <Path d="M12 13.8L13 16.5H11L12 13.8Z" fill={color} />
+      <Path d="M12 16.5L13 21L12 22L11 21L12 16.5Z" fill={color} />
+    </Svg>
   );
 }
 
@@ -804,11 +875,38 @@ function SpeakerIcon() {
   );
 }
 
-function SendIcon() {
+function SendIcon({ color = "#22A447" }: { color?: string }) {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M21 3L10 14" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M21 3L14 21L10 14L3 10L21 3Z" stroke="#FFFFFF" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M22 2L11 13" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M22 2L15 22L11 13L2 9L22 2Z" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M5 4H7.5C8.3 4 9 4.7 9 5.5V8C9 8.8 8.3 9.5 7.5 9.5H6.5C7.5 12 9.5 14 12 15V14C12 13.2 12.7 12.5 13.5 12.5H16C16.8 12.5 17.5 13.2 17.5 14V16.5C17.5 17.3 16.8 18 16 18H15C9.5 18 5 13.5 5 8V7C5 6.2 5.7 5.5 6.5 5.5" stroke="#171914" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function VideoIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Path d="M15 10L19.5 6.5V17.5L15 14V10Z" stroke="#171914" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Rect x="4" y="6" width="11" height="12" rx="2" stroke="#171914" strokeWidth={2} />
+    </Svg>
+  );
+}
+
+function SmileyIcon() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <Circle cx="12" cy="12" r="9" stroke="#6B746A" strokeWidth={1.8} />
+      <Path d="M9 10H9.01M15 10H15.01" stroke="#6B746A" strokeWidth={2} strokeLinecap="round" />
+      <Path d="M8 14.5C9.5 16 14.5 16 16 14.5" stroke="#6B746A" strokeWidth={1.8} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -1204,51 +1302,85 @@ const styles = StyleSheet.create({
   },
   composerShell: {
     flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 10,
+    alignItems: "center",
     paddingTop: 8,
+    paddingHorizontal: 8,
     zIndex: 4,
+  },
+  composerExternalButton: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inlineEmojiButton: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
   },
   inputWrap: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 44,
     backgroundColor: "#FFFFFF",
-    borderRadius: 28,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: "#E7E1D5",
-    paddingLeft: 6,
-    paddingRight: 8,
+    paddingLeft: 12,
+    paddingRight: 6,
     flexDirection: "row",
     alignItems: "center",
-  },
-  inlineIconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 0,
+    marginHorizontal: 4,
   },
   input: {
     flex: 1,
-    minHeight: 52,
+    minHeight: 36,
     maxHeight: 110,
     color: colors.text,
     fontSize: 15,
     lineHeight: 20,
-    paddingTop: 15,
-    paddingBottom: 15,
+    paddingTop: 8,
+    paddingBottom: 8,
     paddingHorizontal: 2,
   },
-  sendButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: "#22A447",
+  headerRightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  headerIconButton: {
+    width: 32,
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
   },
-  sendButtonDisabled: {
-    backgroundColor: "#22A447",
-  },
 });
+
+function getWhatsAppStyleDateString(date: Date): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const sixDaysAgo = new Date(today);
+  sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+
+  const compareDate = new Date(date);
+  compareDate.setHours(0, 0, 0, 0);
+
+  if (compareDate.getTime() === today.getTime()) {
+    return "Today";
+  } else if (compareDate.getTime() === yesterday.getTime()) {
+    return "Yesterday";
+  } else if (compareDate.getTime() >= sixDaysAgo.getTime()) {
+    return new Intl.DateTimeFormat("en-US", { weekday: "long" }).format(date);
+  } else {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(date);
+  }
+}

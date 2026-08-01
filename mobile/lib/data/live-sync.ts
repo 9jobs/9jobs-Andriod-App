@@ -578,13 +578,18 @@ export function buildPricingScreenContent(
 }
 
 export function buildMessageThread(messages: MessageRow[], previewUserName: string) {
-  const lastMessage = [...messages].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  const sorted = [...messages].sort((a, b) => {
+    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return timeB - timeA;
+  });
+  const lastMessage = sorted[0];
 
   return {
     id: "admin-thread",
     name: "9Jobs Admin",
     role: "Support",
-    snippet: lastMessage?.content ?? `Chat with admin for ${previewUserName}`,
+    snippet: lastMessage?.content || lastMessage?.text || "Welcome! How can we help you today?",
     time: lastMessage ? lastMessage.created_at : "",
     unreadCount: messages.filter((message) => (message.sender_role === "admin" || message.sender_id === "admin") && message.status !== "seen").length,
   };

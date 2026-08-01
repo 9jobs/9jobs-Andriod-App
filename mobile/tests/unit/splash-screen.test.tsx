@@ -92,7 +92,7 @@ describe("IndexScreen", () => {
     });
 
     act(() => {
-      jest.advanceTimersByTime(1100);
+      jest.advanceTimersByTime(3000);
     });
 
     expect(router.replace).toHaveBeenCalledWith("/(public)/auth/sign-up");
@@ -116,7 +116,7 @@ describe("SplashScreen", () => {
     });
 
     act(() => {
-      jest.advanceTimersByTime(5000);
+      jest.advanceTimersByTime(3000);
     });
 
     expect(router.replace).toHaveBeenCalledWith("/(public)/auth/sign-up");

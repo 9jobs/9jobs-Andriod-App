@@ -46,7 +46,10 @@ export default function HomeScreen() {
     const normalizedQuery = searchQuery.trim();
     jobFilters.setQuery(normalizedQuery);
     setSearchQuery("");
-    router.push(resolveHomeSearchDestination(normalizedQuery) as never);
+    router.push({
+      pathname: "/(app)/jobs/search",
+      params: normalizedQuery ? { query: normalizedQuery } : undefined,
+    } as never);
   }
 
   return (
@@ -86,11 +89,10 @@ export default function HomeScreen() {
             <AppIcon name="search" size={20} color={colors.mutedText} />
             <TextInput
               value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={openSearchScreen}
+              editable={false}
+              pointerEvents="none"
               placeholder="Search jobs, companies..."
               placeholderTextColor={colors.subtleText}
-              returnKeyType="search"
               style={styles.searchInput}
             />
           </Pressable>
@@ -186,16 +188,16 @@ export default function HomeScreen() {
           <View style={styles.heroBadgeContainer}>
             <Text style={styles.heroBadgeText}>PRO TIP</Text>
           </View>
-          <Text style={styles.heroTitleText}>Your resume ranks in top 3%</Text>
+          <Text style={styles.heroTitleText}>Your resume ranks in the top 3%</Text>
           <Text style={styles.heroSubtitleText}>
-            Upgrade to Pro to unlock personalized recruiter outreach
+            Upgrade to Pro to activate Hiring Manager Outreach
           </Text>
           <AnimatedPressable
             style={styles.heroButton}
             onPress={() => router.push("/(app)/pricing" as never)}
             scaleTo={0.97}
           >
-            <Text style={styles.heroButtonText}>Unlock Outreach →</Text>
+            <Text style={styles.heroButtonText}>Activate Hiring Manager Outreach →</Text>
           </AnimatedPressable>
         </View>
       </FadeInView>
@@ -204,12 +206,12 @@ export default function HomeScreen() {
       <FadeInView type="fade-up" delay={250}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recommended</Text>
-          <Text
-            style={styles.sectionAction}
+          <AnimatedPressable
             onPress={() => router.push("/(app)/jobs/search" as never)}
+            scaleTo={0.96}
           >
-            See all →
-          </Text>
+            <Text style={styles.sectionAction}>See all →</Text>
+          </AnimatedPressable>
         </View>
 
         <View style={styles.jobStack}>

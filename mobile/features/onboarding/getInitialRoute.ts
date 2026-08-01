@@ -7,10 +7,6 @@ export function getInitialRoute({
   hasCompletedOnboarding,
   hasSession,
 }: InitialRouteInput) {
-  if (!hasCompletedOnboarding) {
-    return "/(public)" as const;
-  }
-
   if (!hasSession) {
     return "/(public)/auth/sign-up" as const;
   }

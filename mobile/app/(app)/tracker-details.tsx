@@ -424,6 +424,7 @@ export default function TrackerDetailsScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled={true}
         contentContainerStyle={styles.categoryScrollContainer}
       >
         {categoryFilterList.map((cat) => {

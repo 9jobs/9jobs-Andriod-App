@@ -4,7 +4,7 @@ export const demoProfile: CandidateProfile = {
   id: "preview-user-9jobs",
   fullName: "Ayesha Khan",
   headline: "Product-minded operations candidate with AI workflow experience",
-  location: "Dubai, UAE",
+  location: "Australia",
   email: "candidate@9jobs.app",
   phoneNumber: "",
   avatarUrl: "",

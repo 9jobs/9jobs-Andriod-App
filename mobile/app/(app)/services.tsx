@@ -115,7 +115,7 @@ export default function ServicesScreen() {
               <View style={styles.heroBadge}>
                 <Text style={styles.heroBadgeText}>ALL-IN-ONE</Text>
               </View>
-              <Text style={styles.heroTitleText}>Your Job Search Command Center</Text>
+              <Text style={styles.heroTitleText}>Job Application, Resume AI & Outreach</Text>
             </View>
 
             {/* Right Column: Mini Job Card */}
@@ -123,10 +123,10 @@ export default function ServicesScreen() {
               <View style={styles.miniJobCard}>
                 <View style={styles.miniCardTopRow}>
                   <View style={styles.miniLogoCircle}>
-                    <Text style={styles.miniLogoText}>G</Text>
+                    <AppIcon name="briefcase" size={16} color={colors.text} />
                   </View>
                   <View style={styles.miniTitleCol}>
-                    <Text style={styles.miniJobTitle} numberOfLines={1}>Google</Text>
+                    <Text style={styles.miniJobTitle} numberOfLines={1}>9Jobs</Text>
                     <Text style={styles.miniJobCompany} numberOfLines={1}>Sr. Product Designer</Text>
                   </View>
                   <View style={styles.heartIconWrap}>

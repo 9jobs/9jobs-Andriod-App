@@ -10,7 +10,7 @@ export default function SplashScreen() {
   useEffect(() => {
     const timeout = setTimeout(() => {
       router.replace("/(public)/auth/sign-up");
-    }, 5000);
+    }, 3000);
 
     return () => clearTimeout(timeout);
   }, []);
@@ -20,7 +20,7 @@ export default function SplashScreen() {
       <ScreenBackground />
       <FadeInView type="fade-up" duration={360} style={styles.center}>
         <View style={styles.logoWrap}>
-          <BrandLogo size={148} />
+          <BrandLogo size={148} circle={true} />
         </View>
         <Text style={styles.body}>Your career, elevated.</Text>
         <Text style={styles.subtle}>Resume. Outreach. Interview. Momentum.</Text>
@@ -48,7 +48,7 @@ const styles = StyleSheet.create({
   },
   logoWrap: {
     padding: spacing.xl,
-    borderRadius: 40,
+    borderRadius: 999,
     backgroundColor: "rgba(163, 230, 53, 0.08)",
   },
   body: {

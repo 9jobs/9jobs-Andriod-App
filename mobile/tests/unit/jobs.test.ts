@@ -6,7 +6,7 @@ describe("filterJobs", () => {
     const results = filterJobs(demoJobs, {
       query: "resume",
       category: "Career Growth",
-      location: "Remote",
+      location: "Australia",
       onlySaved: false,
     });
 
@@ -17,7 +17,7 @@ describe("filterJobs", () => {
     const results = filterJobs(demoJobs, {
       query: "",
       category: "All",
-      location: "All locations",
+      location: "Australia",
       onlySaved: true,
     });
 

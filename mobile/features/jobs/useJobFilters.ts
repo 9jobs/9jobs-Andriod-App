@@ -12,7 +12,7 @@ type JobFilterState = JobFilters & {
 const initialState: JobFilters = {
   query: "",
   category: "All",
-  location: "All locations",
+  location: "Australia",
   onlySaved: false,
 };
 

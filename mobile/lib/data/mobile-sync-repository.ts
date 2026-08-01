@@ -559,7 +559,7 @@ async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
         id: "job_resume_lead",
         title: "Sr. Frontend Engineer",
         company: "Stripe",
-        location: "Remote",
+        location: "Geelong",
         salary: "$165k/yr",
         job_type: "Full-time",
         posted_at: "5h ago",
@@ -571,7 +571,7 @@ async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
         id: "job_growth_specialist",
         title: "Product Designer",
         company: "Figma",
-        location: "SF",
+        location: "Sydney",
         salary: "$145k/yr",
         job_type: "Full-time",
         posted_at: "2d ago",
@@ -583,7 +583,7 @@ async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
         id: "job_interview_coach",
         title: "DX Engineer",
         company: "Vercel",
-        location: "Remote",
+        location: "Perth",
         salary: "$155k/yr",
         job_type: "Remote",
         posted_at: "1d ago",
@@ -595,7 +595,7 @@ async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
         id: "job_pipeline_growth",
         title: "Job Search Growth Specialist",
         company: "Greenline Talent",
-        location: "Interview",
+        location: "Melbourne",
         salary: "$140k/yr",
         job_type: "Full-time",
         posted_at: "5h ago",
@@ -1261,7 +1261,7 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
       id: "job_resume_lead",
       title: "Sr. Frontend Engineer",
       company: "Stripe",
-      location: "Remote",
+      location: "Geelong",
       salary: "$165k/yr",
       job_type: "Full-time",
       category_id: 1,
@@ -1274,7 +1274,7 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
       id: "job_growth_specialist",
       title: "Product Designer",
       company: "Figma",
-      location: "SF",
+      location: "Sydney",
       salary: "$145k/yr",
       job_type: "Full-time",
       category_id: 2,
@@ -1287,7 +1287,7 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
       id: "job_interview_coach",
       title: "DX Engineer",
       company: "Vercel",
-      location: "Remote",
+      location: "Perth",
       salary: "$155k/yr",
       job_type: "Remote",
       category_id: 5,
@@ -1300,7 +1300,7 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
       id: "job_pipeline_growth",
       title: "Job Search Growth Specialist",
       company: "Greenline Talent",
-      location: "Interview",
+      location: "Melbourne",
       salary: "$140k/yr",
       job_type: "Full-time",
       category_id: 4,
@@ -1406,6 +1406,25 @@ async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<M
   return inMemoryStore;
 }
 
+async function applySeenStatusToMessages(messages: LiveMessage[]): Promise<LiveMessage[]> {
+  try {
+    const lastSeenStr = await AsyncStorage.getItem("last_seen_chat_timestamp");
+    if (!lastSeenStr) return messages;
+    const lastSeenTime = new Date(lastSeenStr).getTime();
+
+    return messages.map((m) => {
+      const mTime = m.created_at ? new Date(m.created_at).getTime() : 0;
+      if (mTime <= lastSeenTime && m.direction === "incoming" && m.status !== "seen") {
+        return { ...m, status: "seen" };
+      }
+      return m;
+    });
+  } catch (err) {
+    console.warn("Error applying seen status to messages:", err);
+    return messages;
+  }
+}
+
 export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
   try {
     const activeUser = resolveActiveUser(sessionUser);
@@ -1436,6 +1455,9 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           notificationRows: (backendSnapshot.notifications as NotificationRow[]) ?? [],
           activityLogRows: (backendSnapshot.activityLogs as ActivityLogRow[]) ?? [],
         });
+
+        snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
+        snapshot.messageThread = buildMessageThread(snapshot.messages, snapshot.profile.fullName);
 
         const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
         if (localDarkModeOverride !== null) {
@@ -1569,6 +1591,9 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       notificationRows: (notificationsResult.data as NotificationRow[] | null) ?? [],
       activityLogRows: (activityLogsResult.data as ActivityLogRow[] | null) ?? [],
     });
+
+    snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
+    snapshot.messageThread = buildMessageThread(snapshot.messages, snapshot.profile.fullName);
 
     const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
     if (localDarkModeOverride !== null) {
@@ -2637,23 +2662,52 @@ async function getChatbotResponse(userMessage: string, activeUserId: string): Pr
 
 export async function markMessagesAsSeen(sessionUser?: SessionUser | null) {
   const activeUser = resolveActiveUser(sessionUser);
-  try {
-    const client = requireSupabase();
-    const { error: msgError } = await client
-      .from("messages")
-      .update({ status: "seen", seen_at: new Date().toISOString() })
-      .eq("conversation_id", activeUser.id)
-      .neq("sender_role", "client")
-      .is("seen_at", null);
-    if (msgError) throw msgError;
+  const nowStr = new Date().toISOString();
+  await AsyncStorage.setItem("last_seen_chat_timestamp", nowStr);
+  console.log("[mobile-sync-repository] Saved last_seen_chat_timestamp:", nowStr);
+  let backendSucceeded = false;
 
-    const { error: convError } = await client
-      .from("conversations")
-      .update({ client_unread_count: 0 })
-      .eq("id", activeUser.id);
-    if (convError) throw convError;
+  try {
+    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
+    if (!token) throw new Error("No backend auth token");
+
+    const res = await fetch(`${backendUrl}/api/chat/messages/seen`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP error ${res.status}`);
+    }
+    console.log("[mobile-sync-repository] Messages marked as seen on backend successfully");
+    backendSucceeded = true;
   } catch (err) {
-    console.warn("Supabase markMessagesAsSeen failed:", err);
+    console.warn("[mobile-sync-repository] markMessagesAsSeen backend call failed, falling back to direct db:", err);
+  }
+
+  if (!backendSucceeded) {
+    try {
+      const client = requireSupabase();
+      const { error: msgError } = await client
+        .from("messages")
+        .update({ status: "seen", seen_at: new Date().toISOString() })
+        .eq("conversation_id", activeUser.id)
+        .neq("sender_role", "client")
+        .is("seen_at", null);
+      if (msgError) throw msgError;
+
+      const { error: convError } = await client
+        .from("conversations")
+        .update({ client_unread_count: 0 })
+        .eq("id", activeUser.id);
+      if (convError) throw convError;
+    } catch (err) {
+      console.warn("Supabase direct markMessagesAsSeen failed:", err);
+    }
   }
 
   const current = await getLocalSyncSnapshot();

@@ -15,7 +15,7 @@ export function filterJobs(jobs: Job[], filters: JobFilters) {
       filters.category === "All" || job.category === filters.category;
 
     const matchesLocation =
-      filters.location === "All locations" ||
+      filters.location === "Australia" ||
       job.location.toLowerCase().includes(filters.location.toLowerCase());
 
     const matchesSaved = !filters.onlySaved || job.isSaved;

@@ -131,14 +131,14 @@ function resolvePreviewCompatibleUser(user: SessionUser | null) {
 
 function MissingClerkSessionProvider({ children }: PropsWithChildren) {
   const [isBooting, setIsBooting] = useState(true);
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
     async function bootstrap() {
       const onboarding = await AsyncStorage.getItem(storageKeys.onboardingComplete);
       const savedSession = await AsyncStorage.getItem(storageKeys.mockSession);
-      setHasCompletedOnboarding(onboarding === "true");
+      setHasCompletedOnboarding(true);
       setUser(savedSession ? (JSON.parse(savedSession) as SessionUser) : null);
       setIsBooting(false);
     }
@@ -191,7 +191,7 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   const { isLoaded: authLoaded, isSignedIn, signOut: authSignOut } = useAuth();
   const { isLoaded: userLoaded, user } = useUser();
   const [isOnboardingLoaded, setIsOnboardingLoaded] = useState(false);
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [isLocallySignedOut, setIsLocallySignedOut] = useState(false);
   const [localFallbackUser, setLocalFallbackUser] = useState<SessionUser | null>(null);
 
@@ -203,7 +203,7 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
         storageKeys.mockSession,
         storageKeys.mockProfile,
       ]);
-      setHasCompletedOnboarding(onboarding === "true");
+      setHasCompletedOnboarding(true);
       setLocalFallbackUser(savedSession ? (JSON.parse(savedSession) as SessionUser) : null);
       setIsOnboardingLoaded(true);
     }

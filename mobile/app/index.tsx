@@ -28,7 +28,7 @@ export default function IndexScreen() {
 
     const timeout = setTimeout(() => {
       setIsReadyToRoute(true);
-    }, 1100);
+    }, 3000);
 
     return () => clearTimeout(timeout);
   }, [hasCompletedOnboarding, isBooting, user]);
@@ -60,7 +60,7 @@ export default function IndexScreen() {
       </View>
       <View style={styles.center}>
         <View style={styles.logoWrap}>
-          <BrandLogo size={148} />
+          <BrandLogo size={148} circle={true} />
         </View>
         <Text style={styles.body}>Your career, elevated.</Text>
         <Text style={styles.subtle}>Resume. Outreach. Interview. Momentum.</Text>
@@ -100,7 +100,7 @@ const styles = StyleSheet.create({
   },
   logoWrap: {
     padding: spacing.xl,
-    borderRadius: 40,
+    borderRadius: 999,
     backgroundColor: "rgba(163, 230, 53, 0.08)",
   },
   body: {

@@ -294,14 +294,14 @@ export default function TrackerScreen() {
 
   return (
     <PremiumScaffold
-      title="Tracker"
+      title="Job Application Service"
       subtitle="See every applied role and the exact stage it is in."
       kicker="PIPELINE"
       hero={
         <DarkHeroCard>
-          <Text style={styles.heroTitle}>Stay close to the next move.</Text>
+          <Text style={styles.heroTitle}>Track applications, secure offers.</Text>
           <Text style={styles.heroBody}>
-            Interactive tracking dashboard connected to your real-time recruitment sync.
+            Never miss a follow-up. Monitor your applications, interviews, and offers in real-time.
           </Text>
           <View style={styles.heroSummary}>
             <Text style={styles.heroSummaryLabel}>Current focus</Text>
