@@ -180,25 +180,19 @@ export function RocketLaunchGlow() {
       {/* Background Soft Neon Glow */}
       <Animated.View style={[styles.glow, glowStyle]} />
 
-      {/* Horizontal Delicate Orbital Ring (Horizontally aligned behind the rocket for 3D depth) */}
+      {/* Layer 0: Flat Orbital Ring - BACK HALF (Rendered behind the rocket body) */}
       <View style={StyleSheet.absoluteFill}>
         <Svg width="100%" height="100%" viewBox="0 0 140 140" fill="none">
-          {/* Inner ring */}
-          <Ellipse
-            cx="65"
-            cy="79"
-            rx="46"
-            ry="18"
+          {/* Inner back-arc */}
+          <Path
+            d="M 19 79 A 46 18 0 0 1 111 79"
             stroke={colors.accent}
             strokeWidth={1.2}
             opacity={0.8}
           />
-          {/* Outer glow ring */}
-          <Ellipse
-            cx="65"
-            cy="79"
-            rx="46"
-            ry="18"
+          {/* Outer back-arc glow */}
+          <Path
+            d="M 19 79 A 46 18 0 0 1 111 79"
             stroke={colors.accent}
             strokeWidth={3.8}
             opacity={0.24}
@@ -249,13 +243,13 @@ export function RocketLaunchGlow() {
         <View style={StyleSheet.absoluteFill}>
           <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
             <Defs>
-              {/* Dark metallic gradient for capsule body with high-contrast reflection */}
+              {/* High-fidelity 3D metallic gradient for capsule body */}
               <LinearGradient id="rocketBodyGrad" x1="0" y1="0" x2="1" y2="0.3">
-                <Stop offset="0%" stopColor="#051003" />
-                <Stop offset="18%" stopColor={colors.accent} stopOpacity={0.9} />
-                <Stop offset="50%" stopColor="#102608" />
-                <Stop offset="82%" stopColor="#040A02" />
-                <Stop offset="100%" stopColor="#010300" />
+                <Stop offset="0%" stopColor="#040D02" />
+                <Stop offset="18%" stopColor={colors.accent} stopOpacity={0.85} />
+                <Stop offset="50%" stopColor="#0B1C05" />
+                <Stop offset="82%" stopColor="#030801" />
+                <Stop offset="100%" stopColor="#000000" />
               </LinearGradient>
 
               {/* Glowing gradient for fins */}
@@ -332,18 +326,68 @@ export function RocketLaunchGlow() {
               opacity={0.8}
             />
 
-            {/* Clean Neon Glowing Porthole Ring (Hollow Circle as in reference) */}
+            {/* 3D Specular Highlight Overlays along curves */}
+            <Path
+              d="M 43 54 C 41 44, 38 32, 50 12"
+              stroke="#FFFFFF"
+              strokeWidth={1}
+              opacity={0.5}
+              fill="none"
+            />
+            <Path
+              d="M 50 12 C 62 32, 59 44, 57 54"
+              stroke="rgba(192, 255, 0, 0.4)"
+              strokeWidth={0.8}
+              fill="none"
+            />
+
+            {/* Beveled 3D Porthole Window Ring (Offset double circle with inner specular glint) */}
             <Circle
               cx="50"
               cy="34"
-              r="5.5"
+              r="6.2"
               stroke={colors.accent}
               strokeWidth={2.2}
               fill="none"
             />
+            <Circle
+              cx="49.5"
+              cy="33.5"
+              r="5"
+              stroke="#081005"
+              strokeWidth={1}
+              fill="none"
+            />
+            <Circle
+              cx="48.2"
+              cy="32.2"
+              r="1"
+              fill="#FFFFFF"
+              opacity={0.85}
+            />
           </Svg>
         </View>
       </Animated.View>
+
+      {/* Layer 3: Flat Orbital Ring - FRONT HALF (Rendered in front of the rocket body to create full 3D overlap) */}
+      <View style={StyleSheet.absoluteFill}>
+        <Svg width="100%" height="100%" viewBox="0 0 140 140" fill="none">
+          {/* Inner front-arc */}
+          <Path
+            d="M 111 79 A 46 18 0 0 1 19 79"
+            stroke={colors.accent}
+            strokeWidth={1.2}
+            opacity={0.8}
+          />
+          {/* Outer front-arc glow */}
+          <Path
+            d="M 111 79 A 46 18 0 0 1 19 79"
+            stroke={colors.accent}
+            strokeWidth={3.8}
+            opacity={0.24}
+          />
+        </Svg>
+      </View>
 
       {/* Foreground Particles (in front of rocket) */}
       <SpaceDustParticle delay={600} xStart={35} xEnd={80} yStart={105} yEnd={20} size={3.2} />
