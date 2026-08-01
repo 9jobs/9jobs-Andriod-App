@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { memo, useEffect } from "react";
 import { StyleSheet, View } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -8,45 +8,119 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Circle, Path, Ellipse } from "react-native-svg";
 import { colors } from "@/theme";
 import { useReducedMotionPreference } from "./ReducedMotion";
 
+// Ascending Space Dust/Sparks Component using primitive coordinates for maximum stability
+function SpaceDustParticle({
+  delay,
+  xStart,
+  xEnd,
+  yStart,
+  yEnd,
+  size,
+}: {
+  delay: number;
+  xStart: number;
+  xEnd: number;
+  yStart: number;
+  yEnd: number;
+  size: number;
+}) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = 0;
+    const timeout = setTimeout(() => {
+      progress.value = withRepeat(
+        withTiming(1, {
+          duration: 2200 + Math.random() * 800,
+          easing: Easing.out(Easing.quad),
+        }),
+        -1,
+        false
+      );
+    }, delay);
+
+    return () => {
+      clearTimeout(timeout);
+      cancelAnimation(progress);
+    };
+  }, [delay, progress]);
+
+  const animatedStyle = useAnimatedStyle(() => {
+    const x = xStart + progress.value * (xEnd - xStart);
+    const y = yStart + progress.value * (yEnd - yStart);
+    
+    // Smooth fade-in at start, fade-out at end
+    const opacity = progress.value < 0.15
+      ? (progress.value / 0.15) * 0.85
+      : progress.value > 0.8
+        ? ((1 - progress.value) / 0.2) * 0.85
+        : 0.85;
+
+    const scale = 0.4 + (1 - progress.value) * 0.6;
+
+    return {
+      transform: [{ translateX: x }, { translateY: y }, { scale }],
+      opacity,
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.particle,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+        },
+        animatedStyle,
+      ]}
+    />
+  );
+}
+
 export function RocketLaunchGlow() {
   const isReducedMotion = useReducedMotionPreference();
-  const rotation = useSharedValue(0);
-  const pulse = useSharedValue(0);
+  const drift = useSharedValue(0);
   const flamePulse = useSharedValue(0);
+  const glowPulse = useSharedValue(0);
 
   useEffect(() => {
     if (isReducedMotion) {
-      rotation.value = 45;
-      pulse.value = 0.5;
+      drift.value = 0.5;
       flamePulse.value = 0.5;
+      glowPulse.value = 0.5;
       return;
     }
 
-    rotation.value = withRepeat(
-      withTiming(360, {
-        duration: 4500,
-        easing: Easing.linear,
-      }),
-      -1,
-      false
-    );
-
-    pulse.value = withRepeat(
+    // Slow, smooth drifting motion along the diagonal launch axis
+    drift.value = withRepeat(
       withTiming(1, {
-        duration: 2000,
+        duration: 3200,
         easing: Easing.inOut(Easing.sin),
       }),
       -1,
       true
     );
 
+    // Dynamic, high-frequency flame thruster pulse
     flamePulse.value = withRepeat(
       withTiming(1, {
-        duration: 600,
+        duration: 180,
+        easing: Easing.inOut(Easing.linear),
+      }),
+      -1,
+      true
+    );
+
+    // Softer background glow pulse
+    glowPulse.value = withRepeat(
+      withTiming(1, {
+        duration: 2000,
         easing: Easing.inOut(Easing.ease),
       }),
       -1,
@@ -54,108 +128,177 @@ export function RocketLaunchGlow() {
     );
 
     return () => {
-      cancelAnimation(rotation);
-      cancelAnimation(pulse);
+      cancelAnimation(drift);
       cancelAnimation(flamePulse);
+      cancelAnimation(glowPulse);
     };
-  }, [isReducedMotion, rotation, pulse, flamePulse]);
+  }, [isReducedMotion, drift, flamePulse, glowPulse]);
 
-  const orbitStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
+  // Main rocket & flame translation style
+  const rocketStyle = useAnimatedStyle(() => {
+    if (isReducedMotion) {
+      return {
+        transform: [{ rotate: "45deg" }],
+      };
+    }
 
-  const reverseOrbitStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${-rotation.value * 0.8}deg` }],
-  }));
+    const driftVal = drift.value * Math.PI * 2;
+    // Micro-translation along 45deg axis
+    const translateX = Math.sin(driftVal) * 2.5;
+    const translateY = -Math.sin(driftVal) * 2.5;
 
+    return {
+      transform: [
+        { translateX },
+        { translateY },
+        { rotate: "45deg" },
+      ],
+    };
+  });
+
+  // Background glow scaling
   const glowStyle = useAnimatedStyle(() => ({
-    opacity: 0.35 + pulse.value * 0.25,
-    transform: [{ scale: 0.95 + pulse.value * 0.1 }],
+    opacity: 0.28 + glowPulse.value * 0.14,
+    transform: [{ scale: 0.94 + glowPulse.value * 0.12 }],
   }));
 
-  const flameStyle = useAnimatedStyle(() => ({
-    opacity: 0.7 + flamePulse.value * 0.3,
-    transform: [
-      { translateY: 1.5 - flamePulse.value * 3 },
-      { scaleY: 0.85 + flamePulse.value * 0.3 }
-    ],
-  }));
+  // Flame thruster scaling/flicker
+  const flameStyle = useAnimatedStyle(() => {
+    if (isReducedMotion) {
+      return { opacity: 0.85, transform: [{ scaleY: 1 }] };
+    }
+    const scaleY = 0.92 + flamePulse.value * 0.16;
+    const opacity = 0.78 + (1 - flamePulse.value) * 0.22;
+    return {
+      opacity,
+      transform: [{ scaleY }],
+    };
+  });
 
   return (
     <View style={styles.container} pointerEvents="none">
-      {/* Background Glow */}
+      {/* Background Soft Neon Glow */}
       <Animated.View style={[styles.glow, glowStyle]} />
 
-      {/* Main Orbit Ring */}
-      <View style={styles.orbitRing} />
+      {/* Background Particles (behind rocket) */}
+      <SpaceDustParticle delay={0} xStart={30} xEnd={60} yStart={70} yEnd={10} size={4.5} />
+      <SpaceDustParticle delay={400} xStart={40} xEnd={75} yStart={85} yEnd={20} size={3.5} />
+      <SpaceDustParticle delay={900} xStart={15} xEnd={45} yStart={65} yEnd={5} size={4} />
 
-      {/* Orbiting Dots */}
-      <Animated.View style={[StyleSheet.absoluteFill, orbitStyle]}>
-        <View style={styles.orbitDot} />
-        <View style={styles.orbitDotSecondary} />
-      </Animated.View>
-
-      {/* Inner Orbiting Dot (Reverse Direction) */}
-      <Animated.View style={[StyleSheet.absoluteFill, reverseOrbitStyle]}>
-        <View style={styles.orbitDotTertiary} />
-      </Animated.View>
-
-      {/* Rocket Graphic wrapper */}
-      <View style={styles.rocketWrapper}>
-        {/* Animated Thrust Plume (Rendered underneath the rocket body) */}
-        <Animated.View style={[styles.flameContainer, flameStyle]}>
-          <Svg width={46} height={46} viewBox="0 0 24 24" fill="none">
+      {/* Sleek Animated Rocket Graphic Wrapper */}
+      <Animated.View style={[styles.rocketWrapper, rocketStyle]}>
+        {/* Layer 1: Thruster Flame (Rendered under nozzle & body) */}
+        <Animated.View style={[StyleSheet.absoluteFill, flameStyle]}>
+          <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
+            {/* Multi-layered vector shape to construct a neon glowing flame plume */}
+            {/* Outer soft glowing flame boundary */}
             <Path
-              d="M12 16.5v4.5M10.5 17v3M13.5 17v3"
-              stroke={colors.accent}
-              strokeWidth={1.8}
-              strokeLinecap="round"
+              d="M 46.5 59 C 41.5 74, 37.5 85, 50 100 C 62.5 85, 58.5 74, 53.5 59 Z"
+              fill="rgba(192, 255, 0, 0.15)"
+            />
+            {/* Medium intense flame boundary */}
+            <Path
+              d="M 48 59 C 45 74, 42.5 85, 50 92 C 57.5 85, 55 74, 52 59 Z"
+              fill="rgba(192, 255, 0, 0.45)"
+            />
+            {/* Inner hot core flame */}
+            <Path
+              d="M 49 59 C 47.5 74, 45.5 82, 50 85 C 54.5 82, 52.5 74, 51 59 Z"
+              fill={colors.accent}
             />
           </Svg>
         </Animated.View>
 
-        {/* Rocket Body */}
-        <View style={styles.rocketBodyContainer}>
-          <Svg width={46} height={46} viewBox="0 0 24 24" fill="none">
-            {/* Engine Connector */}
-            <Path
-              d="M10.5 15.5h3"
-              stroke={colors.border}
-              strokeWidth={1.5}
-              strokeLinecap="round"
+        {/* Layer 2: Rocket Body structure and Orbital Ring */}
+        <View style={StyleSheet.absoluteFill}>
+          <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
+            {/* Base Orbital Ring (Outer Glow and Ring) */}
+            <Ellipse
+              cx="50"
+              cy="58"
+              rx="23"
+              ry="7"
+              stroke={colors.accent}
+              strokeWidth={4.5}
+              opacity={0.16}
             />
-
-            {/* Left/Right Fins */}
-            <Path
-              d="M8.5 13.5c-1 0.8-2 2-2 3v1h3.5"
+            <Ellipse
+              cx="50"
+              cy="58"
+              rx="23"
+              ry="7"
               stroke={colors.accent}
               strokeWidth={1.5}
+              opacity={0.72}
+            />
+
+            {/* Engine Nozzle */}
+            <Path
+              d="M 46.5 56.5 L 53.5 56.5 L 52 60 L 48 60 Z"
+              fill="#1E201C"
+              stroke={colors.accent}
+              strokeWidth={1}
+            />
+
+            {/* Left Fin */}
+            <Path
+              d="M 39 44 C 31.5 48.5, 27.5 54, 27.5 66 C 33 66, 37 62.5, 39 56 Z"
+              fill="rgba(163, 230, 53, 0.12)"
+              stroke={colors.accent}
+              strokeWidth={1.8}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
+
+            {/* Right Fin */}
             <Path
-              d="M15.5 13.5c1 0.8 2 2 2 3v1h-3.5"
+              d="M 61 44 C 68.5 48.5, 72.5 54, 72.5 66 C 67 66, 63 62.5, 61 56 Z"
+              fill="rgba(163, 230, 53, 0.12)"
               stroke={colors.accent}
-              strokeWidth={1.5}
+              strokeWidth={1.8}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
 
-            {/* Rocket Body Outline */}
+            {/* Main Rocket Body capsule */}
             <Path
-              d="M12 3c-2.5 3-3.5 6.5-3.5 11h7c0-4.5-1-8-3.5-11z"
+              d="M 50 10 C 44 23, 39 37, 39 56 Q 50 60 61 56 C 61 37, 56 23, 50 10 Z"
+              fill="rgba(163, 230, 53, 0.08)"
               stroke="#FFFFFF"
               strokeWidth={1.8}
               strokeLinecap="round"
               strokeLinejoin="round"
-              fill="rgba(255,255,255,0.06)"
             />
 
-            {/* Porthole */}
-            <Circle cx="12" cy="8.5" r="1.5" stroke={colors.accent} strokeWidth={1.5} />
+            {/* Capsule Panel Lines */}
+            <Path
+              d="M 41.5 28 Q 50 32 58.5 28"
+              stroke="#FFFFFF"
+              strokeWidth={1.2}
+              opacity={0.85}
+            />
+            <Path
+              d="M 50 43 L 50 56.5"
+              stroke="rgba(255, 255, 255, 0.45)"
+              strokeWidth={1}
+            />
+
+            {/* Glowing Porthole Window */}
+            <Circle
+              cx="50"
+              cy="35"
+              r="4.2"
+              fill="rgba(163, 230, 53, 0.25)"
+              stroke={colors.accent}
+              strokeWidth={1.5}
+            />
           </Svg>
         </View>
-      </View>
+      </Animated.View>
+
+      {/* Foreground Particles (in front of rocket) */}
+      <SpaceDustParticle delay={600} xStart={25} xEnd={55} yStart={75} yEnd={15} size={3} />
+      <SpaceDustParticle delay={1200} xStart={45} xEnd={80} yStart={90} yEnd={30} size={4} />
     </View>
   );
 }
@@ -163,10 +306,10 @@ export function RocketLaunchGlow() {
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    right: 22,
-    top: 22,
-    width: 86,
-    height: 86,
+    right: 18,
+    top: 18,
+    width: 90,
+    height: 90,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
@@ -174,68 +317,25 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: "absolute",
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "rgba(163, 230, 53, 0.28)",
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "rgba(163, 230, 53, 0.16)",
     shadowColor: colors.accent,
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-  },
-  orbitRing: {
-    position: "absolute",
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    borderWidth: 0.8,
-    borderColor: "rgba(163, 230, 53, 0.22)",
-    borderStyle: "dashed",
-  },
-  orbitDot: {
-    position: "absolute",
-    top: 2,
-    left: 37,
-    width: 4.5,
-    height: 4.5,
-    borderRadius: 2.25,
-    backgroundColor: "rgba(163, 230, 53, 0.95)",
-  },
-  orbitDotSecondary: {
-    position: "absolute",
-    bottom: 8,
-    right: 14,
-    width: 3.5,
-    height: 3.5,
-    borderRadius: 1.75,
-    backgroundColor: "rgba(163, 230, 53, 0.75)",
-  },
-  orbitDotTertiary: {
-    position: "absolute",
-    top: 20,
-    right: 4,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.85)",
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
   },
   rocketWrapper: {
-    position: "relative",
-    width: 46,
-    height: 46,
-    transform: [{ rotate: "45deg" }],
+    width: 82,
+    height: 82,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  flameContainer: {
+  particle: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    width: 46,
-    height: 46,
-  },
-  rocketBodyContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: 46,
-    height: 46,
+    backgroundColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.85,
+    shadowRadius: 5,
   },
 });
