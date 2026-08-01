@@ -13,6 +13,7 @@ import { useJobFilters } from "@/features/jobs/useJobFilters";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { FadeInView } from "@/components/motion/FadeInView";
 import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
+import { RocketLaunchGlow } from "@/components/motion/rocket-launch-glow";
 import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
 
 export default function HomeScreen() {
@@ -183,6 +184,7 @@ export default function HomeScreen() {
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
           <CardFloatingParticles />
+          <RocketLaunchGlow />
 
           {/* Hero Content */}
           <View style={styles.heroBadgeContainer}>
@@ -440,11 +442,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.4,
+    paddingRight: 80,
   },
   heroSubtitleText: {
     color: colors.darkMuted,
     fontSize: 14,
     lineHeight: 20,
+    paddingRight: 80,
   },
   heroButton: {
     backgroundColor: colors.accent,
