@@ -180,7 +180,7 @@ export function RocketLaunchGlow() {
       {/* Background Soft Neon Glow */}
       <Animated.View style={[styles.glow, glowStyle]} />
 
-      {/* Horizontal Orbital Ring around the rocket (Rendered flat in background for 3D perspective) */}
+      {/* Horizontal Delicate Orbital Ring (Horizontally aligned behind the rocket for 3D depth) */}
       <View style={StyleSheet.absoluteFill}>
         <Svg width="100%" height="100%" viewBox="0 0 140 140" fill="none">
           {/* Inner ring */}
@@ -190,7 +190,7 @@ export function RocketLaunchGlow() {
             rx="46"
             ry="18"
             stroke={colors.accent}
-            strokeWidth={1.8}
+            strokeWidth={1.2}
             opacity={0.8}
           />
           {/* Outer glow ring */}
@@ -200,8 +200,8 @@ export function RocketLaunchGlow() {
             rx="46"
             ry="18"
             stroke={colors.accent}
-            strokeWidth={5}
-            opacity={0.22}
+            strokeWidth={3.8}
+            opacity={0.24}
           />
         </Svg>
       </View>
@@ -249,40 +249,40 @@ export function RocketLaunchGlow() {
         <View style={StyleSheet.absoluteFill}>
           <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
             <Defs>
-              {/* Cylindrical metal gradient for rocket capsule */}
-              <LinearGradient id="rocketBodyGrad" x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0%" stopColor="#0B1A05" />
-                <Stop offset="25%" stopColor="rgba(163, 230, 53, 0.15)" />
-                <Stop offset="50%" stopColor="rgba(163, 230, 53, 0.55)" />
-                <Stop offset="75%" stopColor="rgba(163, 230, 53, 0.15)" />
-                <Stop offset="100%" stopColor="#050C02" />
+              {/* Dark metallic gradient for capsule body with high-contrast reflection */}
+              <LinearGradient id="rocketBodyGrad" x1="0" y1="0" x2="1" y2="0.3">
+                <Stop offset="0%" stopColor="#051003" />
+                <Stop offset="18%" stopColor={colors.accent} stopOpacity={0.9} />
+                <Stop offset="50%" stopColor="#102608" />
+                <Stop offset="82%" stopColor="#040A02" />
+                <Stop offset="100%" stopColor="#010300" />
               </LinearGradient>
 
               {/* Glowing gradient for fins */}
               <LinearGradient id="finGrad" x1="0" y1="0" x2="1" y2="0">
                 <Stop offset="0%" stopColor="rgba(163, 230, 53, 0.08)" />
-                <Stop offset="50%" stopColor="rgba(163, 230, 53, 0.35)" />
+                <Stop offset="50%" stopColor="rgba(163, 230, 53, 0.3)" />
                 <Stop offset="100%" stopColor="rgba(163, 230, 53, 0.04)" />
               </LinearGradient>
             </Defs>
 
             {/* Engine Nozzle */}
             <Path
-              d="M 46.5 56.5 L 53.5 56.5 L 52 60 L 48 60 Z"
-              fill="#1E201C"
+              d="M 47 54 L 53 54 L 52 58 L 48 58 Z"
+              fill="#121410"
               stroke={colors.accent}
               strokeWidth={1}
             />
 
-            {/* Left Fin (Outer Glow and Fin) */}
+            {/* Left Fin - Sleek Swept Wing shape */}
             <Path
-              d="M 39 44 C 31.5 48.5, 27.5 54, 27.5 66 C 33 66, 37 62.5, 39 56 Z"
+              d="M 41 38 C 34 40, 28 46, 28 58 C 28 66, 36 64, 40 54 Z"
               stroke={colors.accent}
-              strokeWidth={3.5}
-              opacity={0.2}
+              strokeWidth={3}
+              opacity={0.16}
             />
             <Path
-              d="M 39 44 C 31.5 48.5, 27.5 54, 27.5 66 C 33 66, 37 62.5, 39 56 Z"
+              d="M 41 38 C 34 40, 28 46, 28 58 C 28 66, 36 64, 40 54 Z"
               fill="url(#finGrad)"
               stroke={colors.accent}
               strokeWidth={1.5}
@@ -290,15 +290,15 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
 
-            {/* Right Fin (Outer Glow and Fin) */}
+            {/* Right Fin - Sleek Swept Wing shape */}
             <Path
-              d="M 61 44 C 68.5 48.5, 72.5 54, 72.5 66 C 67 66, 63 62.5, 61 56 Z"
+              d="M 59 38 C 66 40, 72 46, 72 58 C 72 66, 64 64, 60 54 Z"
               stroke={colors.accent}
-              strokeWidth={3.5}
-              opacity={0.2}
+              strokeWidth={3}
+              opacity={0.16}
             />
             <Path
-              d="M 61 44 C 68.5 48.5, 72.5 54, 72.5 66 C 67 66, 63 62.5, 61 56 Z"
+              d="M 59 38 C 66 40, 72 46, 72 58 C 72 66, 64 64, 60 54 Z"
               fill="url(#finGrad)"
               stroke={colors.accent}
               strokeWidth={1.5}
@@ -306,9 +306,9 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
 
-            {/* Main Rocket Body capsule (Double Outline Glow) */}
+            {/* Main Rocket Body capsule - 3D Convex Swell and Rounded Dome Nosecone */}
             <Path
-              d="M 50 10 C 44 23, 39 37, 39 56 Q 50 60 61 56 C 61 37, 56 23, 50 10 Z"
+              d="M 43 54 C 41 44, 38 32, 50 12 C 62 32, 59 44, 57 54 Z"
               stroke={colors.accent}
               strokeWidth={4.5}
               opacity={0.24}
@@ -316,7 +316,7 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
             <Path
-              d="M 50 10 C 44 23, 39 37, 39 56 Q 50 60 61 56 C 61 37, 56 23, 50 10 Z"
+              d="M 43 54 C 41 44, 38 32, 50 12 C 62 32, 59 44, 57 54 Z"
               fill="url(#rocketBodyGrad)"
               stroke="#FFFFFF"
               strokeWidth={1.8}
@@ -324,34 +324,22 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
 
-            {/* Capsule Panel Lines */}
+            {/* Nosecone separator line */}
             <Path
-              d="M 41.5 28 Q 50 32 58.5 28"
+              d="M 42.8 25 C 45 28, 55 28, 57.2 25"
               stroke="#FFFFFF"
               strokeWidth={1.2}
-              opacity={0.85}
-            />
-            <Path
-              d="M 50 45 L 50 56.5"
-              stroke="rgba(255, 255, 255, 0.45)"
-              strokeWidth={1}
+              opacity={0.8}
             />
 
-            {/* Large Glowing Circular Window (Reference Style Porthole) */}
+            {/* Clean Neon Glowing Porthole Ring (Hollow Circle as in reference) */}
             <Circle
               cx="50"
-              cy="37"
-              r="6.2"
-              fill="rgba(163, 230, 53, 0.2)"
+              cy="34"
+              r="5.5"
               stroke={colors.accent}
               strokeWidth={2.2}
-            />
-            <Circle
-              cx="50"
-              cy="37"
-              r="2.5"
-              fill="#FFFFFF"
-              opacity={0.7}
+              fill="none"
             />
           </Svg>
         </View>
