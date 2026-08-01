@@ -207,7 +207,7 @@ export function RocketLaunchGlow() {
 
       {/* Sleek Animated Rocket Graphic Wrapper */}
       <Animated.View style={[styles.rocketWrapper, rocketStyle]}>
-        {/* Layer 1: Thruster Flame (Rendered under nozzle & body) */}
+        {/* Layer 1: Twin Thruster Flames (Rendered under nozzles & body) */}
         <Animated.View style={[StyleSheet.absoluteFill, flameStyle]}>
           <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
             <Defs>
@@ -220,19 +220,32 @@ export function RocketLaunchGlow() {
               </LinearGradient>
             </Defs>
 
-            {/* Layer 1.1: Soft outer glow of the flame */}
+            {/* Left Flame Plume */}
             <Path
-              d="M 46.5 59 C 41.5 74, 37.5 85, 50 100 C 62.5 85, 58.5 74, 53.5 59 Z"
-              fill="rgba(192, 255, 0, 0.15)"
+              d="M 45 61 C 41 74, 38 85, 46.5 98 C 51.5 85, 49 74, 47.5 61 Z"
+              fill="rgba(192, 255, 0, 0.12)"
             />
-            {/* Layer 1.2: Main gradient flame */}
             <Path
-              d="M 48 59 C 45 74, 42.5 85, 50 95 C 57.5 85, 55 74, 52 59 Z"
+              d="M 46 61 C 43.5 74, 41 85, 46.5 95 C 50.5 85, 48.5 74, 47 61 Z"
               fill="url(#flameGrad)"
             />
-            {/* Layer 1.3: Inner hot white core */}
             <Path
-              d="M 49 59 C 47.8 70, 46.5 78, 50 84 C 53.5 78, 52.2 70, 51 59 Z"
+              d="M 46.2 61 C 45 70, 44 78, 46.5 84 C 49 78, 47.5 70, 46.8 61 Z"
+              fill="#FFFFFF"
+              opacity={0.65}
+            />
+
+            {/* Right Flame Plume */}
+            <Path
+              d="M 52.5 61 C 51 74, 48.5 85, 53.5 98 C 59 85, 56 74, 55 61 Z"
+              fill="rgba(192, 255, 0, 0.12)"
+            />
+            <Path
+              d="M 53 61 C 51.5 74, 49.5 85, 53.5 95 C 57.5 85, 55.5 74, 54 61 Z"
+              fill="url(#flameGrad)"
+            />
+            <Path
+              d="M 53.2 61 C 52.5 70, 51.5 78, 53.5 84 C 55.5 78, 54.5 70, 53.8 61 Z"
               fill="#FFFFFF"
               opacity={0.65}
             />
@@ -245,10 +258,10 @@ export function RocketLaunchGlow() {
             <Defs>
               {/* High-fidelity 3D metallic gradient for capsule body */}
               <LinearGradient id="rocketBodyGrad" x1="0" y1="0" x2="1" y2="0.3">
-                <Stop offset="0%" stopColor="#040D02" />
-                <Stop offset="18%" stopColor={colors.accent} stopOpacity={0.85} />
+                <Stop offset="0%" stopColor="#030C01" />
+                <Stop offset="22%" stopColor={colors.accent} stopOpacity={0.85} />
                 <Stop offset="50%" stopColor="#0B1C05" />
-                <Stop offset="82%" stopColor="#030801" />
+                <Stop offset="80%" stopColor="#020601" />
                 <Stop offset="100%" stopColor="#000000" />
               </LinearGradient>
 
@@ -260,23 +273,15 @@ export function RocketLaunchGlow() {
               </LinearGradient>
             </Defs>
 
-            {/* Engine Nozzle */}
-            <Path
-              d="M 47 54 L 53 54 L 52 58 L 48 58 Z"
-              fill="#121410"
-              stroke={colors.accent}
-              strokeWidth={1}
-            />
-
             {/* Left Fin - Sleek Swept Wing shape */}
             <Path
-              d="M 41 38 C 34 40, 28 46, 28 58 C 28 66, 36 64, 40 54 Z"
+              d="M 41 38 C 34 40, 27 46, 27 58 C 32 60, 37 57, 41 50 Z"
               stroke={colors.accent}
               strokeWidth={3}
               opacity={0.16}
             />
             <Path
-              d="M 41 38 C 34 40, 28 46, 28 58 C 28 66, 36 64, 40 54 Z"
+              d="M 41 38 C 34 40, 27 46, 27 58 C 32 60, 37 57, 41 50 Z"
               fill="url(#finGrad)"
               stroke={colors.accent}
               strokeWidth={1.5}
@@ -286,13 +291,13 @@ export function RocketLaunchGlow() {
 
             {/* Right Fin - Sleek Swept Wing shape */}
             <Path
-              d="M 59 38 C 66 40, 72 46, 72 58 C 72 66, 64 64, 60 54 Z"
+              d="M 59 38 C 66 40, 73 46, 73 58 C 68 60, 63 57, 59 50 Z"
               stroke={colors.accent}
               strokeWidth={3}
               opacity={0.16}
             />
             <Path
-              d="M 59 38 C 66 40, 72 46, 72 58 C 72 66, 64 64, 60 54 Z"
+              d="M 59 38 C 66 40, 73 46, 73 58 C 68 60, 63 57, 59 50 Z"
               fill="url(#finGrad)"
               stroke={colors.accent}
               strokeWidth={1.5}
@@ -300,9 +305,9 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
 
-            {/* Main Rocket Body capsule - 3D Convex Swell and Rounded Dome Nosecone */}
+            {/* Main Rocket Body capsule - 3D Convex Swell */}
             <Path
-              d="M 43 54 C 41 44, 38 32, 50 12 C 62 32, 59 44, 57 54 Z"
+              d="M 41 52 C 41 38, 43 20, 50 10 C 57 20, 59 38, 59 52 Z"
               stroke={colors.accent}
               strokeWidth={4.5}
               opacity={0.24}
@@ -310,7 +315,7 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
             <Path
-              d="M 43 54 C 41 44, 38 32, 50 12 C 62 32, 59 44, 57 54 Z"
+              d="M 41 52 C 41 38, 43 20, 50 10 C 57 20, 59 38, 59 52 Z"
               fill="url(#rocketBodyGrad)"
               stroke="#FFFFFF"
               strokeWidth={1.8}
@@ -318,50 +323,88 @@ export function RocketLaunchGlow() {
               strokeLinejoin="round"
             />
 
-            {/* Nosecone separator line */}
+            {/* Double Nosecone divider rings */}
             <Path
-              d="M 42.8 25 C 45 28, 55 28, 57.2 25"
+              d="M 42.8 25.5 C 45 28, 55 28, 57.2 25.5"
+              stroke="#FFFFFF"
+              strokeWidth={1.2}
+              opacity={0.8}
+            />
+            <Path
+              d="M 43.5 23.5 C 45.5 26, 54.5 26, 56.5 23.5"
               stroke="#FFFFFF"
               strokeWidth={1.2}
               opacity={0.8}
             />
 
+            {/* Center Fin (runs along middle of lower capsule) */}
+            <Path
+              d="M 50 38 C 50 44, 48 48, 48 52 C 51 48, 50 44, 50 38 Z"
+              fill="url(#rocketBodyGrad)"
+              stroke={colors.accent}
+              strokeWidth={1.2}
+            />
+
+            {/* Dark Ribbed Nozzle Mount base */}
+            <Path
+              d="M 43 52 L 57 52 L 55 58 L 45 58 Z"
+              fill="#121410"
+              stroke={colors.accent}
+              strokeWidth={1}
+            />
+            <Path d="M 44.5 54 L 55.5 54" stroke="rgba(255, 255, 255, 0.45)" strokeWidth={0.8} />
+            <Path d="M 44 56 L 56 56" stroke="rgba(255, 255, 255, 0.45)" strokeWidth={0.8} />
+
+            {/* Dual Engine Nozzles */}
+            <Path
+              d="M 45.5 58 L 48.5 58 L 47.8 61 L 46.2 61 Z"
+              fill="#1F221B"
+              stroke={colors.accent}
+              strokeWidth={0.8}
+            />
+            <Path
+              d="M 51.5 58 L 54.5 58 L 53.8 61 L 52.2 61 Z"
+              fill="#1F221B"
+              stroke={colors.accent}
+              strokeWidth={0.8}
+            />
+
             {/* 3D Specular Highlight Overlays along curves */}
             <Path
-              d="M 43 54 C 41 44, 38 32, 50 12"
+              d="M 41 52 C 41 38, 43 20, 50 10"
               stroke="#FFFFFF"
               strokeWidth={1}
               opacity={0.5}
               fill="none"
             />
             <Path
-              d="M 50 12 C 62 32, 59 44, 57 54"
+              d="M 50 10 C 57 20, 59 38, 59 52"
               stroke="rgba(192, 255, 0, 0.4)"
               strokeWidth={0.8}
               fill="none"
             />
 
-            {/* Beveled 3D Porthole Window Ring (Offset double circle with inner specular glint) */}
+            {/* Beveled 3D Concentric Window Ring */}
             <Circle
               cx="50"
               cy="34"
-              r="6.2"
+              r="6.5"
               stroke={colors.accent}
-              strokeWidth={2.2}
-              fill="none"
+              strokeWidth={1.8}
+              fill="rgba(192, 255, 0, 0.1)"
             />
             <Circle
-              cx="49.5"
-              cy="33.5"
-              r="5"
-              stroke="#081005"
+              cx="50"
+              cy="34"
+              r="4.5"
+              stroke="#FFFFFF"
               strokeWidth={1}
-              fill="none"
+              fill="rgba(192, 255, 0, 0.35)"
             />
             <Circle
-              cx="48.2"
-              cy="32.2"
-              r="1"
+              cx="48.5"
+              cy="32.5"
+              r="0.8"
               fill="#FFFFFF"
               opacity={0.85}
             />
