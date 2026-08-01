@@ -184,7 +184,6 @@ export default function HomeScreen() {
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
           <CardFloatingParticles />
-          <RocketLaunchGlow />
 
           {/* Hero Content */}
           <View style={styles.heroBadgeContainer}>
@@ -201,6 +200,8 @@ export default function HomeScreen() {
           >
             <Text style={styles.heroButtonText}>Activate Hiring Manager Outreach →</Text>
           </AnimatedPressable>
+
+          <RocketLaunchGlow />
         </View>
       </FadeInView>
 

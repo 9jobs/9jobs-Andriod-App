@@ -169,6 +169,8 @@ const styles = StyleSheet.create({
     height: 86,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 10,
+    elevation: 5,
   },
   glow: {
     position: "absolute",
@@ -217,6 +219,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.85)",
   },
   rocketWrapper: {
+    position: "relative",
     width: 46,
     height: 46,
     transform: [{ rotate: "45deg" }],
