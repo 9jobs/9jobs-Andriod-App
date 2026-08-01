@@ -259,11 +259,13 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   shortcutTitle: {
-    ...typography.subheading,
+    ...typography.title,
+    fontSize: 16,
     color: colors.text,
   },
   shortcutSubtitle: {
-    ...typography.caption,
+    ...typography.label,
+    fontWeight: "400",
     color: colors.mutedText,
   },
   shortcutArrow: {
