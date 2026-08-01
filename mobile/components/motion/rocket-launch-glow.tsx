@@ -8,11 +8,11 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Circle, Path, Ellipse } from "react-native-svg";
+import Svg, { Circle, Path, Ellipse, Defs, LinearGradient, Stop } from "react-native-svg";
 import { colors } from "@/theme";
 import { useReducedMotionPreference } from "./ReducedMotion";
 
-// Ascending Space Dust/Sparks Component using primitive coordinates for maximum stability
+// Ascending Space Dust/Sparks Component
 function SpaceDustParticle({
   delay,
   xStart,
@@ -35,7 +35,7 @@ function SpaceDustParticle({
     const timeout = setTimeout(() => {
       progress.value = withRepeat(
         withTiming(1, {
-          duration: 2200 + Math.random() * 800,
+          duration: 2400 + Math.random() * 800,
           easing: Easing.out(Easing.quad),
         }),
         -1,
@@ -53,7 +53,7 @@ function SpaceDustParticle({
     const x = xStart + progress.value * (xEnd - xStart);
     const y = yStart + progress.value * (yEnd - yStart);
     
-    // Smooth fade-in at start, fade-out at end
+    // Smooth fade in/out
     const opacity = progress.value < 0.15
       ? (progress.value / 0.15) * 0.85
       : progress.value > 0.8
@@ -144,8 +144,8 @@ export function RocketLaunchGlow() {
 
     const driftVal = drift.value * Math.PI * 2;
     // Micro-translation along 45deg axis
-    const translateX = Math.sin(driftVal) * 2.5;
-    const translateY = -Math.sin(driftVal) * 2.5;
+    const translateX = Math.sin(driftVal) * 3;
+    const translateY = -Math.sin(driftVal) * 3;
 
     return {
       transform: [
@@ -181,30 +181,40 @@ export function RocketLaunchGlow() {
       <Animated.View style={[styles.glow, glowStyle]} />
 
       {/* Background Particles (behind rocket) */}
-      <SpaceDustParticle delay={0} xStart={30} xEnd={60} yStart={70} yEnd={10} size={4.5} />
-      <SpaceDustParticle delay={400} xStart={40} xEnd={75} yStart={85} yEnd={20} size={3.5} />
-      <SpaceDustParticle delay={900} xStart={15} xEnd={45} yStart={65} yEnd={5} size={4} />
+      <SpaceDustParticle delay={0} xStart={45} xEnd={90} yStart={100} yEnd={10} size={5} />
+      <SpaceDustParticle delay={400} xStart={60} xEnd={105} yStart={115} yEnd={25} size={3.8} />
+      <SpaceDustParticle delay={900} xStart={20} xEnd={65} yStart={85} yEnd={5} size={4.2} />
 
       {/* Sleek Animated Rocket Graphic Wrapper */}
       <Animated.View style={[styles.rocketWrapper, rocketStyle]}>
         {/* Layer 1: Thruster Flame (Rendered under nozzle & body) */}
         <Animated.View style={[StyleSheet.absoluteFill, flameStyle]}>
           <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
-            {/* Multi-layered vector shape to construct a neon glowing flame plume */}
-            {/* Outer soft glowing flame boundary */}
+            <Defs>
+              {/* Glowing vertical gradient for engine thrust plume */}
+              <LinearGradient id="flameGrad" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={colors.accent} stopOpacity={1} />
+                <Stop offset="25%" stopColor={colors.accent} stopOpacity={0.8} />
+                <Stop offset="70%" stopColor={colors.accent} stopOpacity={0.25} />
+                <Stop offset="100%" stopColor={colors.accent} stopOpacity={0} />
+              </LinearGradient>
+            </Defs>
+
+            {/* Layer 1.1: Soft outer glow of the flame */}
             <Path
               d="M 46.5 59 C 41.5 74, 37.5 85, 50 100 C 62.5 85, 58.5 74, 53.5 59 Z"
               fill="rgba(192, 255, 0, 0.15)"
             />
-            {/* Medium intense flame boundary */}
+            {/* Layer 1.2: Main gradient flame */}
             <Path
-              d="M 48 59 C 45 74, 42.5 85, 50 92 C 57.5 85, 55 74, 52 59 Z"
-              fill="rgba(192, 255, 0, 0.45)"
+              d="M 48 59 C 45 74, 42.5 85, 50 95 C 57.5 85, 55 74, 52 59 Z"
+              fill="url(#flameGrad)"
             />
-            {/* Inner hot core flame */}
+            {/* Layer 1.3: Inner hot white core */}
             <Path
-              d="M 49 59 C 47.5 74, 45.5 82, 50 85 C 54.5 82, 52.5 74, 51 59 Z"
-              fill={colors.accent}
+              d="M 49 59 C 47.8 70, 46.5 78, 50 84 C 53.5 78, 52.2 70, 51 59 Z"
+              fill="#FFFFFF"
+              opacity={0.65}
             />
           </Svg>
         </Animated.View>
@@ -212,6 +222,24 @@ export function RocketLaunchGlow() {
         {/* Layer 2: Rocket Body structure and Orbital Ring */}
         <View style={StyleSheet.absoluteFill}>
           <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
+            <Defs>
+              {/* Cylindrical metal gradient for rocket capsule */}
+              <LinearGradient id="rocketBodyGrad" x1="0" y1="0" x2="1" y2="0">
+                <Stop offset="0%" stopColor="#0B1A05" />
+                <Stop offset="25%" stopColor="rgba(163, 230, 53, 0.15)" />
+                <Stop offset="50%" stopColor="rgba(163, 230, 53, 0.55)" />
+                <Stop offset="75%" stopColor="rgba(163, 230, 53, 0.15)" />
+                <Stop offset="100%" stopColor="#050C02" />
+              </LinearGradient>
+
+              {/* Glowing gradient for fins */}
+              <LinearGradient id="finGrad" x1="0" y1="0" x2="1" y2="0">
+                <Stop offset="0%" stopColor="rgba(163, 230, 53, 0.08)" />
+                <Stop offset="50%" stopColor="rgba(163, 230, 53, 0.35)" />
+                <Stop offset="100%" stopColor="rgba(163, 230, 53, 0.04)" />
+              </LinearGradient>
+            </Defs>
+
             {/* Base Orbital Ring (Outer Glow and Ring) */}
             <Ellipse
               cx="50"
@@ -240,30 +268,50 @@ export function RocketLaunchGlow() {
               strokeWidth={1}
             />
 
-            {/* Left Fin */}
+            {/* Left Fin (Outer Glow and Fin) */}
             <Path
               d="M 39 44 C 31.5 48.5, 27.5 54, 27.5 66 C 33 66, 37 62.5, 39 56 Z"
-              fill="rgba(163, 230, 53, 0.12)"
               stroke={colors.accent}
-              strokeWidth={1.8}
+              strokeWidth={3.5}
+              opacity={0.2}
+            />
+            <Path
+              d="M 39 44 C 31.5 48.5, 27.5 54, 27.5 66 C 33 66, 37 62.5, 39 56 Z"
+              fill="url(#finGrad)"
+              stroke={colors.accent}
+              strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
 
-            {/* Right Fin */}
+            {/* Right Fin (Outer Glow and Fin) */}
             <Path
               d="M 61 44 C 68.5 48.5, 72.5 54, 72.5 66 C 67 66, 63 62.5, 61 56 Z"
-              fill="rgba(163, 230, 53, 0.12)"
               stroke={colors.accent}
-              strokeWidth={1.8}
+              strokeWidth={3.5}
+              opacity={0.2}
+            />
+            <Path
+              d="M 61 44 C 68.5 48.5, 72.5 54, 72.5 66 C 67 66, 63 62.5, 61 56 Z"
+              fill="url(#finGrad)"
+              stroke={colors.accent}
+              strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
 
-            {/* Main Rocket Body capsule */}
+            {/* Main Rocket Body capsule (Double Outline Glow) */}
             <Path
               d="M 50 10 C 44 23, 39 37, 39 56 Q 50 60 61 56 C 61 37, 56 23, 50 10 Z"
-              fill="rgba(163, 230, 53, 0.08)"
+              stroke={colors.accent}
+              strokeWidth={4.5}
+              opacity={0.24}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Path
+              d="M 50 10 C 44 23, 39 37, 39 56 Q 50 60 61 56 C 61 37, 56 23, 50 10 Z"
+              fill="url(#rocketBodyGrad)"
               stroke="#FFFFFF"
               strokeWidth={1.8}
               strokeLinecap="round"
@@ -297,8 +345,8 @@ export function RocketLaunchGlow() {
       </Animated.View>
 
       {/* Foreground Particles (in front of rocket) */}
-      <SpaceDustParticle delay={600} xStart={25} xEnd={55} yStart={75} yEnd={15} size={3} />
-      <SpaceDustParticle delay={1200} xStart={45} xEnd={80} yStart={90} yEnd={30} size={4} />
+      <SpaceDustParticle delay={600} xStart={35} xEnd={80} yStart={105} yEnd={20} size={3.2} />
+      <SpaceDustParticle delay={1200} xStart={50} xEnd={95} yStart={120} yEnd={35} size={4.5} />
     </View>
   );
 }
@@ -306,10 +354,10 @@ export function RocketLaunchGlow() {
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    right: 18,
-    top: 18,
-    width: 90,
-    height: 90,
+    right: -8,
+    top: 6,
+    width: 140,
+    height: 140,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
@@ -317,17 +365,17 @@ const styles = StyleSheet.create({
   },
   glow: {
     position: "absolute",
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: "rgba(163, 230, 53, 0.16)",
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    backgroundColor: "rgba(163, 230, 53, 0.14)",
     shadowColor: colors.accent,
     shadowOpacity: 0.45,
-    shadowRadius: 20,
+    shadowRadius: 28,
   },
   rocketWrapper: {
-    width: 82,
-    height: 82,
+    width: 130,
+    height: 130,
     justifyContent: "center",
     alignItems: "center",
   },

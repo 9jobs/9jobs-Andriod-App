@@ -443,13 +443,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.4,
-    paddingRight: 80,
+    paddingRight: 110,
   },
   heroSubtitleText: {
     color: colors.darkMuted,
     fontSize: 14,
     lineHeight: 20,
-    paddingRight: 80,
+    paddingRight: 110,
   },
   heroButton: {
     backgroundColor: colors.accent,
