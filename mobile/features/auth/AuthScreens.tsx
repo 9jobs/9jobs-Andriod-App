@@ -17,6 +17,8 @@ import { Screen } from "@/components/ui/Screen";
 import { TextField } from "@/components/ui/TextField";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
+import { StableEntranceView } from "@/components/motion/StableEntranceView";
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { useSession } from "@/providers/SessionProvider";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import type { SignUpPayload } from "@/types/auth";
@@ -931,7 +933,7 @@ function AuthScaffold({
         </View>
       </View>
 
-      <View style={styles.card}>
+      <StableEntranceView direction="up" duration={480} style={styles.card}>
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>{subtitle}</Text>
         {showProgress ? (
@@ -964,7 +966,7 @@ function AuthScaffold({
         ) : null}
         <View style={styles.form}>{children}</View>
         {footer ? <View style={styles.footer}>{footer}</View> : null}
-      </View>
+      </StableEntranceView>
     </Screen>
   );
 }
@@ -979,12 +981,14 @@ function GoogleButton({
   disabled?: boolean;
 }) {
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [
+      scaleTo={0.97}
+      opacityTo={0.92}
+      duration={120}
+      style={[
         styles.googleButton,
-        pressed && !disabled && styles.googleButtonPressed,
         disabled && styles.googleButtonDisabled,
       ]}
     >
@@ -992,7 +996,7 @@ function GoogleButton({
         <GoogleIcon />
       </View>
       <Text style={styles.googleLabel}>{label}</Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

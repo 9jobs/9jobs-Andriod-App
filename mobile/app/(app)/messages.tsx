@@ -6,6 +6,8 @@ import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing, shadows } from "@/theme";
+import { FadeInView } from "@/components/motion/FadeInView";
+import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 
 type ChatItem = {
   initials: string;
@@ -180,10 +182,10 @@ export default function MessagesScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          <Pressable style={styles.iconButton} onPress={() => setSearchOpen((value) => !value)}>
+          <AnimatedPressable style={styles.iconButton} onPress={() => setSearchOpen((value) => !value)}>
             <SearchIcon />
-          </Pressable>
-          <Pressable
+          </AnimatedPressable>
+          <AnimatedPressable
             style={styles.iconButton}
             onPress={() =>
               Alert.alert("Chat Actions", "Choose an action", [
@@ -197,7 +199,7 @@ export default function MessagesScreen() {
             }
           >
             <VerticalMenuIcon />
-          </Pressable>
+          </AnimatedPressable>
         </View>
       </View>
 
@@ -216,15 +218,16 @@ export default function MessagesScreen() {
 
       <View style={styles.tabsContainer}>
         {(["All", "Personal", "Work", "Groups"] as const).map((tab) => (
-          <Pressable
+          <AnimatedPressable
             key={tab}
             style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
             onPress={() => setActiveTab(tab)}
+            scaleTo={0.96}
           >
             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
               {tab === "All" ? "All chats" : tab}
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         ))}
       </View>
 
@@ -233,80 +236,84 @@ export default function MessagesScreen() {
         style={styles.list}
         contentContainerStyle={styles.listContent}
       >
-        {filteredChats.map((chat) => {
+        {filteredChats.map((chat, idx) => {
           if (chat.primary) {
             return (
-              <Pressable
-                key={chat.name}
-                style={cardStyle.container}
-                onPress={openSupportChat}
-              >
-                <View style={cardStyle.avatarWrapper}>
-                  <View style={cardStyle.advisorAvatar}>
-                    <AdvisorAvatarIcon color={cardStyle.avatarColor} />
+              <FadeInView key={chat.name} type="fade-up" delay={idx * 50}>
+                <AnimatedPressable
+                  style={cardStyle.container}
+                  onPress={openSupportChat}
+                  scaleTo={0.98}
+                >
+                  <View style={cardStyle.avatarWrapper}>
+                    <View style={cardStyle.advisorAvatar}>
+                      <AdvisorAvatarIcon color={cardStyle.avatarColor} />
+                    </View>
+                    <View style={cardStyle.onlineIndicator} />
                   </View>
-                  <View style={cardStyle.onlineIndicator} />
-                </View>
-                <View style={cardStyle.content}>
-                  <View style={cardStyle.headerRow}>
-                    <View style={cardStyle.titleGroup}>
-                      <Text style={cardStyle.title} numberOfLines={1}>
-                        {chat.name}
+                  <View style={cardStyle.content}>
+                    <View style={cardStyle.headerRow}>
+                      <View style={cardStyle.titleGroup}>
+                        <Text style={cardStyle.title} numberOfLines={1}>
+                          {chat.name}
+                        </Text>
+                      </View>
+                      <Text style={cardStyle.time}>
+                        {chat.time}
                       </Text>
                     </View>
-                    <Text style={cardStyle.time}>
-                      {chat.time}
-                    </Text>
-                  </View>
 
-                  <View style={cardStyle.bodyGroup}>
-                    <View style={cardStyle.bottomRow}>
-                      <Text style={cardStyle.preview} numberOfLines={1}>
-                        {chat.preview === "remove" ? "" : chat.preview}
-                      </Text>
-                      {chat.unread > 0 ? (
-                        <View style={cardStyle.unreadBadge}>
-                          <Text style={cardStyle.unreadBadgeText}>{chat.unread}</Text>
-                        </View>
-                      ) : null}
+                    <View style={cardStyle.bodyGroup}>
+                      <View style={cardStyle.bottomRow}>
+                        <Text style={cardStyle.preview} numberOfLines={1}>
+                          {chat.preview === "remove" ? "" : chat.preview}
+                        </Text>
+                        {chat.unread > 0 ? (
+                          <View style={cardStyle.unreadBadge}>
+                            <Text style={cardStyle.unreadBadgeText}>{chat.unread}</Text>
+                          </View>
+                        ) : null}
+                      </View>
                     </View>
                   </View>
-                </View>
-              </Pressable>
+                </AnimatedPressable>
+              </FadeInView>
             );
           }
 
           return (
-            <Pressable key={chat.name} style={styles.row} onPress={openSupportChat}>
-              <View style={[styles.avatar, { backgroundColor: chat.tone }]}>
-                <Text style={styles.avatarInitials}>{chat.initials}</Text>
-              </View>
-
-              <View style={styles.body}>
-                <View style={styles.topRow}>
-                  <View style={styles.nameGroup}>
-                    <Text style={styles.name}>{chat.name}</Text>
-                  </View>
-                  <Text style={styles.time}>{chat.time}</Text>
+            <FadeInView key={chat.name} type="fade-up" delay={idx * 50}>
+              <AnimatedPressable style={styles.row} onPress={openSupportChat} scaleTo={0.98}>
+                <View style={[styles.avatar, { backgroundColor: chat.tone }]}>
+                  <Text style={styles.avatarInitials}>{chat.initials}</Text>
                 </View>
 
-                <View style={styles.bottomRow}>
-                  <Text style={styles.preview} numberOfLines={1}>{chat.preview}</Text>
-                  {chat.unread > 0 ? (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadBadgeText}>{chat.unread}</Text>
+                <View style={styles.body}>
+                  <View style={styles.topRow}>
+                    <View style={styles.nameGroup}>
+                      <Text style={styles.name}>{chat.name}</Text>
                     </View>
-                  ) : null}
+                    <Text style={styles.time}>{chat.time}</Text>
+                  </View>
+
+                  <View style={styles.bottomRow}>
+                    <Text style={styles.preview} numberOfLines={1}>{chat.preview}</Text>
+                    {chat.unread > 0 ? (
+                      <View style={styles.unreadBadge}>
+                        <Text style={styles.unreadBadgeText}>{chat.unread}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                 </View>
-              </View>
-            </Pressable>
+              </AnimatedPressable>
+            </FadeInView>
           );
         })}
       </ScrollView>
 
-      <Pressable style={styles.fab} onPress={openSupportChat}>
+      <AnimatedPressable style={styles.fab} onPress={openSupportChat} scaleTo={0.94}>
         <ChatBubbleIcon />
-      </Pressable>
+      </AnimatedPressable>
     </Screen>
   );
 }
