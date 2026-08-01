@@ -180,6 +180,32 @@ export function RocketLaunchGlow() {
       {/* Background Soft Neon Glow */}
       <Animated.View style={[styles.glow, glowStyle]} />
 
+      {/* Horizontal Orbital Ring around the rocket (Rendered flat in background for 3D perspective) */}
+      <View style={StyleSheet.absoluteFill}>
+        <Svg width="100%" height="100%" viewBox="0 0 140 140" fill="none">
+          {/* Inner ring */}
+          <Ellipse
+            cx="65"
+            cy="79"
+            rx="46"
+            ry="18"
+            stroke={colors.accent}
+            strokeWidth={1.8}
+            opacity={0.8}
+          />
+          {/* Outer glow ring */}
+          <Ellipse
+            cx="65"
+            cy="79"
+            rx="46"
+            ry="18"
+            stroke={colors.accent}
+            strokeWidth={5}
+            opacity={0.22}
+          />
+        </Svg>
+      </View>
+
       {/* Background Particles (behind rocket) */}
       <SpaceDustParticle delay={0} xStart={45} xEnd={90} yStart={100} yEnd={10} size={5} />
       <SpaceDustParticle delay={400} xStart={60} xEnd={105} yStart={115} yEnd={25} size={3.8} />
@@ -219,7 +245,7 @@ export function RocketLaunchGlow() {
           </Svg>
         </Animated.View>
 
-        {/* Layer 2: Rocket Body structure and Orbital Ring */}
+        {/* Layer 2: Rocket Body structure and Window */}
         <View style={StyleSheet.absoluteFill}>
           <Svg width="100%" height="100%" viewBox="0 0 100 100" fill="none">
             <Defs>
@@ -239,26 +265,6 @@ export function RocketLaunchGlow() {
                 <Stop offset="100%" stopColor="rgba(163, 230, 53, 0.04)" />
               </LinearGradient>
             </Defs>
-
-            {/* Base Orbital Ring (Outer Glow and Ring) */}
-            <Ellipse
-              cx="50"
-              cy="58"
-              rx="23"
-              ry="7"
-              stroke={colors.accent}
-              strokeWidth={4.5}
-              opacity={0.16}
-            />
-            <Ellipse
-              cx="50"
-              cy="58"
-              rx="23"
-              ry="7"
-              stroke={colors.accent}
-              strokeWidth={1.5}
-              opacity={0.72}
-            />
 
             {/* Engine Nozzle */}
             <Path
@@ -326,19 +332,26 @@ export function RocketLaunchGlow() {
               opacity={0.85}
             />
             <Path
-              d="M 50 43 L 50 56.5"
+              d="M 50 45 L 50 56.5"
               stroke="rgba(255, 255, 255, 0.45)"
               strokeWidth={1}
             />
 
-            {/* Glowing Porthole Window */}
+            {/* Large Glowing Circular Window (Reference Style Porthole) */}
             <Circle
               cx="50"
-              cy="35"
-              r="4.2"
-              fill="rgba(163, 230, 53, 0.25)"
+              cy="37"
+              r="6.2"
+              fill="rgba(163, 230, 53, 0.2)"
               stroke={colors.accent}
-              strokeWidth={1.5}
+              strokeWidth={2.2}
+            />
+            <Circle
+              cx="50"
+              cy="37"
+              r="2.5"
+              fill="#FFFFFF"
+              opacity={0.7}
             />
           </Svg>
         </View>
