@@ -70,7 +70,7 @@ import { FadeInView } from "@/components/motion/FadeInView";
 
 export default function AdminThreadScreen() {
   const { user } = useSession();
-  const { data: snapshot } = usePreviewSyncQuery(true);
+  const { data: snapshot } = usePreviewSyncQuery(false);
   const sendMessage = useSendMessageToAdminMutation();
   const markSeen = useMarkMessagesAsSeenMutation();
   const markDelivered = useMarkMessagesAsDeliveredMutation();

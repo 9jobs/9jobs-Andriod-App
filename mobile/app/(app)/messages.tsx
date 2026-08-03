@@ -23,7 +23,7 @@ type ChatItem = {
 const sampleChats: ChatItem[] = [];
 
 export default function MessagesScreen() {
-  const { data: snapshot } = usePreviewSyncQuery(true, {
+  const { data: snapshot } = usePreviewSyncQuery(false, {
     refetchInterval: 3000,
   });
   const thread = snapshot?.messageThread;

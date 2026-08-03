@@ -16,7 +16,7 @@ const shouldEnableLiveTransport =
 
 export default function AppLayout() {
   const { user, hasCompletedOnboarding } = useSession();
-  const { data: snapshot } = usePreviewSyncQuery();
+  const { data: snapshot } = usePreviewSyncQuery(true);
   const queryClient = useQueryClient();
 
   useEffect(() => {

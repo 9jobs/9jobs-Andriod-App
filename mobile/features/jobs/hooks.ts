@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { applyToJob, toggleSavedJob, updateApplicationStatus, updateProfile, updateResumeScore, uploadAndAnalyzeResume, markMessagesAsSeen, markMessagesAsDelivered } from "@/lib/data/mobile-sync-repository";
 import { queryKeys } from "@/lib/queries";
 import { filterJobs } from "@/features/jobs/filterJobs";
@@ -82,8 +83,28 @@ export function useUpdateProfileMutation() {
 
   return useMutation({
     mutationFn: (patch: Parameters<typeof updateProfile>[0]) => updateProfile(patch, user),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.previewSync });
+      const previousSnapshots = queryClient.getQueriesData<MobileSyncSnapshot>({
+        queryKey: queryKeys.previewSync,
+      });
+
+      queryClient.setQueriesData<MobileSyncSnapshot>(
+        { queryKey: queryKeys.previewSync },
+        (current) => current
+          ? { ...current, profile: { ...current.profile, ...patch } }
+          : current,
+      );
+
+      return { previousSnapshots };
+    },
+    onError: (_error, _patch, context) => {
+      context?.previousSnapshots.forEach(([queryKey, snapshot]) => {
+        queryClient.setQueryData(queryKey, snapshot);
+      });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },
   });
 }

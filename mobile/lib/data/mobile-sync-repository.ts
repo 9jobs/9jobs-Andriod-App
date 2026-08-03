@@ -1898,10 +1898,24 @@ export async function updateProfile(
     await AsyncStorage.setItem("user_dark_mode_override", patch.darkMode ? "true" : "false");
   }
   try {
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
-    const token = await ensureBackendAuthToken(activeUser, backendUrl);
-    if (token) {
-      const backendResponse = await fetch(`${backendUrl}/api/mobile/profile`, {
+    const hasBackendProfileFields = [
+      patch.fullName,
+      patch.email,
+      patch.phoneNumber,
+      patch.location,
+      patch.headline,
+      patch.avatarUrl,
+      patch.linkedinUrl,
+      patch.facebookUrl,
+      patch.instagramUrl,
+      patch.twitterUrl,
+    ].some((value) => typeof value === "string");
+
+    if (hasBackendProfileFields) {
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+      const token = await ensureBackendAuthToken(activeUser, backendUrl);
+      if (token) {
+        const backendResponse = await fetch(`${backendUrl}/api/mobile/profile`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1924,9 +1938,10 @@ export async function updateProfile(
         }),
       });
 
-      if (!backendResponse.ok) {
-        const errorPayload = await backendResponse.json().catch(() => null);
-        throw new Error(errorPayload?.error || `HTTP error ${backendResponse.status}`);
+        if (!backendResponse.ok) {
+          const errorPayload = await backendResponse.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${backendResponse.status}`);
+        }
       }
     }
 

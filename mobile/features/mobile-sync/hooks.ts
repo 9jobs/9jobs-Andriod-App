@@ -46,7 +46,7 @@ const previewSyncTables = [
 ];
 
 export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
-  enableRealtime = true,
+  enableRealtime = false,
   options?: Omit<UseQueryOptions<MobileSyncSnapshot, Error, TData>, "queryKey" | "queryFn"> & {
     queryKey?: readonly unknown[];
   },
@@ -62,7 +62,8 @@ export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
     queryFn: () => fetchMobileSyncSnapshot(user),
     retry: 1,
     refetchInterval: shouldEnableLiveTransport ? false : 15000,
-    refetchOnMount: true,
+    staleTime: 120_000,
+    refetchOnMount: false,
     refetchOnReconnect: true,
     ...options,
   });
