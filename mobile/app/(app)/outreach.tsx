@@ -32,6 +32,14 @@ export default function OutreachScreen() {
         accessibilityLabel="Outreach Engine: Discover, Personalize, Connect"
       >
         <OutreachMotionOverlay />
+        <View pointerEvents="none" style={styles.stageSubtitles}>
+          <Text style={styles.stageSubtitleOverlay} numberOfLines={1}>Find ideal opportunities</Text>
+          <Text style={styles.stageSubtitleOverlay} numberOfLines={1}>Tailored messages</Text>
+          <Text style={styles.stageSubtitleOverlay} numberOfLines={1}>Build real relationships</Text>
+        </View>
+        <View pointerEvents="none" style={styles.metricSubtitleMask}>
+          <Text style={styles.metricSubtitleOverlay} numberOfLines={1}>Higher response rate</Text>
+        </View>
         <View style={styles.heroCopyMask}>
           <Text style={styles.heroCopyTitle} numberOfLines={1}>
             <Text style={styles.heroCopyAccent}>9Jobs-</Text>powered outreach
@@ -201,6 +209,43 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: "#F2FF9A",
+  },
+  stageSubtitles: {
+    position: "absolute",
+    left: "2%",
+    right: "2%",
+    top: "68%",
+    height: "10%",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  stageSubtitleOverlay: {
+    width: "33.333%",
+    height: "100%",
+    backgroundColor: "#000000",
+    color: "#E5E5E0",
+    fontSize: 7.5,
+    lineHeight: 10,
+    fontWeight: "600",
+    textAlign: "center",
+    textAlignVertical: "center",
+  },
+  metricSubtitleMask: {
+    position: "absolute",
+    right: "7%",
+    bottom: "1.5%",
+    width: "25%",
+    height: "6%",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#11120F",
+  },
+  metricSubtitleOverlay: {
+    color: "#E5E5E0",
+    fontSize: 7.5,
+    lineHeight: 10,
+    fontWeight: "600",
+    textAlign: "center",
   },
   heroCopyMask: {
     position: "absolute",
