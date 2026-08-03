@@ -86,8 +86,47 @@ export function useSendMessageToAdminMutation() {
             attachmentSize?: number;
           },
     ) => (typeof content === "string" ? sendMessageToAdmin(content, user) : sendRichMessageToAdmin(content, user)),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    onMutate: (content) => {
+      const previousSnapshots = queryClient.getQueriesData<MobileSyncSnapshot>({
+        queryKey: queryKeys.previewSync,
+      });
+      const payload = typeof content === "string" ? { text: content } : content;
+      const createdAt = new Date().toISOString();
+      const optimisticMessage = {
+        id: -Date.now(),
+        conversation_id: user?.id ?? "preview-user-9jobs",
+        sender_id: user?.id ?? "preview-user-9jobs",
+        sender_role: "client",
+        recipient_id: "admin",
+        message_type: payload.messageType ?? "text",
+        text: payload.text ?? "",
+        content: payload.text ?? "",
+        attachment_url: payload.attachmentUrl ?? null,
+        attachment_name: payload.attachmentName ?? null,
+        attachment_mime_type: payload.attachmentMimeType ?? null,
+        attachment_size: payload.attachmentSize ?? null,
+        status: "sending",
+        created_at: createdAt,
+        direction: "outgoing" as const,
+      };
+
+      queryClient.setQueriesData<MobileSyncSnapshot>(
+        { queryKey: queryKeys.previewSync },
+        (current) => current
+          ? { ...current, messages: [...current.messages, optimisticMessage] }
+          : current,
+      );
+      void queryClient.cancelQueries({ queryKey: queryKeys.previewSync });
+
+      return { previousSnapshots };
+    },
+    onError: (_error, _content, context) => {
+      context?.previousSnapshots.forEach(([queryKey, snapshot]) => {
+        queryClient.setQueryData(queryKey, snapshot);
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
     },
   });
 }
