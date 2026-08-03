@@ -83,18 +83,21 @@ export function useUpdateProfileMutation() {
 
   return useMutation({
     mutationFn: (patch: Parameters<typeof updateProfile>[0]) => updateProfile(patch, user),
-    onMutate: async (patch) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.previewSync });
+    onMutate: (patch) => {
       const previousSnapshots = queryClient.getQueriesData<MobileSyncSnapshot>({
         queryKey: queryKeys.previewSync,
       });
 
-      queryClient.setQueriesData<MobileSyncSnapshot>(
-        { queryKey: queryKeys.previewSync },
-        (current) => current
-          ? { ...current, profile: { ...current.profile, ...patch } }
-          : current,
-      );
+      if (typeof patch.darkMode !== "boolean") {
+        queryClient.setQueriesData<MobileSyncSnapshot>(
+          { queryKey: queryKeys.previewSync },
+          (current) => current
+            ? { ...current, profile: { ...current.profile, ...patch } }
+            : current,
+        );
+      }
+
+      void queryClient.cancelQueries({ queryKey: queryKeys.previewSync });
 
       return { previousSnapshots };
     },

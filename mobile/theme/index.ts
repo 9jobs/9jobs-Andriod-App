@@ -1,4 +1,9 @@
 import { Platform } from "react-native";
+import { useSyncExternalStore } from "react";
+
+let darkThemeActive = false;
+let themeVersion = 0;
+const themeListeners = new Set<() => void>();
 
 export const colors = {
   background: "#F4F1E8",
@@ -132,6 +137,8 @@ export const typography = {
 };
 
 export function setTheme(isDark: boolean) {
+  const themeChanged = darkThemeActive !== isDark;
+  darkThemeActive = isDark;
   if (isDark) {
     colors.background = "#000000";
     colors.surface = "#1A1A1A";
@@ -157,4 +164,20 @@ export function setTheme(isDark: boolean) {
     colors.tabBackground = "rgba(252, 252, 248, 0.96)";
     colors.panel = "#F9F7F0";
   }
+
+  if (themeChanged) {
+    themeVersion += 1;
+    themeListeners.forEach((listener) => listener());
+  }
+}
+
+export function useThemeVersion() {
+  return useSyncExternalStore(
+    (listener) => {
+      themeListeners.add(listener);
+      return () => themeListeners.delete(listener);
+    },
+    () => themeVersion,
+    () => themeVersion,
+  );
 }

@@ -1,92 +1,116 @@
+import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
-import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { colors, radii, setTheme, shadows, spacing, typography, useThemeVersion } from "@/theme";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { useUpdateProfileMutation } from "@/features/jobs/hooks";
 
 export default function SettingsScreen() {
+  useThemeVersion();
   const { data: snapshot } = usePreviewSyncQuery();
   const profile = snapshot?.profile;
   const systemSettings = snapshot?.systemSettings;
   const { mutate: updateProfile } = useUpdateProfileMutation();
+  const [darkModeEnabled, setDarkModeEnabled] = useState(profile?.darkMode ?? false);
+
+  useEffect(() => {
+    if (typeof profile?.darkMode === "boolean") {
+      setDarkModeEnabled(profile.darkMode);
+    }
+  }, [profile?.darkMode]);
 
   const isPushEnabled = profile?.pushNotifications ?? true;
-  const isDarkModeEnabled = profile?.darkMode ?? false;
+  const isDarkModeEnabled = darkModeEnabled;
 
   const pushNotificationsActive = isPushEnabled && (systemSettings?.pushNotificationsEnabled ?? true);
   const darkModeActive = isDarkModeEnabled && !(systemSettings?.darkModeOverride ?? false);
 
+  const handleDarkModeToggle = () => {
+    const nextDarkMode = !isDarkModeEnabled;
+    setTheme(nextDarkMode && !(systemSettings?.darkModeOverride ?? false));
+    setDarkModeEnabled(nextDarkMode);
+    router.setParams({ themePreview: nextDarkMode ? "dark" : "light" });
+    setTimeout(() => {
+      updateProfile({ darkMode: nextDarkMode });
+    }, 400);
+  };
+
   return (
-    <Screen>
+    <Screen style={{ backgroundColor: darkModeActive ? "#000000" : "#F4F1E8" }}>
       <View style={styles.topRow}>
-        <BackHeader />
-        <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
+        <BackHeader isDark={darkModeActive} />
+        <Text style={[styles.title, { color: darkModeActive ? "#FFFFFF" : "#0A0A08" }]}>Settings</Text>
       </View>
 
-      <Section label="ACCOUNT">
+      <Section label="ACCOUNT" isDark={darkModeActive}>
         <Row
+          isDark={darkModeActive}
           icon="profile"
           title="Personal Information"
           onPress={() => router.push("/(app)/personal-information")}
         />
-        <Divider />
+        <Divider isDark={darkModeActive} />
         <Row
+          isDark={darkModeActive}
           icon="settings"
           title="Password & Security"
           onPress={() => router.push("/(app)/security")}
         />
-        <Divider />
+        <Divider isDark={darkModeActive} />
         <Row
+          isDark={darkModeActive}
           icon="spark"
           title="Subscription Plan"
           onPress={() => router.push("/(app)/pricing")}
         />
       </Section>
 
-      <Section label="PREFERENCES">
+      <Section label="PREFERENCES" isDark={darkModeActive}>
         <ToggleRow
+          isDark={darkModeActive}
           icon="bell"
           title="Push Notifications"
           enabled={pushNotificationsActive}
           onPress={() => updateProfile({ pushNotifications: !isPushEnabled })}
         />
-        <Divider />
+        <Divider isDark={darkModeActive} />
         <ToggleRow
+          isDark={darkModeActive}
           icon="grid"
           title="Dark Mode"
           enabled={darkModeActive}
-          onPress={() => updateProfile({ darkMode: !isDarkModeEnabled })}
+          onPress={handleDarkModeToggle}
         />
       </Section>
 
-      <Section label="SUPPORT">
-        <Row icon="info" title="Help Center" onPress={() => router.push("/(app)/contact")} />
-        <Divider />
-        <Row icon="mail" title="Contact Us" onPress={() => router.push("/(app)/contact")} />
-        <Divider />
-        <Row icon="info" title="About 9Jobs" onPress={() => router.push("/(app)/about")} />
+      <Section label="SUPPORT" isDark={darkModeActive}>
+        <Row isDark={darkModeActive} icon="info" title="Help Center" onPress={() => router.push("/(app)/contact")} />
+        <Divider isDark={darkModeActive} />
+        <Row isDark={darkModeActive} icon="mail" title="Contact Us" onPress={() => router.push("/(app)/contact")} />
+        <Divider isDark={darkModeActive} />
+        <Row isDark={darkModeActive} icon="info" title="About 9Jobs" onPress={() => router.push("/(app)/about")} />
       </Section>
     </Screen>
   );
 }
 
-function BackHeader() {
+function BackHeader({ isDark }: { isDark: boolean }) {
+  const textColor = isDark ? "#FFFFFF" : "#0A0A08";
   return (
     <Pressable onPress={() => router.back()} style={styles.backRow}>
-      <Text style={[styles.backArrow, { color: colors.text }]}>←</Text>
-      <Text style={[styles.backText, { color: colors.text }]}>Back</Text>
+      <Text style={[styles.backArrow, { color: textColor }]}>←</Text>
+      <Text style={[styles.backText, { color: textColor }]}>Back</Text>
     </Pressable>
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  const isDark = colors.background === "#090A08";
+function Section({ label, children, isDark }: { label: string; children: React.ReactNode; isDark: boolean }) {
   return (
     <View style={styles.sectionWrap}>
-      <Text style={[styles.sectionLabel, { color: isDark ? colors.mutedText : "#A0A7BD" }]}>{label}</Text>
-      <View style={[styles.sectionCard, { backgroundColor: colors.surface }]}>{children}</View>
+      <Text style={[styles.sectionLabel, { color: isDark ? "#A1A595" : "#A0A7BD" }]}>{label}</Text>
+      <View style={[styles.sectionCard, { backgroundColor: isDark ? "#1A1A1A" : "#FFFFFF" }]}>{children}</View>
     </View>
   );
 }
@@ -95,21 +119,23 @@ function Row({
   icon,
   title,
   onPress,
+  isDark,
 }: {
   icon: Parameters<typeof AppIcon>[0]["name"];
   title: string;
   onPress?: () => void;
+  isDark: boolean;
 }) {
-  const isDark = colors.background === "#090A08";
+  const textColor = isDark ? "#FFFFFF" : "#0A0A08";
   return (
     <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
         <View style={[styles.iconBubble, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(10, 10, 8, 0.04)" }]}>
-          <AppIcon name={icon} size={18} color={colors.text} />
+          <AppIcon name={icon} size={18} color={textColor} />
         </View>
-        <Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.rowTitle, { color: textColor }]}>{title}</Text>
       </View>
-      <Text style={[styles.chevron, { color: colors.subtleText }]}>›</Text>
+      <Text style={[styles.chevron, { color: isDark ? "#6F7268" : "#8B8F82" }]}>›</Text>
     </Pressable>
   );
 }
@@ -119,20 +145,22 @@ function ToggleRow({
   title,
   enabled,
   onPress,
+  isDark,
 }: {
   icon: Parameters<typeof AppIcon>[0]["name"];
   title: string;
   enabled?: boolean;
   onPress?: () => void;
+  isDark: boolean;
 }) {
-  const isDark = colors.background === "#090A08";
+  const textColor = isDark ? "#FFFFFF" : "#0A0A08";
   return (
     <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
         <View style={[styles.iconBubble, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(10, 10, 8, 0.04)" }]}>
-          <AppIcon name={icon} size={18} color={colors.text} />
+          <AppIcon name={icon} size={18} color={textColor} />
         </View>
-        <Text style={[styles.rowTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.rowTitle, { color: textColor }]}>{title}</Text>
       </View>
       <View style={[styles.toggle, { backgroundColor: isDark ? "#2A2B27" : "#E5E5E5" }, enabled && styles.toggleOn]}>
         <View style={[styles.knob, enabled && styles.knobOn]} />
@@ -141,8 +169,8 @@ function ToggleRow({
   );
 }
 
-function Divider() {
-  return <View style={[styles.divider, { backgroundColor: colors.border }]} />;
+function Divider({ isDark }: { isDark: boolean }) {
+  return <View style={[styles.divider, { backgroundColor: isDark ? "#2A2B27" : "#E8E5DB" }]} />;
 }
 
 const styles = StyleSheet.create({

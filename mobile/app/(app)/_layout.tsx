@@ -28,7 +28,10 @@ export default function AppLayout() {
   }, [queryClient, user]);
 
   const isDarkMode = (snapshot?.profile.darkMode ?? false) && !(snapshot?.systemSettings.darkModeOverride ?? false);
-  setTheme(isDarkMode);
+
+  useEffect(() => {
+    setTheme(isDarkMode);
+  }, [isDarkMode]);
 
   if (!hasCompletedOnboarding) {
     return <Redirect href="/(public)" />;

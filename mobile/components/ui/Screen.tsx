@@ -3,7 +3,7 @@ import { useFocusEffect, usePathname } from "expo-router";
 import { ScrollView, StyleSheet, View, ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { verticalScrollProps } from "@/lib/ui/scroll";
-import { colors, spacing } from "@/theme";
+import { colors, spacing, useThemeVersion } from "@/theme";
 import { AnimatedScreenContainer } from "@/components/motion/animated-screen-container";
 import { ScreenBackground } from "@/components/motion/screen-background";
 
@@ -23,6 +23,7 @@ export function Screen({
   style,
   contentStyle,
 }: ScreenProps) {
+  useThemeVersion();
   const pathname = usePathname();
   const scrollRef = useRef<ScrollView | null>(null);
   const lastOffsetRef = useRef(screenScrollOffsets.get(pathname) ?? 0);
