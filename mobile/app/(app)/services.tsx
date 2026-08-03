@@ -168,6 +168,9 @@ export default function ServicesScreen() {
           (() => {
             const useDarkIconBackground =
               service.isIconDark ||
+              service.title === "Pricing & Plans" ||
+              service.id === "pricing" ||
+              service.icon === "pricing" ||
               service.id === "hiring-manager-outreach" ||
               service.id === "outreach" ||
               service.icon === "mail";
@@ -202,14 +205,14 @@ export default function ServicesScreen() {
                       <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                         <Path
                           d="M6 18L10 13L13 16L18 9"
-                          stroke={colors.text}
+                          stroke={useDarkIconBackground ? colors.accent : colors.text}
                           strokeWidth={2.2}
                           strokeLinecap="round"
                           strokeLinejoin="round"
                         />
                         <Path
                           d="M18 9H14"
-                          stroke={colors.text}
+                          stroke={useDarkIconBackground ? colors.accent : colors.text}
                           strokeWidth={2.2}
                           strokeLinecap="round"
                         />
