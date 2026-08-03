@@ -1428,7 +1428,6 @@ async function applySeenStatusToMessages(messages: LiveMessage[]): Promise<LiveM
 export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
   try {
     const activeUser = resolveActiveUser(sessionUser);
-    await ensurePreviewUserRecords(sessionUser);
 
     try {
       const backendSnapshot = await fetchBackendSnapshot(activeUser);
