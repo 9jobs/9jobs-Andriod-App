@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View, ActivityIndicator } from "react-native";
 import { router } from "expo-router";
 import { BrandLogo } from "@/components/brand/BrandLogo";
 import { colors, spacing, typography } from "@/theme";
@@ -24,11 +24,11 @@ export default function SplashScreen() {
         </View>
         <Text style={styles.body}>Your career, elevated.</Text>
         <Text style={styles.subtle}>Resume. Outreach. Interview. Momentum.</Text>
-        <View style={styles.dots}>
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-          <View style={styles.dot} />
-        </View>
+        <ActivityIndicator
+          size="large"
+          color={colors.accent}
+          style={{ marginTop: spacing.md }}
+        />
       </FadeInView>
     </View>
   );

@@ -568,6 +568,7 @@ export default function App() {
     return savedPreviewAuth ? true : null;
   });
   const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
   const [isPreviewAuthenticated, setIsPreviewAuthenticated] = useState(() => {
     return localStorage.getItem("admin_preview_authenticated") === "true";
   });
@@ -753,6 +754,7 @@ export default function App() {
         } else {
           setAuthLoading(false);
         }
+        setIsInitialLoading(false);
       }
     }
   }, [userLoaded, isSignedIn, user]);
@@ -1011,6 +1013,7 @@ export default function App() {
       setAuthError("Failed to verify admin status: " + err.message);
     } finally {
       setAuthLoading(false);
+      setIsInitialLoading(false);
     }
   };
 
@@ -3946,6 +3949,26 @@ export default function App() {
     : modalType === "success_story"
       ? `${editItem ? "Edit" : "Create"} Success Story`
       : `${editItem ? "Edit " : "Create "}${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`;
+
+  // Show full page loader while loading authentication status initially
+  if (isInitialLoading) {
+    return (
+      <div className="app-loader-container">
+        <div className="app-loader-logo-wrapper">
+          <div className="app-loader-ring-glow"></div>
+          <div className="app-loader-ring"></div>
+          <img
+            className="app-loader-logo"
+            src="https://hzpzpdjmmuoesxhmdiqn.supabase.co/storage/v1/object/public/assets/logo.png"
+            onError={(e) => { e.currentTarget.src = "https://placehold.co/60x60/000000/ffffff?text=9JOBS" }}
+            alt="9Jobs Logo"
+          />
+        </div>
+        <h2 className="app-loader-text">9Jobs Admin</h2>
+        <span className="app-loader-subtext">Connecting Careers...</span>
+      </div>
+    );
+  }
 
   // Protected Auth Screen
   if (!(isPreviewAuthenticated || (isSignedIn && isAdmin))) {

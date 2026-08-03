@@ -7,7 +7,95 @@
     <title>admin</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <style>
+        .html-loader-container {
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background-color: #0A0A0A;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
+          font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .html-loader-logo-wrapper {
+          position: relative;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .html-loader-logo {
+          width: 70px;
+          height: 70px;
+          border-radius: 12px;
+          z-index: 2;
+          animation: logo-pulse 1.8s ease-in-out infinite;
+        }
+        .html-loader-ring {
+          position: absolute;
+          width: 90px;
+          height: 90px;
+          border-radius: 50%;
+          border: 3px solid transparent;
+          border-top-color: #A3E635;
+          border-right-color: #A3E635;
+          animation: spin 1.2s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+          z-index: 1;
+        }
+        .html-loader-ring-glow {
+          position: absolute;
+          width: 90px;
+          height: 90px;
+          border-radius: 50%;
+          border: 3px solid transparent;
+          border-top-color: rgba(163, 230, 53, 0.3);
+          border-right-color: rgba(163, 230, 53, 0.3);
+          filter: blur(4px);
+          animation: spin 1.2s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
+          z-index: 0;
+        }
+        .html-loader-text {
+          color: #FAFAFA;
+          font-size: 20px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          margin: 0;
+          animation: text-fade 1.8s ease-in-out infinite;
+        }
+        .html-loader-subtext {
+          color: #666666;
+          font-size: 13px;
+          margin-top: 6px;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes logo-pulse {
+          0%, 100% { transform: scale(0.95); opacity: 0.85; }
+          50% { transform: scale(1.05); opacity: 1; }
+        }
+        @keyframes text-fade {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
+        }
+      </style>
+      <div class="html-loader-container">
+        <div class="html-loader-logo-wrapper">
+          <div class="html-loader-ring-glow"></div>
+          <div class="html-loader-ring"></div>
+          <img class="html-loader-logo" src="https://hzpzpdjmmuoesxhmdiqn.supabase.co/storage/v1/object/public/assets/logo.png" onerror="this.src='https://placehold.co/60x60/000000/ffffff?text=9JOBS'" alt="9Jobs Logo" />
+        </div>
+        <h2 class="html-loader-text">9Jobs Admin</h2>
+        <span class="html-loader-subtext">Connecting Careers...</span>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
