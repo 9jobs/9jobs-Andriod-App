@@ -37,7 +37,7 @@ export default function OutreachScreen() {
             <Text style={styles.heroCopyAccent}>9Jobs-</Text>powered outreach
           </Text>
           <Text style={styles.heroCopySubtitle} numberOfLines={1}>
-            Reach the right people. Start better conversations.
+            Find talent. Build better connections.
           </Text>
         </View>
       </ImageBackground>
@@ -206,8 +206,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 0,
     bottom: 0,
-    width: "57%",
-    height: "24%",
+    width: "61%",
+    height: "25%",
     justifyContent: "center",
     gap: 2,
     paddingLeft: 8,
@@ -217,17 +217,19 @@ const styles = StyleSheet.create({
   heroCopyTitle: {
     ...typography.title,
     color: colors.surface,
-    fontSize: 11,
-    lineHeight: 13,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: "800",
   },
   heroCopyAccent: {
     color: colors.accent,
   },
   heroCopySubtitle: {
     ...typography.label,
-    color: colors.darkMuted,
-    fontSize: 6,
-    lineHeight: 8,
+    color: "#E5E5E0",
+    fontSize: 7.5,
+    lineHeight: 10,
+    fontWeight: "600",
   },
   heroTopRow: {
     flexDirection: "row",
