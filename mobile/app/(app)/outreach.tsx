@@ -2,6 +2,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
+import { AppIcon } from "@/components/ui/AppIcon";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
@@ -15,22 +16,53 @@ export default function OutreachScreen() {
       <Text style={styles.title}>Hiring Manager{"\n"}Outreach</Text>
 
       <View style={styles.heroCard}>
-        <View style={[styles.node, styles.primaryNode]}>
-          <Text style={styles.nodeEmoji}>🔎</Text>
+        <View style={styles.heroTopRow}>
+          <View style={styles.engineBadge}>
+            <AppIcon name="spark" color={colors.dark} size={13} strokeWidth={2.4} />
+            <Text style={styles.engineBadgeText}>OUTREACH ENGINE</Text>
+          </View>
+          <View style={styles.liveStatus}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>LIVE</Text>
+          </View>
         </View>
-        <View style={[styles.node, styles.centerNode]}>
-          <Text style={styles.nodeEmoji}>📨</Text>
+
+        <View style={styles.pipelineRow}>
+          <View style={styles.stage}>
+            <View style={[styles.stageIcon, styles.discoveryIcon]}>
+              <AppIcon name="search" color={colors.dark} size={21} strokeWidth={2.4} />
+            </View>
+            <Text style={styles.stageLabel}>Discover</Text>
+          </View>
+          <View style={styles.connector}>
+            <View style={styles.connectorLine} />
+            <View style={styles.connectorPulse} />
+          </View>
+          <View style={styles.stage}>
+            <View style={[styles.stageIcon, styles.messageIcon]}>
+              <AppIcon name="mail" color={colors.accent} size={20} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.stageLabel}>Personalize</Text>
+          </View>
+          <View style={styles.connector}>
+            <View style={styles.connectorLine} />
+            <View style={[styles.connectorPulse, styles.connectorPulseEnd]} />
+          </View>
+          <View style={styles.stage}>
+            <View style={[styles.stageIcon, styles.replyIcon]}>
+              <AppIcon name="profile" color={colors.dark} size={20} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.stageLabel}>Connect</Text>
+          </View>
         </View>
-        <View style={[styles.node, styles.topRightNode]}>
-          <Text style={styles.nodeEmoji}>👔</Text>
+
+        <View style={styles.insightRow}>
+          <Text style={styles.heroCaption}>AI-crafted messages</Text>
+          <View style={styles.metricPill}>
+            <AppIcon name="tracker" color={colors.accent} size={14} strokeWidth={2.2} />
+            <Text style={styles.metricText}>3.4x replies</Text>
+          </View>
         </View>
-        <View style={[styles.node, styles.bottomRightNode]}>
-          <Text style={styles.nodeEmoji}>📊</Text>
-        </View>
-        <View style={[styles.link, styles.linkOne]} />
-        <View style={[styles.link, styles.linkTwo]} />
-        <View style={[styles.link, styles.linkThree]} />
-        <Text style={styles.heroCaption}>AI-crafted messages · 3.4x reply rate</Text>
       </View>
 
       <View style={styles.sectionHeader}>
@@ -121,74 +153,125 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dark,
     position: "relative",
     overflow: "hidden",
-    justifyContent: "flex-end",
     padding: spacing.lg,
+    gap: 18,
     ...shadows.float,
   },
-  node: {
-    position: "absolute",
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  engineBadge: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  engineBadgeText: {
+    ...typography.label,
+    color: colors.dark,
+    fontSize: 10,
+    letterSpacing: 0.8,
+  },
+  liveStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.accent,
+  },
+  liveText: {
+    ...typography.label,
+    color: colors.darkMuted,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  pipelineRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  stage: {
+    width: 66,
+    alignItems: "center",
+    gap: 6,
+  },
+  stageIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 22,
-    backgroundColor: "#121310",
   },
-  primaryNode: {
-    width: 52,
-    height: 52,
-    top: 40,
-    left: 58,
+  discoveryIcon: {
     backgroundColor: colors.accent,
     ...shadows.glow,
   },
-  centerNode: {
-    width: 22,
-    height: 22,
-    top: 70,
-    left: 160,
+  messageIcon: {
+    backgroundColor: colors.darkChipStrong,
+    borderWidth: 1,
+    borderColor: "rgba(192,255,0,0.35)",
   },
-  topRightNode: {
-    width: 34,
-    height: 34,
-    top: 44,
-    right: 56,
+  replyIcon: {
+    backgroundColor: "#F4F1E8",
   },
-  bottomRightNode: {
-    width: 42,
+  stageLabel: {
+    ...typography.label,
+    color: colors.darkMuted,
+    fontSize: 9,
+  },
+  connector: {
+    flex: 1,
     height: 42,
-    top: 92,
-    right: 44,
+    justifyContent: "center",
+    position: "relative",
   },
-  nodeEmoji: {
-    fontSize: 14,
-  },
-  link: {
-    position: "absolute",
-    height: 1.5,
+  connectorLine: {
+    height: 1,
     backgroundColor: colors.accent,
-    opacity: 0.75,
+    opacity: 0.45,
   },
-  linkOne: {
-    width: 70,
-    top: 74,
-    left: 102,
-    transform: [{ rotate: "20deg" }],
+  connectorPulse: {
+    position: "absolute",
+    left: "34%",
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.accent,
   },
-  linkTwo: {
-    width: 66,
-    top: 76,
-    right: 86,
-    transform: [{ rotate: "-22deg" }],
+  connectorPulseEnd: {
+    left: "64%",
   },
-  linkThree: {
-    width: 82,
-    top: 100,
-    right: 92,
-    transform: [{ rotate: "21deg" }],
+  insightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   heroCaption: {
     ...typography.body,
     color: colors.darkMuted,
-    textAlign: "center",
+    fontSize: 13,
+  },
+  metricPill: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: radii.pill,
+    backgroundColor: colors.darkChipStrong,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  metricText: {
+    ...typography.label,
+    color: colors.surface,
+    fontSize: 11,
   },
   sectionHeader: {
     flexDirection: "row",
