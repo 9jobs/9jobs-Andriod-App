@@ -7,9 +7,9 @@
     "orientation": "portrait",
     "icon": "./assets/branding/9jobs-logo.png",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/branding/9jobs-splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#090A08"
+      "backgroundColor": "#F7F4EA"
     },
     "userInterfaceStyle": "light",
     "ios": {
@@ -47,9 +47,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#090A08",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 200,
+          "backgroundColor": "#F7F4EA",
+          "image": "./assets/branding/9jobs-splash.png",
+          "imageWidth": 240,
           "resizeMode": "contain"
         }
       ],
