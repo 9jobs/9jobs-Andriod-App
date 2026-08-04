@@ -45,6 +45,18 @@ type OptionalSpeechRecognitionModule = {
   ) => SpeechRecognitionSubscription;
 };
 
+const SPEECH_RECOGNITION_OPTIONS = {
+  lang: "en-US",
+  interimResults: true,
+  continuous: false,
+  addsPunctuation: true,
+  androidIntentOptions: {
+    EXTRA_LANGUAGE_MODEL: "web_search",
+  },
+};
+
+const MAX_SPEECH_SERVER_RETRIES = 2;
+
 function getSpeechModule(): null | { speak: (text: string) => void; stop: () => void } {
   try {
     const nativeSpeech = requireOptionalNativeModule<ExpoSpeechModule>("ExpoSpeech");
@@ -88,6 +100,8 @@ export default function InterviewScreen() {
   const pulseAnim3 = useRef(new Animated.Value(0)).current;
   const transcriptRef = useRef("");
   const submittedTranscriptRef = useRef(false);
+  const speechServerRetryRef = useRef(0);
+  const speechServerRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechModuleRef = useRef<OptionalSpeechRecognitionModule | null>(getSpeechRecognitionModule());
 
   const refreshSession = async () => {
@@ -117,6 +131,9 @@ export default function InterviewScreen() {
       pulseAnim1.stopAnimation();
       pulseAnim2.stopAnimation();
       pulseAnim3.stopAnimation();
+      if (speechServerRetryTimerRef.current) {
+        clearTimeout(speechServerRetryTimerRef.current);
+      }
       speechModuleRef.current?.abort();
       getSpeechModule()?.stop();
     };
@@ -202,6 +219,21 @@ export default function InterviewScreen() {
         return;
       }
 
+      const isServerDisconnect =
+        event.error === "network" && /server disconnected/i.test(event.message ?? "");
+      if (isServerDisconnect && speechServerRetryRef.current < MAX_SPEECH_SERVER_RETRIES) {
+        speechServerRetryRef.current += 1;
+        setError("");
+        speechServerRetryTimerRef.current = setTimeout(() => {
+          try {
+            speechRecognitionModule.start(SPEECH_RECOGNITION_OPTIONS);
+          } catch (retryError: any) {
+            setError(retryError.message || "Could not restart voice capture.");
+          }
+        }, 450 * speechServerRetryRef.current);
+        return;
+      }
+
       setError(event.message || "Voice assistant is not available right now.");
     });
 
@@ -272,6 +304,11 @@ export default function InterviewScreen() {
       setError("");
       transcriptRef.current = "";
       submittedTranscriptRef.current = false;
+      speechServerRetryRef.current = 0;
+      if (speechServerRetryTimerRef.current) {
+        clearTimeout(speechServerRetryTimerRef.current);
+        speechServerRetryTimerRef.current = null;
+      }
       getSpeechModule()?.stop();
 
       if (speechRecognitionModule.isRecognitionAvailable && !speechRecognitionModule.isRecognitionAvailable()) {
@@ -285,12 +322,7 @@ export default function InterviewScreen() {
         return;
       }
 
-      speechRecognitionModule.start({
-        lang: "en-US",
-        interimResults: true,
-        continuous: false,
-        addsPunctuation: true,
-      });
+      speechRecognitionModule.start(SPEECH_RECOGNITION_OPTIONS);
     } catch (err: any) {
       setIsRecording(false);
       setIsGeneratingAnswer(false);
