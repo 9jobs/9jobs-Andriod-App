@@ -34,7 +34,7 @@ export default function AppLayout() {
   }, [isDarkMode]);
 
   if (!hasCompletedOnboarding) {
-    return <Redirect href="/(public)" />;
+    return <Redirect href="/questionnaire" />;
   }
 
   if (!user) {

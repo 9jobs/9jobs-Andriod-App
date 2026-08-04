@@ -9,6 +9,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(public)" />
+        <Stack.Screen name="questionnaire" />
         <Stack.Screen name="(app)" />
       </Stack>
     </AppProviders>

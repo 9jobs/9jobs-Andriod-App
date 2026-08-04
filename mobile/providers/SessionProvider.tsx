@@ -10,6 +10,7 @@ import {
 } from "react";
 import { isClerkConfigured } from "@/lib/clerk/config";
 import { previewMobileUser } from "@/lib/data/preview-user";
+import { fetchCandidateQuestionnaireStatus } from "@/lib/data/candidate-questionnaire";
 import { connectSocket } from "@/lib/socket/socketService";
 import { supabase } from "@/lib/supabase/client";
 import { storageKeys } from "@/lib/utils/storage";
@@ -138,7 +139,7 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
     async function bootstrap() {
       const onboarding = await AsyncStorage.getItem(storageKeys.onboardingComplete);
       const savedSession = await AsyncStorage.getItem(storageKeys.mockSession);
-      setHasCompletedOnboarding(true);
+      setHasCompletedOnboarding(savedSession ? onboarding === "true" : false);
       setUser(savedSession ? (JSON.parse(savedSession) as SessionUser) : null);
       setIsBooting(false);
     }
@@ -171,6 +172,7 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
 
         await clearPreviewSnapshotCache();
         await AsyncStorage.setItem(storageKeys.mockSession, JSON.stringify(nextUser));
+        setHasCompletedOnboarding(false);
         setUser(nextUser);
       },
       async signOut() {
@@ -191,19 +193,18 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   const { isLoaded: authLoaded, isSignedIn, signOut: authSignOut } = useAuth();
   const { isLoaded: userLoaded, user } = useUser();
   const [isOnboardingLoaded, setIsOnboardingLoaded] = useState(false);
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [isQuestionnaireStatusLoaded, setIsQuestionnaireStatusLoaded] = useState(false);
   const [isLocallySignedOut, setIsLocallySignedOut] = useState(false);
   const [localFallbackUser, setLocalFallbackUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
     async function bootstrap() {
-      const onboarding = await AsyncStorage.getItem(storageKeys.onboardingComplete);
       const savedSession = await AsyncStorage.getItem(storageKeys.clerkFallbackSession);
       await AsyncStorage.multiRemove([
         storageKeys.mockSession,
         storageKeys.mockProfile,
       ]);
-      setHasCompletedOnboarding(true);
       setLocalFallbackUser(savedSession ? (JSON.parse(savedSession) as SessionUser) : null);
       setIsOnboardingLoaded(true);
     }
@@ -254,6 +255,37 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   }, [isLocallySignedOut, isSignedIn, localFallbackUser, user]);
 
   useEffect(() => {
+    let active = true;
+
+    async function loadQuestionnaireStatus() {
+      if (!sessionUser) {
+        if (active) {
+          setHasCompletedOnboarding(false);
+          setIsQuestionnaireStatusLoaded(true);
+        }
+        return;
+      }
+
+      setIsQuestionnaireStatusLoaded(false);
+      try {
+        const completed = await fetchCandidateQuestionnaireStatus(sessionUser);
+        if (active) setHasCompletedOnboarding(completed);
+      } catch (error) {
+        console.warn("[SessionProvider] Questionnaire status sync failed, using local state:", error);
+        const localValue = await AsyncStorage.getItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`);
+        if (active) setHasCompletedOnboarding(localValue === "true");
+      } finally {
+        if (active) setIsQuestionnaireStatusLoaded(true);
+      }
+    }
+
+    void loadQuestionnaireStatus();
+    return () => {
+      active = false;
+    };
+  }, [sessionUser]);
+
+  useEffect(() => {
     syncBackendToken(sessionUser);
     syncSupabaseProfile(sessionUser);
   }, [sessionUser]);
@@ -261,12 +293,15 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   const value = useMemo<SessionContextValue>(
 
     () => ({
-      isBooting: !isOnboardingLoaded || !authLoaded || !userLoaded,
+      isBooting: !isOnboardingLoaded || !authLoaded || !userLoaded || !isQuestionnaireStatusLoaded,
       user: sessionUser,
       hasCompletedOnboarding,
       clerkConfigured: true,
       async setOnboardingComplete() {
         await AsyncStorage.setItem(storageKeys.onboardingComplete, "true");
+        if (sessionUser) {
+          await AsyncStorage.setItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`, "true");
+        }
         setHasCompletedOnboarding(true);
       },
       async signInDemo(payload) {
@@ -279,6 +314,7 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
 
         await clearPreviewSnapshotCache();
         await AsyncStorage.setItem(storageKeys.clerkFallbackSession, JSON.stringify(nextUser));
+        setHasCompletedOnboarding(false);
         setIsLocallySignedOut(false);
         setLocalFallbackUser(nextUser);
       },
@@ -306,6 +342,7 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
       authLoaded,
       authSignOut,
       hasCompletedOnboarding,
+      isQuestionnaireStatusLoaded,
       isOnboardingLoaded,
       localFallbackUser,
       sessionUser,

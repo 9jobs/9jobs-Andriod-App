@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { StyleSheet, Text, View, Pressable, ScrollView, Modal, Image, Alert, TouchableOpacity, ActivityIndicator } from "react-native";
+import { StyleSheet, Text, View, Pressable, ScrollView, Modal, Image, Alert, TouchableOpacity, ActivityIndicator, Linking } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { DarkHeroCard, PremiumScaffold, SoftPanel } from "@/components/premium/PremiumScaffold";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
@@ -10,6 +10,8 @@ import { colors, spacing, typography, radii, shadows } from "@/theme";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { FadeInView } from "@/components/motion/FadeInView";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useSession } from "@/providers/SessionProvider";
+import { fetchCandidateQuestionnaire } from "@/lib/data/candidate-questionnaire";
 
 const submittedTrackerStatuses = new Set([
   "applied",
@@ -44,6 +46,7 @@ const stageOptions = [
 ] as const;
 
 export default function TrackerScreen() {
+  const { user } = useSession();
   const { data: snapshot, isLoading, isRefetching, isError, refetch } = usePreviewSyncQuery();
   const { mutate: updateApplicationStage, isPending: isUpdatingStage } = useUpdateApplicationStatusMutation();
   const jobs = snapshot?.jobs ?? [];
@@ -54,6 +57,7 @@ export default function TrackerScreen() {
   const [screenshotMap, setScreenshotMap] = useState<Record<string, string>>({});
   const [beforeScreenshotMap, setBeforeScreenshotMap] = useState<Record<string, string>>({});
   const [afterScreenshotMap, setAfterScreenshotMap] = useState<Record<string, string>>({});
+  const [updatedResume, setUpdatedResume] = useState<{ name: string; url: string; updatedAt?: string } | null>(null);
 
   // Load saved screenshots from AsyncStorage
   React.useEffect(() => {
@@ -77,7 +81,19 @@ export default function TrackerScreen() {
   useFocusEffect(
     React.useCallback(() => {
       void refetch();
-    }, [refetch]),
+      if (user) {
+        void fetchCandidateQuestionnaire(user)
+          .then((questionnaire) => {
+            const url = String(questionnaire?.enhanced_resume_url || "");
+            setUpdatedResume(url ? {
+              name: String(questionnaire?.enhanced_resume_name || "Updated Resume"),
+              url,
+              updatedAt: questionnaire?.enhanced_resume_updated_at || undefined,
+            } : null);
+          })
+          .catch((error) => console.warn("[Tracker] Updated resume load failed:", error));
+      }
+    }, [refetch, user]),
   );
 
   const toTimezoneDateKey = React.useCallback((isoString: string | null | undefined) => {
@@ -385,6 +401,27 @@ export default function TrackerScreen() {
           </Pressable>
         </View>
       </View>
+
+      {updatedResume ? (
+        <FadeInView type="fade-up" delay={80}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open updated resume ${updatedResume.name}`}
+            onPress={() => void Linking.openURL(updatedResume.url)}
+            style={styles.updatedResumeCard}
+          >
+            <View style={styles.updatedResumeIcon}>
+              <AppIcon name="resume" size={24} color={colors.accent} />
+            </View>
+            <View style={styles.updatedResumeCopy}>
+              <Text style={styles.updatedResumeEyebrow}>ADMIN ENHANCED</Text>
+              <Text numberOfLines={1} style={styles.updatedResumeTitle}>Updated Resume</Text>
+              <Text numberOfLines={1} style={styles.updatedResumeName}>{updatedResume.name}</Text>
+            </View>
+            <View style={styles.updatedResumeAction}><Text style={styles.updatedResumeActionText}>OPEN</Text></View>
+          </Pressable>
+        </FadeInView>
+      ) : null}
 
       {/* Advanced Recruitment Insights */}
       <View style={[styles.sectionCard, { backgroundColor: colors.surface }]}>
@@ -1380,4 +1417,32 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
+  updatedResumeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: radii.xl,
+    backgroundColor: colors.dark,
+    borderWidth: 1,
+    borderColor: "#344500",
+    ...shadows.card,
+  },
+  updatedResumeIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#171F00",
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  updatedResumeCopy: { flex: 1, gap: 2 },
+  updatedResumeEyebrow: { ...typography.label, color: colors.accent, fontSize: 9, letterSpacing: 1 },
+  updatedResumeTitle: { ...typography.title, color: colors.surface, fontSize: 17 },
+  updatedResumeName: { ...typography.body, color: colors.darkMuted, fontSize: 11 },
+  updatedResumeAction: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.pill, backgroundColor: colors.accent },
+  updatedResumeActionText: { ...typography.label, color: colors.dark, fontSize: 10, fontWeight: "900" },
 });

@@ -11,5 +11,9 @@ export function getInitialRoute({
     return "/(public)/auth/sign-up" as const;
   }
 
+  if (!hasCompletedOnboarding) {
+    return "/questionnaire" as const;
+  }
+
   return "/(app)" as const;
 }

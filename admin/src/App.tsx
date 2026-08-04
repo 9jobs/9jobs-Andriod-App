@@ -472,6 +472,7 @@ import { useUser, useAuth, useSignIn } from "@clerk/clerk-react";
 type Tab =
   | "dashboard"
   | "users"
+  | "client_information"
   | "jobs"
   | "saved_jobs"
   | "success_stories"
@@ -582,6 +583,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [settingsSubsection, setSettingsSubsection] = useState<"personal_information" | "notifications">("personal_information");
   const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(true);
+  const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(true);
 
   // Data states
   const [users, setUsers] = useState<any[]>([]);
@@ -617,10 +619,11 @@ export default function App() {
 
   // Modal / Form states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<"user" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session">("job");
+  const [modalType, setModalType] = useState<"user" | "questionnaire" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session">("job");
   const [editItem, setEditItem] = useState<any>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+  const [uploadingEnhancedResumeUserId, setUploadingEnhancedResumeUserId] = useState("");
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -844,6 +847,11 @@ export default function App() {
 
 
   // Fetch data on active tab change or admin verification
+  useEffect(() => {
+    setSearchQuery("");
+    setFilterType("all");
+  }, [activeTab]);
+
   useEffect(() => {
     if (isAdmin) {
       fetchData();
@@ -1230,6 +1238,7 @@ export default function App() {
           await Promise.all([fetchDashboardStats(), fetchJobs(), fetchServices()]);
           break;
         case "users":
+        case "client_information":
           await fetchUsers();
           break;
         case "jobs":
@@ -1361,13 +1370,27 @@ export default function App() {
         })
       : Promise.resolve({ profiles: [] as any[] });
 
-    const [profilesResult, applicationsResult, interviewsResult, activityResult, conversationsResult, personalInfoResult] = await Promise.all([
+    const questionnairePromise = token
+      ? fetch(`${BACKEND_URL}/api/admin/questionnaires`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(async (response) => {
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) throw new Error(payload?.error || `HTTP error ${response.status}`);
+          return payload;
+        }).catch((error) => {
+          console.warn("Admin questionnaire fetch failed:", error);
+          return { questionnaires: [] as any[] };
+        })
+      : Promise.resolve({ questionnaires: [] as any[] });
+
+    const [profilesResult, applicationsResult, interviewsResult, activityResult, conversationsResult, personalInfoResult, questionnaireResult] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("applications").select("*"),
       supabase.from("interviews").select("*"),
       supabase.from("activity_logs").select("*").order("created_at", { ascending: false }),
       supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
       personalInfoPromise,
+      questionnairePromise,
     ]);
 
     if (profilesResult.error && !isRowLevelSecurityError(profilesResult.error) && !isMissingRelationError(profilesResult.error)) {
@@ -1394,6 +1417,10 @@ export default function App() {
     const interviewsData = (interviewsResult.data || []) as any[];
     const activityData = (activityResult.data || []) as any[];
     const conversationsData = (conversationsResult.data || []) as any[];
+    const questionnaires = Array.isArray((questionnaireResult as any)?.questionnaires)
+      ? ((questionnaireResult as any).questionnaires as any[])
+      : [];
+    const questionnaireMap = new Map(questionnaires.map((item) => [item.user_id, item]));
 
     const profileMap = new Map<string, any>();
     for (const profile of profiles) {
@@ -1453,6 +1480,7 @@ export default function App() {
 
       return {
         ...profile,
+        questionnaire: questionnaireMap.get(profile.id) || null,
         totalApplications: metrics.totalApplications,
         activeRoles: metrics.currentFocus.totalActiveRoles,
         interviewsCount: metrics.interviewing + metrics.interviewCompleted,
@@ -3598,6 +3626,65 @@ export default function App() {
     setTimeout(() => setSuccessMsg(""), 3000);
   };
 
+  const uploadEnhancedResume = async (client: any, file: File) => {
+    const extension = file.name.split(".").pop()?.toLowerCase() || "";
+    const mimeByExtension: Record<string, string> = {
+      pdf: "application/pdf",
+      doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    };
+    const mimeType = mimeByExtension[extension];
+    if (!mimeType) {
+      showError("Updated resume must be a PDF, DOC or DOCX file.");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      showError("Updated resume must be smaller than 12 MB.");
+      return;
+    }
+
+    try {
+      setUploadingEnhancedResumeUserId(client.id);
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin authentication is required.");
+      const prepareResponse = await fetch(`${BACKEND_URL}/api/admin/questionnaires/${encodeURIComponent(client.id)}/enhanced-resume/upload-url`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, fileSize: file.size, mimeType }),
+      });
+      const prepared = await prepareResponse.json().catch(() => null);
+      if (!prepareResponse.ok || !prepared?.signedUrl || !prepared?.storagePath) {
+        throw new Error(prepared?.error || "Could not prepare updated resume upload.");
+      }
+
+      const normalizedFile = file.type === mimeType ? file : new File([file], file.name, { type: mimeType });
+      const uploadBody = new FormData();
+      uploadBody.append("cacheControl", "3600");
+      uploadBody.append("", normalizedFile);
+      const uploadResponse = await fetch(prepared.signedUrl, {
+        method: "PUT",
+        headers: { "x-upsert": "false" },
+        body: uploadBody,
+      });
+      const uploadError = await uploadResponse.json().catch(() => null);
+      if (!uploadResponse.ok) throw new Error(uploadError?.message || uploadError?.error || "Updated resume upload failed.");
+
+      const saveResponse = await fetch(`${BACKEND_URL}/api/admin/questionnaires/${encodeURIComponent(client.id)}/enhanced-resume`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ storagePath: prepared.storagePath, fileName: file.name }),
+      });
+      const saved = await saveResponse.json().catch(() => null);
+      if (!saveResponse.ok) throw new Error(saved?.error || "Could not publish updated resume to the client.");
+      showSuccess("Updated resume published to the client's Job Tracker.");
+      await fetchUsers();
+    } catch (error: any) {
+      showError(error.message || "Updated resume upload failed.");
+    } finally {
+      setUploadingEnhancedResumeUserId("");
+    }
+  };
+
   const showError = (msg: string) => {
     setErrorMsg(toAdminErrorMessage({ message: msg }));
     setTimeout(() => setErrorMsg(""), 4000);
@@ -3792,6 +3879,7 @@ export default function App() {
     if (filterType === "all") return matchesSearch;
     return matchesSearch && u.subscription_plan === filterType;
   });
+  const filteredClientInformation = filteredUsers.filter((user) => Boolean(user.questionnaire));
 
   const filteredJobs = jobs.filter((j) => {
     const query = searchQuery.toLowerCase();
@@ -3948,6 +4036,8 @@ export default function App() {
     ? `${editItem ? "Edit" : "Create"} Hiring Manager`
     : modalType === "success_story"
       ? `${editItem ? "Edit" : "Create"} Success Story`
+      : modalType === "questionnaire"
+        ? "Candidate Questionnaire"
       : `${editItem ? "Edit " : "Create "}${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`;
 
   // Show full page loader while loading authentication status initially
@@ -4044,10 +4134,34 @@ export default function App() {
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
           </a>
-          <a className={`sidebar-item ${activeTab === "users" ? "active" : ""}`} onClick={() => setActiveTab("users")}>
-            <Users size={18} />
-            <span>Users</span>
-          </a>
+          <div>
+            <a
+              className={`sidebar-item ${activeTab === "users" || activeTab === "client_information" ? "active" : ""}`}
+              onClick={() => {
+                setActiveTab("users");
+                setIsUsersDropdownOpen((previous) => (activeTab === "users" || activeTab === "client_information" ? !previous : true));
+              }}
+            >
+              <Users size={18} />
+              <span style={{ flex: 1 }}>Users</span>
+              <span style={{ fontSize: "12px", opacity: 0.9 }}>{isUsersDropdownOpen ? "▾" : "▸"}</span>
+            </a>
+            {isUsersDropdownOpen && (
+              <div style={{ marginTop: "8px", paddingLeft: "22px" }}>
+                <a
+                  className={`sidebar-item ${activeTab === "client_information" ? "active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("client_information");
+                    setIsUsersDropdownOpen(true);
+                  }}
+                  style={{ minHeight: "48px", fontSize: "14px" }}
+                >
+                  <FileText size={16} />
+                  <span>Client Information</span>
+                </a>
+              </div>
+            )}
+          </div>
           <a className={`sidebar-item ${activeTab === "jobs" ? "active" : ""}`} onClick={() => setActiveTab("jobs")}>
             <Briefcase size={18} />
             <span>Opportunities</span>
@@ -4153,7 +4267,7 @@ export default function App() {
       <main className="main-content">
         <header className="header">
           <div className="header-title">
-            <h2>{activeTab === "job_tracker" ? "Job Tracker" : activeTab === "saved_jobs" ? "Saved Jobs" : activeTab === "success_stories" ? "Success Stories" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
+            <h2>{activeTab === "client_information" ? "Client Information" : activeTab === "job_tracker" ? "Job Tracker" : activeTab === "saved_jobs" ? "Saved Jobs" : activeTab === "success_stories" ? "Success Stories" : activeTab === "hiring_managers" ? "Hiring Managers" : activeTab === "interview_preparation" ? "Interview Preparation" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace("_", " ")}</h2>
             <p>Welcome back to your 9Jobs administration console.</p>
           </div>
           <div className="header-actions">
@@ -4305,7 +4419,7 @@ export default function App() {
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Avatar</th><th>User ID</th><th>Client</th><th>Phone</th><th>Status</th><th>Assigned Consultant</th><th>Total Applications</th><th>Active Roles</th><th>Interviews</th><th>Offers</th><th>Hired</th><th>Last Activity</th><th>Actions</th></tr>
+                  <tr><th>Avatar</th><th>User ID</th><th>Client</th><th>Phone</th><th>Questionnaire</th><th>Status</th><th>Assigned Consultant</th><th>Total Applications</th><th>Active Roles</th><th>Interviews</th><th>Offers</th><th>Hired</th><th>Last Activity</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {filteredUsers.map((u) => (
@@ -4314,6 +4428,7 @@ export default function App() {
                       <td><code style={{ fontSize: "11px", background: "rgba(0,0,0,0.05)", padding: "2px 6px", borderRadius: "4px", fontFamily: "monospace", wordBreak: "break-all" }}>{u.id}</code></td>
                       <td><strong>{u.full_name}</strong><br /><span style={{ fontSize: "11px", color: "#888" }}>{u.email}</span></td>
                       <td>{u.phone_number || "—"}</td>
+                      <td><span className={`badge ${u.questionnaire ? "badge-success" : "badge-warning"}`}>{u.questionnaire ? "Complete" : "Pending"}</span></td>
                       <td>
                         <span className={`badge ${u.account_status === "active" ? "badge-success" : u.account_status === "suspended" ? "badge-danger" : "badge-neutral"}`}>
                           {u.account_status || "active"}
@@ -4336,7 +4451,101 @@ export default function App() {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No clients found match search queries.</td></tr>
+                    <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No clients found match search queries.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Client Information Tab Content */}
+        {activeTab === "client_information" && (
+          <div className="card">
+            <div className="controls-row">
+              <div className="search-input-wrapper">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="Search client information by name or email..."
+                  className="form-input search-input"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </div>
+              <span className="badge badge-success">{filteredClientInformation.length} completed</span>
+            </div>
+
+            <div className="table-responsive">
+              <table className="table" style={{ width: "100%", minWidth: "1480px", tableLayout: "fixed" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "54px", textAlign: "center" }}>S.No.</th>
+                    <th style={{ width: "165px" }}>Client</th>
+                    <th style={{ width: "110px" }}>Contact</th>
+                    <th style={{ width: "105px" }}>Gender / DOB</th>
+                    <th style={{ width: "120px" }}>Working Rights</th>
+                    <th style={{ width: "130px" }}>Current Address</th>
+                    <th style={{ width: "110px" }}>Expected Salary</th>
+                    <th style={{ width: "130px" }}>Preferred Locations</th>
+                    <th style={{ width: "115px" }}>Work Types</th>
+                    <th style={{ width: "105px" }}>Notice Period</th>
+                    <th style={{ width: "130px" }}>Preferred Roles</th>
+                    <th style={{ width: "150px" }}>Documents</th>
+                    <th style={{ width: "115px" }}>Completed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredClientInformation.map((client, index) => {
+                    const questionnaire = client.questionnaire;
+                    return (
+                      <tr key={client.id} style={{ verticalAlign: "middle" }}>
+                        <td style={{ textAlign: "center", fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{index + 1}</td>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                            <img src={client.avatar_url || "https://randomuser.me/api/portraits/men/32.jpg"} alt="" className="chat-user-item-avatar" />
+                            <div style={{ minWidth: 0 }}>
+                              <strong style={{ display: "block" }}>{questionnaire.full_name || client.full_name}</strong>
+                              <span style={{ color: "var(--text-secondary)", fontSize: "11px", overflowWrap: "anywhere" }}>{client.email}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>{questionnaire.contact_number || client.phone_number || "—"}</td>
+                        <td><strong>{questionnaire.gender || "—"}</strong><br /><span style={{ color: "var(--text-secondary)", fontSize: "12px" }}>{questionnaire.date_of_birth || "—"}</span></td>
+                        <td>{questionnaire.working_rights || "—"}</td>
+                        <td style={{ whiteSpace: "normal", overflowWrap: "anywhere" }}>{questionnaire.full_address || "—"}</td>
+                        <td>{questionnaire.expected_salary || "—"}</td>
+                        <td style={{ whiteSpace: "normal" }}>{questionnaire.preferred_job_locations?.join(", ") || "—"}</td>
+                        <td style={{ whiteSpace: "normal" }}>{questionnaire.work_types?.join(", ") || "—"}</td>
+                        <td>{questionnaire.notice_period || "—"}</td>
+                        <td style={{ whiteSpace: "normal" }}>{questionnaire.preferred_roles?.join(", ") || "—"}</td>
+                        <td>
+                          <div style={{ display: "grid", gap: "6px", alignItems: "stretch" }}>
+                            {questionnaire.resume_url ? <a className="btn btn-dark" style={{ width: "100%", padding: "6px 8px", justifyContent: "center", whiteSpace: "nowrap", fontSize: "11px" }} href={questionnaire.resume_url} target="_blank" rel="noreferrer" title={questionnaire.resume_name}>Resume</a> : <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>No resume</span>}
+                            {questionnaire.visa_url ? <a className="btn btn-secondary" style={{ width: "100%", padding: "6px 8px", justifyContent: "center", whiteSpace: "nowrap", fontSize: "11px" }} href={questionnaire.visa_url} target="_blank" rel="noreferrer" title={questionnaire.visa_name}>Visa</a> : <span style={{ color: "var(--text-muted)", fontSize: "11px" }}>No visa</span>}
+                            {questionnaire.enhanced_resume_url ? <a className="btn btn-secondary" style={{ width: "100%", padding: "6px 8px", justifyContent: "center", whiteSpace: "nowrap", fontSize: "11px" }} href={questionnaire.enhanced_resume_url} target="_blank" rel="noreferrer" title={questionnaire.enhanced_resume_name}>Updated Resume</a> : null}
+                            <label className="btn btn-primary" style={{ width: "100%", padding: "6px 8px", justifyContent: "center", whiteSpace: "nowrap", fontSize: "11px", cursor: uploadingEnhancedResumeUserId ? "wait" : "pointer" }}>
+                              {uploadingEnhancedResumeUserId === client.id ? "Uploading..." : questionnaire.enhanced_resume_path ? "Replace Updated" : "Upload Updated"}
+                              <input
+                                type="file"
+                                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                disabled={Boolean(uploadingEnhancedResumeUserId)}
+                                style={{ display: "none" }}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  event.currentTarget.value = "";
+                                  if (file) void uploadEnhancedResume(client, file);
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </td>
+                        <td style={{ whiteSpace: "normal", fontSize: "11px", lineHeight: 1.45 }}>{questionnaire.completed_at ? new Date(questionnaire.completed_at).toLocaleString() : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                  {filteredClientInformation.length === 0 && (
+                    <tr><td colSpan={13} style={{ textAlign: "center", color: "var(--text-muted)", padding: "36px" }}>No completed client information found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -5918,6 +6127,34 @@ export default function App() {
           <div className="modal-content">
             <button className="modal-close" onClick={() => setIsModalOpen(false)}>×</button>
             <h3 className="modal-title">{modalHeading}</h3>
+
+            {modalType === "questionnaire" && editItem && (
+              <div style={{ display: "grid", gap: "14px" }}>
+                {[
+                  ["Full Name", editItem.full_name],
+                  ["Contact Number", editItem.contact_number],
+                  ["Gender", editItem.gender],
+                  ["Date of Birth", editItem.date_of_birth],
+                  ["Working Rights", editItem.working_rights],
+                  ["Current Full Address", editItem.full_address],
+                  ["Expected Salary", editItem.expected_salary],
+                  ["Preferred Job Locations", editItem.preferred_job_locations?.join(", ")],
+                  ["Work Types", editItem.work_types?.join(", ")],
+                  ["Notice Period", editItem.notice_period],
+                  ["Preferred Roles", editItem.preferred_roles?.join(", ")],
+                  ["Completed", editItem.completed_at ? new Date(editItem.completed_at).toLocaleString() : "—"],
+                ].map(([label, value]) => (
+                  <div key={String(label)} style={{ border: "1px solid var(--border-color)", borderRadius: "14px", padding: "12px 14px", background: "var(--surface)" }}>
+                    <div style={{ color: "var(--text-secondary)", fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "5px" }}>{label}</div>
+                    <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>{value || "—"}</div>
+                  </div>
+                ))}
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                  {editItem.resume_url ? <a className="btn btn-dark" href={editItem.resume_url} target="_blank" rel="noreferrer">Open Resume · {editItem.resume_name}</a> : null}
+                  {editItem.visa_url ? <a className="btn btn-secondary" href={editItem.visa_url} target="_blank" rel="noreferrer">Open Visa · {editItem.visa_name}</a> : null}
+                </div>
+              </div>
+            )}
 
             {/* Candidate User Form */}
             {modalType === "user" && (

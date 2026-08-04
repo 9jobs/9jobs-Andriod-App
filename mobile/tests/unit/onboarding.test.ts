@@ -27,4 +27,13 @@ describe("getInitialRoute", () => {
       }),
     ).toBe("/(app)");
   });
+
+  test("returns the candidate questionnaire after login until it is completed", () => {
+    expect(
+      getInitialRoute({
+        hasCompletedOnboarding: false,
+        hasSession: true,
+      }),
+    ).toBe("/questionnaire");
+  });
 });
