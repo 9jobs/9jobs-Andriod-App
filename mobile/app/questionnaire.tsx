@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
@@ -22,6 +23,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Path } from "react-native-svg";
 import { useSession } from "@/providers/SessionProvider";
 import {
   submitCandidateQuestionnaire,
@@ -248,6 +250,7 @@ export default function CandidateQuestionnaireScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={process.env.EXPO_OS === "ios" ? "padding" : "height"}>
+      <QuestionnaireAmbientAnimation />
       <View style={[styles.progressTrack, { marginTop: insets.top + spacing.sm }]}><View style={[styles.progressFill, { width: progress }]} /></View>
       <View style={styles.headerRow}>
         <Pressable style={[styles.backButton, step === 0 && styles.backButtonHidden]} onPress={() => step > 0 && setStep((value) => value - 1)} disabled={step === 0}>
@@ -332,6 +335,80 @@ export default function CandidateQuestionnaireScreen() {
         </View>
       </Modal>
     </KeyboardAvoidingView>
+  );
+}
+
+const AMBIENT_PARTICLES = [
+  { left: "8%", top: "18%", size: 5, delay: 0 },
+  { left: "88%", top: "13%", size: 6, delay: 0.18 },
+  { left: "78%", top: "28%", size: 4, delay: 0.36 },
+  { left: "16%", top: "43%", size: 6, delay: 0.54 },
+  { left: "92%", top: "49%", size: 5, delay: 0.72 },
+  { left: "68%", top: "59%", size: 7, delay: 0.25 },
+  { left: "11%", top: "70%", size: 4, delay: 0.48 },
+  { left: "83%", top: "77%", size: 6, delay: 0.66 },
+  { left: "26%", top: "86%", size: 5, delay: 0.84 },
+] as const;
+
+function QuestionnaireAmbientAnimation() {
+  const { width, height } = useWindowDimensions();
+  const flow = useSharedValue(0);
+  const shimmer = useSharedValue(0);
+
+  useEffect(() => {
+    flow.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.sin) }), -1, true);
+    shimmer.value = withRepeat(withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.quad) }), -1, true);
+  }, [flow, shimmer]);
+
+  const waveStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: -width * 0.24 + flow.value * width * 0.42 },
+      { translateY: (flow.value - 0.5) * 16 },
+    ],
+  }));
+  const particleStyle = useAnimatedStyle(() => ({
+    opacity: 0.5 + shimmer.value * 0.5,
+    transform: [{ translateX: shimmer.value * 12 }, { translateY: -shimmer.value * 14 }],
+  }));
+
+  return (
+    <View testID="questionnaire-ambient-animation" pointerEvents="none" style={styles.ambientLayer}>
+      <Animated.View style={[styles.ambientWave, { top: height * 0.36 }, waveStyle]}>
+        <Svg width={width * 1.7} height={230} viewBox="0 0 620 190" fill="none">
+          {[0, 10, 20, 30, 40, 50, 60].map((offset, index) => (
+            <Path
+              key={offset}
+              d={`M-20 ${116 + offset * 0.35} C 92 ${20 + offset}, 188 ${178 - offset * 0.45}, 308 ${101 + offset * 0.2} S 510 ${23 + offset}, 650 ${91 + offset * 0.25}`}
+              stroke={colors.accent}
+              strokeWidth={index === 3 ? 2 : 1.2}
+              opacity={0.24 + index * 0.025}
+            />
+          ))}
+          <Circle cx="116" cy="80" r="4" fill={colors.accent} opacity="0.82" />
+          <Circle cx="315" cy="100" r="5" fill={colors.accent} opacity="0.92" />
+          <Circle cx="496" cy="60" r="3.5" fill={colors.accent} opacity="0.84" />
+        </Svg>
+      </Animated.View>
+      <Animated.View style={[styles.ambientParticles, particleStyle]}>
+        {AMBIENT_PARTICLES.map((particle, index) => (
+          <View
+            key={`${particle.left}-${particle.top}`}
+            style={[
+              styles.ambientParticle,
+              {
+                left: particle.left,
+                top: particle.top,
+                width: particle.size,
+                height: particle.size,
+                borderRadius: particle.size / 2,
+                opacity: 0.65 + particle.delay * 0.35,
+              },
+              index % 3 === 0 && styles.ambientParticleGlow,
+            ]}
+          />
+        ))}
+      </Animated.View>
+    </View>
   );
 }
 
@@ -435,6 +512,11 @@ function DocumentButton({ label, required, file, onPress }: { label: string; req
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  ambientLayer: { position: "absolute", inset: 0, overflow: "hidden" },
+  ambientWave: { position: "absolute", left: 0 },
+  ambientParticles: { position: "absolute", inset: 0 },
+  ambientParticle: { position: "absolute", backgroundColor: colors.accent },
+  ambientParticleGlow: { boxShadow: `0 0 8px ${colors.accent}` },
   progressTrack: { height: 5, marginHorizontal: spacing.lg, borderRadius: radii.pill, backgroundColor: colors.border },
   progressFill: { height: 5, borderRadius: radii.pill, backgroundColor: colors.accent },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md },

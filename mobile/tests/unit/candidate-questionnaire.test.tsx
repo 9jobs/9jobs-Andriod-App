@@ -16,6 +16,16 @@ jest.mock("react-native-reanimated", () => {
   };
 });
 
+jest.mock("react-native-svg", () => {
+  const { View } = require("react-native");
+  return {
+    __esModule: true,
+    default: View,
+    Circle: View,
+    Path: View,
+  };
+});
+
 jest.mock("expo-router", () => ({
   Redirect: () => null,
   router: { replace: jest.fn() },
