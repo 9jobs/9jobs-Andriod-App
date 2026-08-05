@@ -146,6 +146,8 @@ export default function AppLayout() {
       <Tabs.Screen name="contact" options={{ href: null }} />
       <Tabs.Screen name="security" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="tracker-details" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="upcoming-interview" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="weekly-progress" options={{ href: null, tabBarStyle: { display: "none" } }} />
     </Tabs>
   );
 }

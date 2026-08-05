@@ -18,7 +18,7 @@ import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-desti
 
 export default function HomeScreen() {
   const { user } = useSession();
-  const { data: snapshot } = usePreviewSyncQuery();
+  const { data: snapshot } = usePreviewSyncQuery(true);
   const jobFilters = useJobFilters();
   const profile = snapshot?.profile;
   const metrics = snapshot?.homeMetrics;
@@ -42,6 +42,66 @@ export default function HomeScreen() {
   }, [searchQuery, snapshot?.jobs]);
   const hasUnreadNotifications = snapshot?.notifications.some((item) => item.unread) ?? false;
   const applyMutation = useApplyMutation();
+
+  // 1. Calculate next upcoming interview
+  const nextInterview = useMemo(() => {
+    const interviews = snapshot?.trackerInterviews ?? [];
+    const now = new Date();
+    const upcoming = interviews
+      .filter((int: any) => {
+        if (!int.interview_date) return false;
+        return new Date(int.interview_date).getTime() > now.getTime();
+      })
+      .sort((a: any, b: any) => new Date(a.interview_date).getTime() - new Date(b.interview_date).getTime());
+    return upcoming[0] || null;
+  }, [snapshot?.trackerInterviews]);
+
+  // 2. Calculate countdown text
+  const countdownInfo = useMemo(() => {
+    if (!nextInterview) return null;
+    const now = new Date();
+    const target = new Date(nextInterview.interview_date);
+    const diffMs = target.getTime() - now.getTime();
+    
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    if (diffDays > 0) {
+      return `${diffDays}d ${diffHours}h left`;
+    } else if (diffHours > 0) {
+      return `${diffHours}h left`;
+    } else {
+      return "Starting soon";
+    }
+  }, [nextInterview]);
+
+  // 3. Calculate weekly progress
+  const weeklyProgress = useMemo(() => {
+    const apps = snapshot?.rawApplications ?? [];
+    const goalText = profile?.weeklyGoal || "10";
+    const goal = parseInt(goalText, 10) || 10;
+
+    // Start of current week (Monday 00:00:00)
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const startOfWeek = new Date(now.setDate(diff));
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const appsThisWeek = apps.filter((app: any) => {
+      const appDate = new Date(app.application_date ?? app.applied_at ?? app.created_at);
+      return appDate >= startOfWeek;
+    });
+
+    const percentage = Math.min(100, Math.round((appsThisWeek.length / goal) * 100));
+
+    return {
+      appliedList: appsThisWeek,
+      applied: appsThisWeek.length,
+      goal,
+      percentage,
+    };
+  }, [snapshot?.rawApplications, profile?.weeklyGoal]);
 
   function openSearchScreen() {
     const normalizedQuery = searchQuery.trim();
@@ -180,7 +240,7 @@ export default function HomeScreen() {
       </FadeInView>
 
       {/* 5. Pro Tip Hero Card with Star Twinkle Background */}
-      <FadeInView type="fade-up" delay={200}>
+      <FadeInView type="fade-up" delay={180}>
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
           <CardFloatingParticles />
@@ -202,6 +262,65 @@ export default function HomeScreen() {
           </AnimatedPressable>
 
           <RocketLaunchGlow />
+        </View>
+      </FadeInView>
+
+      {/* 4.5. Tracker & Interview Highlights */}
+      <FadeInView type="fade-up" delay={200}>
+        <View style={styles.highlightsContainer}>
+          {/* Interview Countdown Section */}
+          <AnimatedPressable 
+            style={styles.highlightCard} 
+            onPress={() => router.push("/(app)/upcoming-interview" as never)}
+            scaleTo={0.98}
+          >
+            <View style={styles.highlightHeader}>
+              <View style={styles.highlightIconWrap}>
+                <AppIcon name="mic" size={20} color={colors.accentDark} />
+              </View>
+              <View style={styles.highlightTitleWrap}>
+                <Text style={styles.highlightTitle}>Upcoming Interview</Text>
+                <Text numberOfLines={1} style={styles.highlightSubtitle}>
+                  {nextInterview 
+                    ? `${nextInterview.interview_round || "Round"} · ${nextInterview.interview_type || "Interview"}` 
+                    : "No interviews scheduled yet"}
+                </Text>
+              </View>
+              {nextInterview && countdownInfo ? (
+                <View style={styles.countdownBadge}>
+                  <Text style={styles.countdownText}>{countdownInfo}</Text>
+                </View>
+              ) : null}
+            </View>
+            {!nextInterview ? (
+              <Text style={styles.highlightPlaceholderText}>
+                Apply to recommended roles below to secure your next interview!
+              </Text>
+            ) : null}
+          </AnimatedPressable>
+
+          {/* Weekly Progress Section */}
+          <AnimatedPressable 
+            style={styles.highlightCard} 
+            onPress={() => router.push("/(app)/weekly-progress" as never)}
+            scaleTo={0.98}
+          >
+            <View style={styles.progressHeader}>
+              <View style={styles.highlightIconWrap}>
+                <AppIcon name="tracker" size={20} color={colors.accentDark} />
+              </View>
+              <View style={styles.progressTextWrap}>
+                <Text style={styles.highlightTitle}>Weekly Progress</Text>
+                <Text numberOfLines={1} style={styles.highlightSubtitle}>
+                  Applied to {weeklyProgress.applied} of {weeklyProgress.goal} target jobs this week
+                </Text>
+              </View>
+              <Text style={styles.progressPercentText}>{weeklyProgress.percentage}%</Text>
+            </View>
+            <View style={styles.progressBarContainer}>
+              <View style={[styles.progressBarFill, { width: `${weeklyProgress.percentage}%` }]} />
+            </View>
+          </AnimatedPressable>
         </View>
       </FadeInView>
 
@@ -261,6 +380,7 @@ export default function HomeScreen() {
           ))}
         </View>
       </FadeInView>
+
     </Screen>
   );
 }
@@ -570,5 +690,86 @@ const styles = StyleSheet.create({
   },
   appliedButtonText: {
     color: colors.mutedText,
+  },
+  highlightsContainer: {
+    gap: spacing.md,
+  },
+  highlightCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 12,
+  },
+  highlightHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  highlightIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(13, 206, 6, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  highlightTitleWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  highlightTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  highlightSubtitle: {
+    color: colors.mutedText,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  countdownBadge: {
+    backgroundColor: colors.softAccent,
+    borderRadius: radii.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  countdownText: {
+    color: colors.accentDark,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  highlightPlaceholderText: {
+    color: colors.subtleText,
+    fontSize: 12,
+    fontStyle: "italic",
+    paddingLeft: 48,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  progressTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  progressPercentText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  progressBarContainer: {
+    height: 8,
+    backgroundColor: "rgba(23, 24, 22, 0.05)",
+    borderRadius: 4,
+    overflow: "hidden",
+    marginTop: 2,
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: colors.accentDark,
+    borderRadius: 4,
   },
 });

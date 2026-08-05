@@ -48,6 +48,8 @@ type InterviewRow = {
   interviewer_name?: string | null;
   interviewer_email?: string | null;
   admin_notes?: string | null;
+  meeting_link?: string | null;
+  location?: string | null;
 };
 
 type FollowUpRow = {
