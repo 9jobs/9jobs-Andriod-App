@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from "react";
-import { StyleSheet, Text, View, Pressable, ScrollView, Modal, Image, Alert, TouchableOpacity, ActivityIndicator, Linking } from "react-native";
+import React, { useState, useMemo, useRef } from "react";
+import { StyleSheet, Text, View, Pressable, ScrollView, Modal, Image, Alert, TouchableOpacity, ActivityIndicator, Linking, InteractionManager } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { DarkHeroCard, PremiumScaffold, SoftPanel } from "@/components/premium/PremiumScaffold";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncQuery, useCandidateQuestionnaireQuery } from "@/features/mobile-sync/hooks";
 import { useUpdateApplicationStatusMutation } from "@/features/jobs/hooks";
 import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
 import { verticalScrollProps } from "@/lib/ui/scroll";
@@ -11,7 +11,7 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { FadeInView } from "@/components/motion/FadeInView";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSession } from "@/providers/SessionProvider";
-import { fetchCandidateQuestionnaire } from "@/lib/data/candidate-questionnaire";
+// fetchCandidateQuestionnaire removed in favor of React Query
 
 const submittedTrackerStatuses = new Set([
   "applied",
@@ -49,6 +49,8 @@ export default function TrackerScreen() {
   const { user } = useSession();
   const { data: snapshot, isLoading, isRefetching, isError, refetch } = usePreviewSyncQuery();
   const { mutate: updateApplicationStage, isPending: isUpdatingStage } = useUpdateApplicationStatusMutation();
+  const { data: questionnaire } = useCandidateQuestionnaireQuery();
+  const isPickingRef = useRef(false);
   const jobs = snapshot?.jobs ?? [];
   const summary = normalizeTrackerSummary(snapshot?.trackerSummary);
 
@@ -57,7 +59,15 @@ export default function TrackerScreen() {
   const [screenshotMap, setScreenshotMap] = useState<Record<string, string>>({});
   const [beforeScreenshotMap, setBeforeScreenshotMap] = useState<Record<string, string>>({});
   const [afterScreenshotMap, setAfterScreenshotMap] = useState<Record<string, string>>({});
-  const [updatedResume, setUpdatedResume] = useState<{ name: string; url: string; updatedAt?: string } | null>(null);
+
+  const updatedResume = useMemo(() => {
+    const url = String(questionnaire?.enhanced_resume_url || "");
+    return url ? {
+      name: String(questionnaire?.enhanced_resume_name || "Updated Resume"),
+      url,
+      updatedAt: questionnaire?.enhanced_resume_updated_at || undefined,
+    } : null;
+  }, [questionnaire]);
 
   // Load saved screenshots from AsyncStorage
   React.useEffect(() => {
@@ -80,20 +90,11 @@ export default function TrackerScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      void refetch();
-      if (user) {
-        void fetchCandidateQuestionnaire(user)
-          .then((questionnaire) => {
-            const url = String(questionnaire?.enhanced_resume_url || "");
-            setUpdatedResume(url ? {
-              name: String(questionnaire?.enhanced_resume_name || "Updated Resume"),
-              url,
-              updatedAt: questionnaire?.enhanced_resume_updated_at || undefined,
-            } : null);
-          })
-          .catch((error) => console.warn("[Tracker] Updated resume load failed:", error));
-      }
-    }, [refetch, user]),
+      const task = InteractionManager.runAfterInteractions(() => {
+        void refetch();
+      });
+      return () => task.cancel();
+    }, [refetch]),
   );
 
   const toTimezoneDateKey = React.useCallback((isoString: string | null | undefined) => {
@@ -153,6 +154,8 @@ export default function TrackerScreen() {
   }, [snapshot?.rawApplications, toTimezoneDateKey]);
 
   const handleUploadScreenshot = async (jobId: string, kind: "before" | "after") => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     let ImagePickerModule: any;
     try {
       ImagePickerModule = require("expo-image-picker");
@@ -162,6 +165,7 @@ export default function TrackerScreen() {
 
     if (!ImagePickerModule || !ImagePickerModule.requestMediaLibraryPermissionsAsync) {
       Alert.alert("Picker Unavailable", "Device image picker is not compiled in this build.");
+      isPickingRef.current = false;
       return;
     }
 
@@ -199,6 +203,8 @@ export default function TrackerScreen() {
       }
     } catch (err) {
       Alert.alert("Error", "Failed to select screenshot.");
+    } finally {
+      isPickingRef.current = false;
     }
   };
 

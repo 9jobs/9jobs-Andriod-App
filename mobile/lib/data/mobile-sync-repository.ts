@@ -1117,10 +1117,22 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
   return await res.json();
 }
 
+let cachedToken: string | null = null;
+let cachedTokenUserId: string | null = null;
+
+export function clearInMemoryTokenCache() {
+  cachedToken = null;
+  cachedTokenUserId = null;
+}
+
 async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiveUser>, backendUrl?: string) {
   const resolvedBackendUrl = backendUrl || process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
   if (!resolvedBackendUrl) {
     return null;
+  }
+
+  if (cachedToken && cachedTokenUserId === activeUser.id) {
+    return cachedToken;
   }
 
   const [[, storedToken], [, storedTokenUserId]] = await AsyncStorage.multiGet([
@@ -1130,36 +1142,50 @@ async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiv
 
   let token = storedToken;
   if (token && storedTokenUserId === activeUser.id) {
+    cachedToken = token;
+    cachedTokenUserId = storedTokenUserId;
     return token;
   }
 
   await AsyncStorage.multiRemove([storageKeys.authToken, storageKeys.authTokenUserId]);
+  cachedToken = null;
+  cachedTokenUserId = null;
 
-  const tokenRes = await fetch(`${resolvedBackendUrl}/api/auth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      userId: activeUser.id,
-      email: activeUser.email,
-      fullName: activeUser.fullName,
-      role: "client",
-    }),
-  });
+  try {
+    const tokenRes = await fetch(`${resolvedBackendUrl}/api/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: activeUser.id,
+        email: activeUser.email,
+        fullName: activeUser.fullName,
+        role: "client",
+      }),
+    });
 
-  if (!tokenRes.ok) {
-    throw new Error(`Backend token bootstrap failed with HTTP ${tokenRes.status}`);
+    if (!tokenRes.ok) {
+      cachedToken = null;
+      cachedTokenUserId = null;
+      throw new Error(`Backend token bootstrap failed with HTTP ${tokenRes.status}`);
+    }
+
+    const tokenData = await tokenRes.json();
+    token = tokenData?.token ?? null;
+    if (token) {
+      cachedToken = token;
+      cachedTokenUserId = activeUser.id;
+      await AsyncStorage.multiSet([
+        [storageKeys.authToken, token],
+        [storageKeys.authTokenUserId, activeUser.id],
+      ]);
+    }
+
+    return token;
+  } catch (err) {
+    cachedToken = null;
+    cachedTokenUserId = null;
+    throw err;
   }
-
-  const tokenData = await tokenRes.json();
-  token = tokenData?.token ?? null;
-  if (token) {
-    await AsyncStorage.multiSet([
-      [storageKeys.authToken, token],
-      [storageKeys.authTokenUserId, activeUser.id],
-    ]);
-  }
-
-  return token;
 }
 
 async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
@@ -2550,49 +2576,92 @@ async function sendChatPayloadToAdmin(
         attachment_mime_type: payload.attachmentMimeType,
         attachment_size: payload.attachmentSize,
       });
-  current.messages.push(outgoingMessage as any);
+
+  const existingOutgoingIndex = current.messages.findIndex(
+    (item: any) =>
+      item.id === outgoingMessage.id ||
+      (!!outgoingMessage.client_message_id &&
+        item.client_message_id === outgoingMessage.client_message_id)
+  );
+
+  if (existingOutgoingIndex >= 0) {
+    current.messages[existingOutgoingIndex] = {
+      ...current.messages[existingOutgoingIndex],
+      ...outgoingMessage,
+    };
+  } else {
+    current.messages.push(outgoingMessage as any);
+  }
 
   if (backendSucceeded && backendResult?.botMessage) {
-    current.messages.push(
-      buildLocalChatMessage({
-        id:
-          typeof backendResult.botMessage.id === "number"
-            ? backendResult.botMessage.id
-            : typeof backendResult.botMessage.id === "string" && /^\d+$/.test(backendResult.botMessage.id)
-            ? Number(backendResult.botMessage.id)
-            : undefined,
-        conversation_id: backendResult.botMessage.conversation_id ?? activeUser.id,
-        sender_id: backendResult.botMessage.sender_id ?? "bot",
-        sender_role: backendResult.botMessage.sender_role ?? "admin",
-        recipient_id: backendResult.botMessage.recipient_id ?? activeUser.id,
-        content: backendResult.botMessage.content ?? backendResult.botMessage.text ?? fallbackSupportReply,
-        client_message_id: backendResult.botMessage.client_message_id,
-        direction: "incoming",
-        status: backendResult.botMessage.status ?? "delivered",
-        is_automated: backendResult.botMessage.is_automated ?? true,
-        sender_type: backendResult.botMessage.sender_type ?? "bot",
-        message_type: backendResult.botMessage.message_type ?? "text",
-        attachment_url: backendResult.botMessage.attachment_url,
-        attachment_name: backendResult.botMessage.attachment_name,
-        attachment_mime_type: backendResult.botMessage.attachment_mime_type,
-        attachment_size: backendResult.botMessage.attachment_size,
-      }) as any,
+    const incomingBotMsg = buildLocalChatMessage({
+      id:
+        typeof backendResult.botMessage.id === "number"
+          ? backendResult.botMessage.id
+          : typeof backendResult.botMessage.id === "string" && /^\d+$/.test(backendResult.botMessage.id)
+          ? Number(backendResult.botMessage.id)
+          : undefined,
+      conversation_id: backendResult.botMessage.conversation_id ?? activeUser.id,
+      sender_id: backendResult.botMessage.sender_id ?? "bot",
+      sender_role: backendResult.botMessage.sender_role ?? "admin",
+      recipient_id: backendResult.botMessage.recipient_id ?? activeUser.id,
+      content: backendResult.botMessage.content ?? backendResult.botMessage.text ?? fallbackSupportReply,
+      client_message_id: backendResult.botMessage.client_message_id,
+      direction: "incoming",
+      status: backendResult.botMessage.status ?? "delivered",
+      is_automated: backendResult.botMessage.is_automated ?? true,
+      sender_type: backendResult.botMessage.sender_type ?? "bot",
+      message_type: backendResult.botMessage.message_type ?? "text",
+      attachment_url: backendResult.botMessage.attachment_url,
+      attachment_name: backendResult.botMessage.attachment_name,
+      attachment_mime_type: backendResult.botMessage.attachment_mime_type,
+      attachment_size: backendResult.botMessage.attachment_size,
+    });
+
+    const existingBotIndex = current.messages.findIndex(
+      (item: any) =>
+        item.id === incomingBotMsg.id ||
+        (!!incomingBotMsg.client_message_id &&
+          item.client_message_id === incomingBotMsg.client_message_id)
     );
+
+    if (existingBotIndex >= 0) {
+      current.messages[existingBotIndex] = {
+        ...current.messages[existingBotIndex],
+        ...incomingBotMsg,
+      };
+    } else {
+      current.messages.push(incomingBotMsg as any);
+    }
   } else if (!backendSucceeded) {
     const fallbackReply = await resolveFallbackBotReply(content, activeUser.id);
-    current.messages.push(
-      buildLocalChatMessage({
-        conversation_id: activeUser.id,
-        sender_id: "admin",
-        sender_role: "admin",
-        recipient_id: activeUser.id,
-        content: fallbackReply,
-        direction: "incoming",
-        status: "delivered",
-        is_automated: true,
-        sender_type: "bot",
-      }) as any,
+    const fallbackBotMsg = buildLocalChatMessage({
+      conversation_id: activeUser.id,
+      sender_id: "admin",
+      sender_role: "admin",
+      recipient_id: activeUser.id,
+      content: fallbackReply,
+      direction: "incoming",
+      status: "delivered",
+      is_automated: true,
+      sender_type: "bot",
+    });
+
+    const existingBotIndex = current.messages.findIndex(
+      (item: any) =>
+        item.id === fallbackBotMsg.id ||
+        (!!fallbackBotMsg.client_message_id &&
+          item.client_message_id === fallbackBotMsg.client_message_id)
     );
+
+    if (existingBotIndex >= 0) {
+      current.messages[existingBotIndex] = {
+        ...current.messages[existingBotIndex],
+        ...fallbackBotMsg,
+      };
+    } else {
+      current.messages.push(fallbackBotMsg as any);
+    }
   }
 
   current.messageThread = buildMessageThread(current.messages, current.profile.fullName);

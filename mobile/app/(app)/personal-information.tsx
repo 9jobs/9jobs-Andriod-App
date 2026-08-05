@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
@@ -10,6 +10,8 @@ import { useProfileQuery, useUpdateProfileMutation } from "@/features/jobs/hooks
 export default function PersonalInformationScreen() {
   const { data: profile } = useProfileQuery();
   const { mutateAsync: updateProfile, isPending } = useUpdateProfileMutation();
+  const isPickingRef = useRef(false);
+  const isSavingRef = useRef(false);
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -59,6 +61,8 @@ export default function PersonalInformationScreen() {
   }
 
   async function handleChoosePhoto() {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     let ImagePickerModule: any;
     try {
       ImagePickerModule = require("expo-image-picker");
@@ -68,6 +72,7 @@ export default function PersonalInformationScreen() {
 
     if (!ImagePickerModule?.requestMediaLibraryPermissionsAsync) {
       Alert.alert("Unavailable", "Choose from device will work after the native image picker build is ready.");
+      isPickingRef.current = false;
       return;
     }
 
@@ -92,16 +97,20 @@ export default function PersonalInformationScreen() {
     } catch (error) {
       console.error("Image pick error:", error);
       Alert.alert("Error", "Failed to choose a profile photo from your device.");
+    } finally {
+      isPickingRef.current = false;
     }
   }
 
   async function handleSave() {
+    if (isSavingRef.current) return;
     if (!form.fullName.trim() || !form.email.trim()) {
       Alert.alert("Missing Fields", "Name and email are required.");
       return;
     }
 
     try {
+      isSavingRef.current = true;
       const resolvedAvatarUrl =
         form.avatarUrl.startsWith("file:") || form.avatarUrl.startsWith("content:")
           ? await convertImageUriToDataUrl(form.avatarUrl)
@@ -125,6 +134,8 @@ export default function PersonalInformationScreen() {
       ]);
     } catch (error) {
       Alert.alert("Error", error instanceof Error ? error.message : "Could not update personal information.");
+    } finally {
+      isSavingRef.current = false;
     }
   }
 

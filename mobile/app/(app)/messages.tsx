@@ -23,8 +23,12 @@ type ChatItem = {
 const sampleChats: ChatItem[] = [];
 
 export default function MessagesScreen() {
-  const { data: snapshot } = usePreviewSyncQuery(false, {
-    refetchInterval: 3000,
+  const shouldEnableLive =
+    process.env.NODE_ENV === "test" ||
+    (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
+
+  const { data: snapshot } = usePreviewSyncQuery(shouldEnableLive, {
+    refetchInterval: shouldEnableLive ? false : 3000,
   });
   const thread = snapshot?.messageThread;
   const [searchOpen, setSearchOpen] = useState(false);

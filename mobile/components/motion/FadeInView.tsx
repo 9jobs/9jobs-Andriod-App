@@ -17,6 +17,15 @@ type FadeInViewProps = PropsWithChildren<{
   style?: StyleProp<ViewStyle>;
 }>;
 
+const directionByType: Record<AnimationType, EntranceDirection> = {
+  fade: "none",
+  "fade-up": "up",
+  "fade-down": "down",
+  "fade-left": "left",
+  "fade-right": "right",
+  "scale-in": "scale",
+};
+
 export function FadeInView({
   children,
   type = "fade-up",
@@ -24,14 +33,6 @@ export function FadeInView({
   duration = 320,
   style,
 }: FadeInViewProps) {
-  const directionByType: Record<AnimationType, EntranceDirection> = {
-    fade: "none",
-    "fade-up": "up",
-    "fade-down": "down",
-    "fade-left": "left",
-    "fade-right": "right",
-    "scale-in": "scale",
-  };
 
   return (
     <StableEntranceView

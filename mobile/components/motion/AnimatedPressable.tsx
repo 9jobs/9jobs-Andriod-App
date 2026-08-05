@@ -70,9 +70,21 @@ export function AnimatedPressable({
     onPressOut?.(e);
   };
 
+  const lastPressTime = React.useRef(0);
+  const handlePress = (e: any) => {
+    if (disabled) return;
+    const now = Date.now();
+    if (now - lastPressTime.current < 450) {
+      return;
+    }
+    lastPressTime.current = now;
+    rest.onPress?.(e);
+  };
+
   return (
     <AnimatedPressableBase
       {...rest}
+      onPress={rest.onPress ? handlePress : undefined}
       disabled={disabled}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}

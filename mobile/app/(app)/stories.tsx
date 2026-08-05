@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View, Image } from "react-native";
+import { Pressable, StyleSheet, Text, View, Image, InteractionManager } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
@@ -15,7 +15,10 @@ export default function StoriesScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void refetch();
+      const task = InteractionManager.runAfterInteractions(() => {
+        void refetch();
+      });
+      return () => task.cancel();
     }, [refetch]),
   );
 

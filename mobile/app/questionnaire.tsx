@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, memo, useCallback } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -72,6 +72,9 @@ export default function CandidateQuestionnaireScreen() {
   const { user, hasCompletedOnboarding, setOnboardingComplete } = useSession();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
+  const isPickingRef = useRef(false);
+  const isSubmittingRef = useRef(false);
+  const lastStepTimeRef = useRef(0);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateDraft, setDateDraft] = useState({ day: "", month: "", year: "" });
   const [calendarMonth, setCalendarMonth] = useState(() => new Date(1995, 0, 1, 12));
@@ -107,6 +110,23 @@ export default function CandidateQuestionnaireScreen() {
     return textValue.trim().length > 0;
   }, [currentStep.key, form.workTypes.length, requiresVisa, resume, textValue, visa]);
 
+  const moveCalendar = useCallback((months: number) => {
+    setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + months, 1, 12));
+  }, []);
+
+  const moveCalendarYear = useCallback((years: number) => {
+    setCalendarMonth((current) => new Date(current.getFullYear() + years, current.getMonth(), 1, 12));
+  }, []);
+
+  const chooseCalendarDay = useCallback((day: number) => {
+    setDateDraft({
+      day: String(day).padStart(2, "0"),
+      month: String(calendarMonth.getMonth() + 1).padStart(2, "0"),
+      year: String(calendarMonth.getFullYear()),
+    });
+    setError("");
+  }, [calendarMonth]);
+
   if (!user) return <Redirect href="/(public)/auth/sign-up" />;
   if (hasCompletedOnboarding) return <Redirect href="/(app)" />;
 
@@ -121,23 +141,6 @@ export default function CandidateQuestionnaireScreen() {
     setDateDraft({ day, month, year });
     setCalendarMonth(new Date(Number(year) || 1995, Math.max(0, (Number(month) || 1) - 1), 1, 12));
     setShowDatePicker(true);
-  }
-
-  function moveCalendar(months: number) {
-    setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + months, 1, 12));
-  }
-
-  function moveCalendarYear(years: number) {
-    setCalendarMonth((current) => new Date(current.getFullYear() + years, current.getMonth(), 1, 12));
-  }
-
-  function chooseCalendarDay(day: number) {
-    setDateDraft({
-      day: String(day).padStart(2, "0"),
-      month: String(calendarMonth.getMonth() + 1).padStart(2, "0"),
-      year: String(calendarMonth.getFullYear()),
-    });
-    setError("");
   }
 
   function selectDate() {
@@ -177,23 +180,29 @@ export default function CandidateQuestionnaireScreen() {
   }
 
   async function chooseDocument(type: "resume" | "visa") {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: [
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "image/jpeg",
-        "image/png",
-      ],
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const selected = result.assets[0];
-    const file = { name: selected.name, mimeType: selected.mimeType, uri: selected.uri, size: selected.size };
-    if (type === "resume") setResume(file);
-    else setVisa(file);
-    setError("");
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          "application/pdf",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "image/jpeg",
+          "image/png",
+        ],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const selected = result.assets[0];
+      const file = { name: selected.name, mimeType: selected.mimeType, uri: selected.uri, size: selected.size };
+      if (type === "resume") setResume(file);
+      else setVisa(file);
+      setError("");
+    } finally {
+      isPickingRef.current = false;
+    }
   }
 
   function validateCurrentStep() {
@@ -204,6 +213,11 @@ export default function CandidateQuestionnaireScreen() {
   }
 
   async function handleContinue() {
+    const now = Date.now();
+    if (now - lastStepTimeRef.current < 500) return;
+    lastStepTimeRef.current = now;
+
+    if (isSubmittingRef.current) return;
     const activeUser = user;
     if (!activeUser) return;
     const validationError = validateCurrentStep();
@@ -218,6 +232,7 @@ export default function CandidateQuestionnaireScreen() {
     if (!resume) return;
 
     try {
+      isSubmittingRef.current = true;
       setIsSubmitting(true);
       setError("");
       const uploadedResume = await uploadQuestionnaireDocument(activeUser, "resume", resume);
@@ -242,9 +257,9 @@ export default function CandidateQuestionnaireScreen() {
       await setOnboardingComplete();
       router.replace("/(app)");
     } catch (submissionError) {
-      setError(submissionError instanceof Error ? submissionError.message : "Could not save your questionnaire.");
-    } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setError(submissionError instanceof Error ? submissionError.message : "Could not save your questionnaire.");
     }
   }
 
@@ -253,7 +268,12 @@ export default function CandidateQuestionnaireScreen() {
       <QuestionnaireAmbientAnimation />
       <View style={[styles.progressTrack, { marginTop: insets.top + spacing.sm }]}><View style={[styles.progressFill, { width: progress }]} /></View>
       <View style={styles.headerRow}>
-        <Pressable style={[styles.backButton, step === 0 && styles.backButtonHidden]} onPress={() => step > 0 && setStep((value) => value - 1)} disabled={step === 0}>
+        <Pressable style={[styles.backButton, step === 0 && styles.backButtonHidden]} onPress={() => {
+          const now = Date.now();
+          if (now - lastStepTimeRef.current < 500) return;
+          lastStepTimeRef.current = now;
+          step > 0 && setStep((value) => value - 1);
+        }} disabled={step === 0}>
           <Text style={styles.backText}>←</Text>
         </Pressable>
         <View style={styles.stepChip}><Text style={styles.stepChipText}>{step + 1} / {STEPS.length}</Text></View>
@@ -350,7 +370,7 @@ const AMBIENT_PARTICLES = [
   { left: "26%", top: "86%", size: 5, delay: 0.84 },
 ] as const;
 
-function QuestionnaireAmbientAnimation() {
+const QuestionnaireAmbientAnimation = memo(function QuestionnaireAmbientAnimation() {
   const { width, height } = useWindowDimensions();
   const flow = useSharedValue(0);
   const shimmer = useSharedValue(0);
@@ -410,12 +430,12 @@ function QuestionnaireAmbientAnimation() {
       </Animated.View>
     </View>
   );
-}
+});
 
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const WEEK_DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
-function CalendarPicker({ month, selected, onDayPress, onMoveMonth, onMoveYear }: { month: Date; selected: { day: string; month: string; year: string }; onDayPress: (day: number) => void; onMoveMonth: (months: number) => void; onMoveYear: (years: number) => void }) {
+const CalendarPicker = memo(function CalendarPicker({ month, selected, onDayPress, onMoveMonth, onMoveYear }: { month: Date; selected: { day: string; month: string; year: string }; onDayPress: (day: number) => void; onMoveMonth: (months: number) => void; onMoveYear: (years: number) => void }) {
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const firstWeekDay = new Date(year, monthIndex, 1, 12).getDay();
@@ -452,9 +472,9 @@ function CalendarPicker({ month, selected, onDayPress, onMoveMonth, onMoveYear }
       </View>
     </View>
   );
-}
+});
 
-function CareerPassportVisual({ name }: { name: string }) {
+const CareerPassportVisual = memo(function CareerPassportVisual({ name }: { name: string }) {
   const motion = useSharedValue(0);
 
   useEffect(() => {
@@ -496,7 +516,7 @@ function CareerPassportVisual({ name }: { name: string }) {
       </View>
     </Animated.View>
   );
-}
+});
 
 function DocumentButton({ label, required, file, onPress }: { label: string; required: boolean; file: QuestionnaireDocument | null; onPress: () => void }) {
   return (

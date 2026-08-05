@@ -15,6 +15,7 @@ import { connectSocket } from "@/lib/socket/socketService";
 import { supabase } from "@/lib/supabase/client";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
+import { clearInMemoryTokenCache } from "@/lib/data/mobile-sync-repository";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -113,6 +114,7 @@ async function syncSupabaseProfile(sessionUser: SessionUser | null) {
 }
 
 async function clearPreviewSnapshotCache() {
+  clearInMemoryTokenCache();
   const keys = await AsyncStorage.getAllKeys();
   const removableKeys = keys.filter(
     (key) =>

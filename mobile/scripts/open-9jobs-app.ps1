@@ -114,7 +114,7 @@ function Ensure-EmulatorReady {
 
   if ($connectedDevices -notmatch "emulator-\d+\s+device") {
     Write-Host "Starting Android emulator '$AvdName'..." -ForegroundColor Cyan
-    Start-Process -FilePath $EmulatorPath -ArgumentList "-avd", $AvdName -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath $EmulatorPath -ArgumentList "-avd", $AvdName, "-no-snapshot-load" -WindowStyle Hidden | Out-Null
   }
 
   Write-Host "Waiting for Android emulator/device to be ready..." -ForegroundColor Cyan
@@ -304,3 +304,7 @@ Write-Host "Stopping Expo Go if it is running..." -ForegroundColor Cyan
 Start-NineJobsApp -Port $MetroPort
 
 Write-Host "9Jobs app is open in the foreground." -ForegroundColor Green
+Write-Host "Keeping script alive for live testing daemon..." -ForegroundColor Green
+while ($true) {
+  Start-Sleep -Seconds 10
+}

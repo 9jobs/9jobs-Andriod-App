@@ -80,6 +80,7 @@ export default function AdminThreadScreen() {
   const messages = snapshot?.messages ?? [];
   const scrollViewRef = useRef<ScrollView | null>(null);
   const stickToBottomRef = useRef(true);
+  const isPickingRef = useRef(false);
   const initialMessageIdsRef = useRef<Set<number | string>>(new Set());
 
   const bubbleStyles = useMemo(() => {
@@ -284,34 +285,42 @@ export default function AdminThreadScreen() {
   };
 
   const handlePickImageFallback = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert("Permission needed", "Please allow photo access to send an image.");
-      return false;
-    }
+    if (isPickingRef.current) return false;
+    isPickingRef.current = true;
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission needed", "Please allow photo access to send an image.");
+        return false;
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
 
-    if (result.canceled || !result.assets?.length) {
+      if (result.canceled || !result.assets?.length) {
+        return true;
+      }
+
+      const asset = result.assets[0];
+      await preparePendingAttachment({
+        uri: asset.uri,
+        name: asset.fileName || `image-${Date.now()}.jpg`,
+        mimeType: asset.mimeType || "image/jpeg",
+        size: asset.fileSize,
+        messageType: "image",
+      });
+
       return true;
+    } finally {
+      isPickingRef.current = false;
     }
-
-    const asset = result.assets[0];
-    await preparePendingAttachment({
-      uri: asset.uri,
-      name: asset.fileName || `image-${Date.now()}.jpg`,
-      mimeType: asset.mimeType || "image/jpeg",
-      size: asset.fileSize,
-      messageType: "image",
-    });
-
-    return true;
   };
 
   const handlePickImage = async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
@@ -339,10 +348,14 @@ export default function AdminThreadScreen() {
     } catch (error) {
       console.error("[Chat Screen] Image picker failed:", error);
       Alert.alert("Error", "Could not upload this image from your device.");
+    } finally {
+      isPickingRef.current = false;
     }
   };
 
   const handlePickCameraImage = async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
@@ -370,10 +383,14 @@ export default function AdminThreadScreen() {
     } catch (error) {
       console.error("[Chat Screen] Camera image capture failed:", error);
       Alert.alert("Error", "Could not capture a photo from camera.");
+    } finally {
+      isPickingRef.current = false;
     }
   };
 
   const handlePickFile = async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     try {
       const result = await DocumentPicker.getDocumentAsync({
         multiple: false,
@@ -394,6 +411,7 @@ export default function AdminThreadScreen() {
       });
     } catch (error) {
       console.error("[Chat Screen] Attachment picker failed:", error);
+      isPickingRef.current = false;
       if (Platform.OS === "android") {
         try {
           const usedImageFallback = await handlePickImageFallback();
@@ -405,10 +423,14 @@ export default function AdminThreadScreen() {
         }
       }
       Alert.alert("Error", "Could not pick a file from this device.");
+    } finally {
+      isPickingRef.current = false;
     }
   };
 
   const handlePickAudio = async () => {
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     try {
       const result = await DocumentPicker.getDocumentAsync({
         multiple: false,
@@ -431,6 +453,8 @@ export default function AdminThreadScreen() {
     } catch (error) {
       console.error("[Chat Screen] Audio picker failed:", error);
       Alert.alert("Error", "Could not pick an audio file from this device.");
+    } finally {
+      isPickingRef.current = false;
     }
   };
 
@@ -439,6 +463,8 @@ export default function AdminThreadScreen() {
       Alert.alert("Module Missing", "Contacts feature requires a native build. Please install the updated app build.");
       return;
     }
+    if (isPickingRef.current) return;
+    isPickingRef.current = true;
     try {
       let contact: any = null;
 
@@ -475,6 +501,8 @@ export default function AdminThreadScreen() {
     } catch (error) {
       console.error("[Chat Screen] Contact picker failed:", error);
       Alert.alert("Error", "Could not pick a contact from this device.");
+    } finally {
+      isPickingRef.current = false;
     }
   };
 

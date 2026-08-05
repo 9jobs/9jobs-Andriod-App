@@ -11,6 +11,7 @@ import { queryKeys } from "@/lib/queries";
 import { useRealtimeInvalidation } from "@/lib/supabase/useRealtimeInvalidation";
 import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { useSession } from "@/providers/SessionProvider";
+import { fetchCandidateQuestionnaire } from "@/lib/data/candidate-questionnaire";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -66,6 +67,21 @@ export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
     refetchOnMount: false,
     refetchOnReconnect: true,
     ...options,
+  });
+}
+
+export function useCandidateQuestionnaireQuery() {
+  const { user } = useSession();
+  return useQuery({
+    queryKey: [queryKeys.questionnaire, user?.id ?? "preview-user"],
+    queryFn: () => {
+      if (!user) return Promise.resolve(null);
+      return fetchCandidateQuestionnaire(user);
+    },
+    staleTime: 120_000,
+    retry: 1,
+    refetchOnMount: false,
+    refetchOnReconnect: true,
   });
 }
 

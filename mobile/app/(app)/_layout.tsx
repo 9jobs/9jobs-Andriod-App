@@ -2,13 +2,14 @@ import { StyleSheet, View } from "react-native";
 import type { ColorValue } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { AppIcon } from "@/components/ui/AppIcon";
-import { colors, radii, setTheme, spacing, typography } from "@/theme";
+import { colors, radii, setTheme, spacing, typography, useThemeVersion } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
 import Animated, { FadeIn, useAnimatedStyle, withSpring } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -18,6 +19,7 @@ export default function AppLayout() {
   const { user, hasCompletedOnboarding } = useSession();
   const { data: snapshot } = usePreviewSyncQuery(true);
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (user && shouldEnableLiveTransport) {
@@ -33,6 +35,42 @@ export default function AppLayout() {
     setTheme(isDarkMode);
   }, [isDarkMode]);
 
+  const themeVersion = useThemeVersion();
+
+  const screenOptions = useMemo(() => ({
+    headerShown: false,
+    sceneStyle: {
+      backgroundColor: colors.background,
+    },
+    tabBarHideOnKeyboard: true,
+    tabBarActiveTintColor: colors.text,
+    tabBarInactiveTintColor: colors.mutedText,
+    tabBarStyle: {
+      position: "absolute" as const,
+      left: 14,
+      right: 14,
+      bottom: insets.bottom > 0 ? insets.bottom + 4 : 10,
+      backgroundColor: colors.tabBackground,
+      borderTopWidth: 0,
+      borderRadius: radii.xl,
+      height: 72,
+      paddingTop: 6,
+      paddingBottom: 8,
+      paddingHorizontal: 8,
+    },
+    tabBarItemStyle: {
+      height: 56,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    tabBarLabelStyle: {
+      ...typography.label,
+      fontSize: 9,
+      marginTop: 0,
+      lineHeight: 12,
+    },
+  }), [themeVersion, insets.bottom]);
+
   if (!hasCompletedOnboarding) {
     return <Redirect href="/questionnaire" />;
   }
@@ -43,36 +81,7 @@ export default function AppLayout() {
 
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        sceneStyle: {
-          backgroundColor: colors.background,
-        },
-        tabBarHideOnKeyboard: true,
-        tabBarActiveTintColor: colors.text,
-        tabBarInactiveTintColor: colors.mutedText,
-        tabBarStyle: {
-          position: "absolute",
-          left: 14,
-          right: 14,
-          bottom: 10,
-          backgroundColor: colors.tabBackground,
-          borderTopWidth: 0,
-          borderRadius: radii.xl,
-          height: 78,
-          paddingTop: 8,
-          paddingBottom: 10,
-          paddingHorizontal: 8,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 2,
-        },
-        tabBarLabelStyle: {
-          ...typography.label,
-          fontSize: 10,
-          marginTop: 2,
-        },
-      }}
+      screenOptions={screenOptions}
     >
       <Tabs.Screen
         name="index"
@@ -121,22 +130,22 @@ export default function AppLayout() {
       />
       <Tabs.Screen name="jobs/search" options={{ href: null }} />
       <Tabs.Screen name="saved" options={{ href: null }} />
-      <Tabs.Screen name="jobs/[id]" options={{ href: null }} />
-      <Tabs.Screen name="chat/[threadId]" options={{ href: null }} />
+      <Tabs.Screen name="jobs/[id]" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="chat/[threadId]" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="resume" options={{ href: null }} />
       <Tabs.Screen name="outreach" options={{ href: null }} />
       <Tabs.Screen name="interview" options={{ href: null }} />
       <Tabs.Screen name="pricing" options={{ href: null }} />
       <Tabs.Screen name="screens" options={{ href: null }} />
       <Tabs.Screen name="stories" options={{ href: null }} />
-      <Tabs.Screen name="notifications" options={{ href: null }} />
-      <Tabs.Screen name="settings" options={{ href: null }} />
-      <Tabs.Screen name="personal-information" options={{ href: null }} />
+      <Tabs.Screen name="notifications" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="personal-information" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="about" options={{ href: null }} />
-      <Tabs.Screen name="about-detail" options={{ href: null }} />
+      <Tabs.Screen name="about-detail" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="contact" options={{ href: null }} />
-      <Tabs.Screen name="security" options={{ href: null }} />
-      <Tabs.Screen name="tracker-details" options={{ href: null }} />
+      <Tabs.Screen name="security" options={{ href: null, tabBarStyle: { display: "none" } }} />
+      <Tabs.Screen name="tracker-details" options={{ href: null, tabBarStyle: { display: "none" } }} />
     </Tabs>
   );
 }
@@ -185,7 +194,7 @@ const styles = StyleSheet.create({
   },
   indicator: {
     position: "absolute",
-    bottom: -spacing.xs,
+    bottom: 2,
     width: 6,
     height: 6,
     borderRadius: 999,

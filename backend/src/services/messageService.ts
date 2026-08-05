@@ -145,7 +145,20 @@ export async function sendMessage(
       };
     }
 
-    // 3. Save message in the local database
+    // Determine chatbot response first so we can save both client and bot messages to Supabase concurrently
+    let botReply = "";
+    const willTriggerBot = senderRole === "client" && (activeConversation.chatbot_enabled !== false);
+    
+    if (willTriggerBot) {
+      try {
+        botReply = await getChatbotResponseText(botInputText, conversationId);
+      } catch (botErr) {
+        console.error(`[Chatbot] Failed to determine reply, using fallback:`, botErr);
+        botReply = "Thanks for contacting 9Jobs. Your message has been received and shared with our support team. An admin will respond shortly.";
+      }
+    }
+
+    // 3. Save messages in local DB
     const localMsg = await insertLocalMessage({
       conversation_id: conversationId,
       sender_id: senderId,
@@ -168,11 +181,68 @@ export async function sendMessage(
       content: trimmedText,
     };
 
-    // Attempt to save to Supabase
+    let savedBotMsg: any = null;
+    const botMessageId = "bot_" + Math.random().toString(36).substring(2) + "_" + Date.now();
+
+    if (willTriggerBot) {
+      const localBotMsg = await insertLocalMessage({
+        conversation_id: conversationId,
+        sender_id: "bot",
+        sender_role: "admin",
+        recipient_id: conversationId,
+        message_type: "text",
+        text: botReply,
+        client_message_id: botMessageId,
+        status: "delivered",
+        is_automated: true,
+        sender_type: "bot",
+      });
+
+      savedBotMsg = {
+        ...localBotMsg,
+        content: botReply,
+      };
+    }
+
+    // 4. Emit message events through Socket.IO IMMEDIATELY for instant client updates
+    if (ioInstance) {
+      // Emit client message immediately
+      const mappedMsg = {
+        ...savedMessage,
+        content: savedMessage.text || savedMessage.content || "",
+      };
+      ioInstance.to(`conversation:${conversationId}`).emit("new_message", mappedMsg);
+
+      ioInstance.to(`user:${senderId}`).emit("message_acknowledged", {
+        success: true,
+        message: mappedMsg,
+        conversation: activeConversation,
+        clientMessageId,
+      });
+
+      // Emit bot message immediately
+      if (willTriggerBot && savedBotMsg) {
+        const mappedBotMsg = {
+          ...savedBotMsg,
+          content: savedBotMsg.text || savedBotMsg.content || "",
+        };
+        ioInstance.to(`conversation:${conversationId}`).emit("chatbot_typing", { typing: false });
+        ioInstance.to(`conversation:${conversationId}`).emit("new_message", mappedBotMsg);
+      }
+
+      ioInstance.to("admins").emit("conversation_updated", activeConversation);
+      ioInstance.to(`user:${conversationId}`).emit("unread_count_updated", {
+        clientUnreadCount: activeConversation.client_unread_count + (willTriggerBot ? 1 : 0),
+        adminUnreadCount: activeConversation.admin_unread_count + (senderRole === "client" ? 1 : 0),
+      });
+    }
+
+    // 5. Batch sync to Supabase (saves network roundtrips)
     try {
       if (isNew) {
-        const senderType = senderRole;
-        const messageInsertPayload: any = {
+        const insertPayloads: any[] = [];
+        
+        insertPayloads.push({
           conversation_id: conversationId,
           sender_id: senderId,
           sender_role: senderRole,
@@ -186,20 +256,41 @@ export async function sendMessage(
           client_message_id: clientMessageId,
           status: "sent",
           is_automated: false,
-          sender_type: senderType,
+          sender_type: senderRole,
           sent_at: new Date().toISOString(),
-        };
+        });
+        
+        if (willTriggerBot) {
+          insertPayloads.push({
+            conversation_id: conversationId,
+            sender_id: "bot",
+            sender_role: "admin",
+            recipient_id: conversationId,
+            message_type: "text",
+            text: botReply,
+            client_message_id: botMessageId,
+            status: "delivered",
+            is_automated: true,
+            sender_type: "bot",
+            sent_at: new Date().toISOString(),
+          });
+        }
 
-        const { data, error: msgError } = await supabase
+        const { data: insertedData, error: msgError } = await supabase
           .from("messages")
-          .insert([messageInsertPayload])
-          .select()
-          .single();
+          .insert(insertPayloads)
+          .select();
 
         if (msgError) {
-          console.warn("[Message Service] Supabase insert failed (using local DB fallback):", msgError.message);
-        } else {
-          savedMessage.id = data.id;
+          console.warn("[Message Service] Supabase batch insert failed:", msgError.message);
+        } else if (insertedData) {
+          const clientData = insertedData.find((m: any) => m.client_message_id === clientMessageId);
+          if (clientData) savedMessage.id = clientData.id;
+          
+          if (willTriggerBot) {
+            const botData = insertedData.find((m: any) => m.client_message_id === botMessageId);
+            if (botData) savedBotMsg.id = botData.id;
+          }
         }
       } else {
         const { data, error: msgError } = await supabase
@@ -224,7 +315,7 @@ export async function sendMessage(
       console.warn("[Message Service] Supabase insert threw exception:", err.message);
     }
 
-    // 4. Update conversation unread counts and last message fields
+    // 6. Update conversation unread counts and last message fields
     let updatedConversation = activeConversation;
     const localConv = await getLocalConversation(conversationId);
     if (localConv) {
@@ -237,15 +328,18 @@ export async function sendMessage(
     try {
       if (isNew) {
         const updatePayload: any = {
-          last_message_id: savedMessage.id,
-          last_message_text: lastMessagePreview,
-          last_message_at: savedMessage.created_at,
-          last_message_sender_id: senderId,
+          last_message_id: willTriggerBot ? (savedBotMsg.id || botMessageId) : savedMessage.id,
+          last_message_text: willTriggerBot ? botReply : lastMessagePreview,
+          last_message_at: willTriggerBot ? savedBotMsg.created_at : savedMessage.created_at,
+          last_message_sender_id: willTriggerBot ? "bot" : senderId,
           updated_at: new Date().toISOString(),
         };
 
         if (senderRole === "client") {
           updatePayload.admin_unread_count = (activeConversation.admin_unread_count || 0) + 1;
+          if (willTriggerBot) {
+            updatePayload.client_unread_count = (activeConversation.client_unread_count || 0) + 1;
+          }
         } else {
           updatePayload.client_unread_count = (activeConversation.client_unread_count || 0) + 1;
         }
@@ -262,48 +356,21 @@ export async function sendMessage(
             ...updatedConversation,
             ...updatedConv,
           };
+          
+          // Emit updated conversation to admins after DB saves complete
+          if (ioInstance) {
+            ioInstance.to("admins").emit("conversation_updated", updatedConversation);
+          }
         }
       }
     } catch (err: any) {
       console.warn("[Message Service] Supabase conversation update failed:", err.message);
     }
 
-    // 5. Emit message events through Socket.IO
-    if (ioInstance) {
-      const mappedMsg = {
-        ...savedMessage,
-        content: savedMessage.text || savedMessage.content || "",
-      };
-      ioInstance.to(`conversation:${conversationId}`).emit("new_message", mappedMsg);
-
-      ioInstance.to(`user:${senderId}`).emit("message_acknowledged", {
-        success: true,
-        message: mappedMsg,
-        conversation: updatedConversation,
-        clientMessageId,
-      });
-
-      ioInstance.to("admins").emit("conversation_updated", updatedConversation);
-      ioInstance.to(`user:${conversationId}`).emit("unread_count_updated", {
-        clientUnreadCount: updatedConversation.client_unread_count,
-        adminUnreadCount: updatedConversation.admin_unread_count,
-      });
-    }
-
-    // Trigger the support bot immediately after a client message is accepted.
-    let botMessage: any | undefined;
-    if (senderRole === "client" && (updatedConversation.chatbot_enabled !== false)) {
-      try {
-        botMessage = await triggerChatbotResponse(conversationId, botInputText);
-      } catch (botErr) {
-        console.error(`[Chatbot] Error triggering response:`, botErr);
-      }
-    }
-
     return {
       success: true,
       message: { ...savedMessage, content: savedMessage.text },
-      botMessage,
+      botMessage: willTriggerBot ? { ...savedBotMsg, content: savedBotMsg.text } : undefined,
       conversation: updatedConversation,
       clientMessageId,
     };

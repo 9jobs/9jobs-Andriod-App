@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, InteractionManager } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path } from "react-native-svg";
@@ -86,7 +86,10 @@ export default function TrackerDetailsScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      void refetch();
+      const task = InteractionManager.runAfterInteractions(() => {
+        void refetch();
+      });
+      return () => task.cancel();
     }, [refetch]),
   );
 

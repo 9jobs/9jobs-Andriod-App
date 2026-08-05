@@ -61,6 +61,7 @@ export default function ProfileScreen() {
   const [pendingAvatarUrl, setPendingAvatarUrl] = useState<string | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const migratedAvatarUrlRef = useRef<string | null>(null);
+  const isPickingRef = useRef(false);
   const { data: snapshot } = usePreviewSyncQuery();
   const profile = snapshot?.profile;
   const activePlanLabel =
@@ -98,11 +99,14 @@ export default function ProfileScreen() {
         {
           text: "Upload Image from Device",
           onPress: async () => {
+            if (isPickingRef.current) return;
+            isPickingRef.current = true;
             if (!ImagePickerModule || !ImagePickerModule.requestMediaLibraryPermissionsAsync) {
               Alert.alert(
                 "Native Picker Unavailable",
                 "The native image picker is not compiled in this build yet. Please wait a few moments for the build to finish."
               );
+              isPickingRef.current = false;
               return;
             }
 
@@ -129,6 +133,8 @@ export default function ProfileScreen() {
             } catch (err) {
               console.error("Image pick error:", err);
               Alert.alert("Error", "Failed to select an image from your device.");
+            } finally {
+              isPickingRef.current = false;
             }
           },
         },
