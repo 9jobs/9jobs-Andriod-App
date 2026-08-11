@@ -866,21 +866,106 @@ export default function TrackerScreen() {
                 {/* Interview Reminders */}
                 <Text style={styles.sectionHeading}>INTERVIEW REMINDERS</Text>
                 {jobFollowUps.length > 0 ? (
-                  jobFollowUps.map((reminder) => (
-                    <View key={reminder.id} style={styles.jobFeatureCard}>
-                      <View style={styles.featureHeaderRow}>
-                        <AppIcon name="info" size={14} color={colors.accent} strokeWidth={2.5} />
-                        <Text style={styles.featureCardRound}>{reminder.follow_up_type || "Reminder"}</Text>
+                  jobFollowUps.map((reminder) => {
+                    let notes = reminder.notes || "";
+                    let interviewType = "";
+                    let companyName = "";
+                    let interviewerEmail = "";
+                    let location = "";
+                    let aboutCompany = "";
+                    let keyResponsibilities = "";
+                    let meetingLink = "";
+                    let jobLink = "";
+                    if (typeof notes === "string" && notes.trim().startsWith("{")) {
+                      try {
+                        const parsed = JSON.parse(notes);
+                        notes = parsed.notes || "";
+                        interviewType = parsed.interview_type || "";
+                        companyName = parsed.company || "";
+                        interviewerEmail = parsed.interviewer_email || "";
+                        location = parsed.location || "";
+                        aboutCompany = parsed.about_company || "";
+                        keyResponsibilities = parsed.key_responsibilities || "";
+                        meetingLink = parsed.meeting_link || "";
+                        jobLink = parsed.job_link || "";
+                      } catch (e) {
+                        console.warn("Failed to parse serialized follow-up notes:", e);
+                      }
+                    }
+
+                    return (
+                      <View key={reminder.id} style={styles.jobFeatureCard}>
+                        <View style={styles.featureHeaderRow}>
+                          <AppIcon name="info" size={14} color={colors.accent} strokeWidth={2.5} />
+                          <Text style={styles.featureCardRound}>{reminder.follow_up_type || "Reminder"}</Text>
+                        </View>
+                        
+                        <Text style={styles.featureCardDate}>
+                          When: <Text style={{ color: colors.text, fontWeight: "500" }}>{formatInterviewDate(reminder.due_date)}</Text>
+                        </Text>
+                        
+                        {interviewType ? (
+                          <Text style={styles.featureCardType}>
+                            Type: <Text style={styles.featureHighlight}>{interviewType}</Text>
+                          </Text>
+                        ) : null}
+
+                        {companyName ? (
+                          <Text style={styles.featureCardDetail}>
+                            Company: <Text style={styles.featureHighlight}>{companyName}</Text>
+                          </Text>
+                        ) : null}
+
+                        {reminder.contact_person ? (
+                          <Text style={styles.featureCardDetail}>
+                            Contact/Interviewer: <Text style={{ fontWeight: "600", color: colors.text }}>{reminder.contact_person}</Text>
+                          </Text>
+                        ) : null}
+
+                        {interviewerEmail || reminder.contact_email ? (
+                          <Text style={styles.featureCardDetail}>
+                            From Email: <Text style={{ color: colors.mutedText }}>{interviewerEmail || reminder.contact_email}</Text>
+                          </Text>
+                        ) : null}
+
+                        {location ? (
+                          <Text style={styles.featureCardDetail}>
+                            Location: <Text style={{ fontWeight: "600", color: colors.text }}>{location}</Text>
+                          </Text>
+                        ) : null}
+
+                        {meetingLink ? (
+                          <Pressable onPress={() => Linking.openURL(meetingLink)}>
+                            <Text style={styles.featureCardLink}>Mail/Video Link: Join Meeting</Text>
+                          </Pressable>
+                        ) : null}
+
+                        {jobLink ? (
+                          <Pressable onPress={() => Linking.openURL(jobLink)}>
+                            <Text style={styles.featureCardLink}>Job Description Link</Text>
+                          </Pressable>
+                        ) : null}
+
+                        {aboutCompany ? (
+                          <View style={styles.nestedDetailBlock}>
+                            <Text style={styles.nestedDetailLabel}>About Company</Text>
+                            <Text style={styles.nestedDetailText}>{aboutCompany}</Text>
+                          </View>
+                        ) : null}
+
+                        {keyResponsibilities ? (
+                          <View style={styles.nestedDetailBlock}>
+                            <Text style={styles.nestedDetailLabel}>Key Responsibilities</Text>
+                            <Text style={styles.nestedDetailText}>{keyResponsibilities}</Text>
+                          </View>
+                        ) : null}
+
+                        {notes ? (
+                          <Text style={styles.featureCardNotes}>Notes: {notes}</Text>
+                        ) : null}
                       </View>
-                      <Text style={styles.featureCardDate}>Due: {formatInterviewDate(reminder.due_date)}</Text>
-                      {reminder.message ? (
-                        <Text style={styles.featureCardDetail}>{reminder.message}</Text>
-                      ) : null}
-                      {reminder.notes ? (
-                        <Text style={styles.featureCardNotes}>Notes: {reminder.notes}</Text>
-                      ) : null}
-                    </View>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={styles.featureEmptyText}>No reminders set.</Text>
                 )}

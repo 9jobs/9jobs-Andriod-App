@@ -836,7 +836,7 @@ export default function App() {
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
   const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
   const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "", meeting_link: "", location: "", about_company: "", key_responsibilities: "", job_link: "", company: "" });
-  const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
+  const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "", interview_type: "video", company: "", interviewer_email: "", location: "", about_company: "", key_responsibilities: "", meeting_link: "", job_link: "" });
   const [contactForm, setContactForm] = useState({ client_id: "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
   const [coldEmailForm, setColdEmailForm] = useState({ client_id: "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
   const [scoreForm, setScoreForm] = useState({ client_id: "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
@@ -2788,7 +2788,17 @@ export default function App() {
         status: followUpForm.status,
         contact_person: followUpForm.contact_person,
         contact_email: followUpForm.contact_email,
-        notes: followUpForm.notes,
+        notes: JSON.stringify({
+          notes: followUpForm.notes,
+          interview_type: followUpForm.interview_type,
+          company: followUpForm.company,
+          interviewer_email: followUpForm.interviewer_email,
+          location: followUpForm.location,
+          about_company: followUpForm.about_company,
+          key_responsibilities: followUpForm.key_responsibilities,
+          meeting_link: followUpForm.meeting_link,
+          job_link: followUpForm.job_link,
+        }),
         created_by: user?.primaryEmailAddress?.emailAddress || "admin",
       };
 
@@ -3947,7 +3957,7 @@ export default function App() {
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
     setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
     setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "", meeting_link: "", location: "", about_company: "", key_responsibilities: "", job_link: "", company: "" });
-    setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
+    setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "", interview_type: "video", company: "", interviewer_email: "", location: "", about_company: "", key_responsibilities: "", meeting_link: "", job_link: "" });
     setContactForm({ client_id: selectedTrackerClientId || "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
     setColdEmailForm({ client_id: selectedTrackerClientId || "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
     setScoreForm({ client_id: selectedTrackerClientId || "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
@@ -4107,7 +4117,49 @@ export default function App() {
         company: company,
       });
     } else if (type === "follow_up") {
-      setFollowUpForm({ client_id: item.client_id, application_id: String(item.application_id), follow_up_type: item.follow_up_type || "email", due_date: item.due_date || "", status: item.status || "pending", contact_person: item.contact_person || "", contact_email: item.contact_email || "", notes: item.notes || "" });
+      let notesText = item.notes || "";
+      let interviewType = "video";
+      let company = "";
+      let interviewerEmail = "";
+      let location = "";
+      let aboutCompany = "";
+      let keyResponsibilities = "";
+      let meetingLink = "";
+      let jobLink = "";
+      if (typeof notesText === "string" && notesText.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(notesText);
+          notesText = parsed.notes || "";
+          interviewType = parsed.interview_type || "video";
+          company = parsed.company || "";
+          interviewerEmail = parsed.interviewer_email || "";
+          location = parsed.location || "";
+          aboutCompany = parsed.about_company || "";
+          keyResponsibilities = parsed.key_responsibilities || "";
+          meetingLink = parsed.meeting_link || "";
+          jobLink = parsed.job_link || "";
+        } catch (e) {
+          console.warn("Failed to parse serialized follow_up notes:", e);
+        }
+      }
+      setFollowUpForm({
+        client_id: item.client_id,
+        application_id: String(item.application_id),
+        follow_up_type: item.follow_up_type || "email",
+        due_date: item.due_date || "",
+        status: item.status || "pending",
+        contact_person: item.contact_person || "",
+        contact_email: item.contact_email || "",
+        notes: notesText,
+        interview_type: interviewType,
+        company: company,
+        interviewer_email: interviewerEmail,
+        location: location,
+        about_company: aboutCompany,
+        key_responsibilities: keyResponsibilities,
+        meeting_link: meetingLink,
+        job_link: jobLink,
+      });
     } else if (type === "contact") {
       setContactForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", recruiter_name: item.recruiter_name || "", position: item.company_name || "", email: item.email || "", linkedin_url: item.linkedin_url || "", contact_date: item.contact_date || "", response_status: item.response_status || "no_response", notes: item.notes || "" });
     } else if (type === "cold_email") {
@@ -6868,6 +6920,67 @@ export default function App() {
                     <label className="form-label">Due Date</label>
                     <input type="datetime-local" className="form-input" required value={followUpForm.due_date} onChange={(e) => setFollowUpForm({ ...followUpForm, due_date: e.target.value })} />
                   </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Interview Type</label>
+                    <select className="form-input" value={followUpForm.interview_type} onChange={(e) => setFollowUpForm({ ...followUpForm, interview_type: e.target.value })}>
+                      <option value="phone">phone</option>
+                      <option value="video">video</option>
+                      <option value="face_to_face">face_to_face</option>
+                      <option value="assessment">assessment</option>
+                      <option value="technical">technical</option>
+                      <option value="hr">hr</option>
+                      <option value="final">final</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Company</label>
+                    <input type="text" className="form-input" value={followUpForm.company} onChange={(e) => setFollowUpForm({ ...followUpForm, company: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Contact / Interviewer Name</label>
+                    <input type="text" className="form-input" value={followUpForm.contact_person} onChange={(e) => setFollowUpForm({ ...followUpForm, contact_person: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Contact / Interviewer Email</label>
+                    <input type="email" className="form-input" value={followUpForm.contact_email} onChange={(e) => setFollowUpForm({ ...followUpForm, contact_email: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Location</label>
+                    <input type="text" className="form-input" value={followUpForm.location} onChange={(e) => setFollowUpForm({ ...followUpForm, location: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Meeting Link (Mail Link)</label>
+                    <input type="url" className="form-input" value={followUpForm.meeting_link} onChange={(e) => setFollowUpForm({ ...followUpForm, meeting_link: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Job Link</label>
+                  <input type="url" className="form-input" value={followUpForm.job_link} onChange={(e) => setFollowUpForm({ ...followUpForm, job_link: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">About Company</label>
+                  <textarea rows={3} className="form-input" value={followUpForm.about_company} onChange={(e) => setFollowUpForm({ ...followUpForm, about_company: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Key Responsibilities</label>
+                  <textarea rows={3} className="form-input" value={followUpForm.key_responsibilities} onChange={(e) => setFollowUpForm({ ...followUpForm, key_responsibilities: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
+                  <textarea rows={2} className="form-input" value={followUpForm.notes} onChange={(e) => setFollowUpForm({ ...followUpForm, notes: e.target.value })} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Follow-up</button>
               </form>
