@@ -388,7 +388,7 @@ export default function ResumeScreen() {
           {/* Detailed Breakdown List */}
           <View style={styles.metricsStack}>
             {metrics.map((metric) => {
-              const fillWidth = `${Math.round(progressVal * metric.value)}%`;
+              const fillWidth = `${Math.round(progressVal * metric.value)}%` as any;
 
               return (
                 <View key={metric.label} style={styles.metricRow}>
@@ -453,7 +453,7 @@ export default function ResumeScreen() {
                     </Text>
                   </View>
                   <View style={styles.metricTrack}>
-                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * (analysisMetrics.atsScore || scoreTicker))}%` }]} />
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * (analysisMetrics.atsScore || scoreTicker))}%` as any }]} />
                   </View>
                 </View>
 
@@ -468,7 +468,7 @@ export default function ResumeScreen() {
                     </Text>
                   </View>
                   <View style={styles.metricTrack}>
-                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.roleSpecificScore)}%` }]} />
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.roleSpecificScore)}%` as any }]} />
                   </View>
                 </View>
 
@@ -483,7 +483,7 @@ export default function ResumeScreen() {
                     </Text>
                   </View>
                   <View style={styles.metricTrack}>
-                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.jobDescriptionCompatibility)}%` }]} />
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.jobDescriptionCompatibility)}%` as any }]} />
                   </View>
                 </View>
 
@@ -498,7 +498,7 @@ export default function ResumeScreen() {
                     </Text>
                   </View>
                   <View style={styles.metricTrack}>
-                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.recruiterReadabilityScore)}%` }]} />
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.recruiterReadabilityScore)}%` as any }]} />
                   </View>
                 </View>
               </View>

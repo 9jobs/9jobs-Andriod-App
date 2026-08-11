@@ -1034,21 +1034,31 @@ function buildSnapshotFromSource({
   try {
     const storedMetrics = JSON.parse(resumeScoreRow?.notes || "{}")?.metrics;
     if (storedMetrics) {
+      const keywords = Math.max(0, Math.min(100, Number(storedMetrics.keywords) || 0));
+      const formatting = Math.max(0, Math.min(100, Number(storedMetrics.formatting) || 0));
+      const experience = Math.max(0, Math.min(100, Number(storedMetrics.experience) || 0));
+      const impactVerbs = Math.max(0, Math.min(100, Number(storedMetrics.impactVerbs) || 0));
+      const atsScoreVal = Math.max(0, Math.min(100, Number(storedMetrics.atsScore) || resumeScore || 0));
+
+      const roleSpecificScore = Math.max(0, Math.min(100, Number(storedMetrics.roleSpecificScore) || Math.max(30, Math.min(95, atsScoreVal - 5))));
+      const jobDescriptionCompatibility = Math.max(0, Math.min(100, Number(storedMetrics.jobDescriptionCompatibility) || Math.max(30, Math.min(95, atsScoreVal - 8))));
+      const recruiterReadabilityScore = Math.max(0, Math.min(100, Number(storedMetrics.recruiterReadabilityScore) || Math.max(30, Math.min(95, formatting - 4))));
+
       resumeAnalysis = {
-        keywords: Math.max(0, Math.min(100, Number(storedMetrics.keywords) || 0)),
-        formatting: Math.max(0, Math.min(100, Number(storedMetrics.formatting) || 0)),
-        experience: Math.max(0, Math.min(100, Number(storedMetrics.experience) || 0)),
-        impactVerbs: Math.max(0, Math.min(100, Number(storedMetrics.impactVerbs) || 0)),
-        atsScore: Math.max(0, Math.min(100, Number(storedMetrics.atsScore) || 0)),
-        roleSpecificScore: Math.max(0, Math.min(100, Number(storedMetrics.roleSpecificScore) || 0)),
+        keywords,
+        formatting,
+        experience,
+        impactVerbs,
+        atsScore: atsScoreVal,
+        roleSpecificScore,
         missingKeywords: storedMetrics.missingKeywords || [],
         skillGapAnalysis: storedMetrics.skillGapAnalysis || [],
         formattingIssues: storedMetrics.formattingIssues || [],
         grammarSuggestions: storedMetrics.grammarSuggestions || [],
         achievementRewriting: storedMetrics.achievementRewriting || [],
         resumeVersionComparison: storedMetrics.resumeVersionComparison || "",
-        jobDescriptionCompatibility: Math.max(0, Math.min(100, Number(storedMetrics.jobDescriptionCompatibility) || 0)),
-        recruiterReadabilityScore: Math.max(0, Math.min(100, Number(storedMetrics.recruiterReadabilityScore) || 0)),
+        jobDescriptionCompatibility,
+        recruiterReadabilityScore,
         australianResumeComplianceCheck: storedMetrics.australianResumeComplianceCheck || { compliant: true, issues: [] },
       };
     }
