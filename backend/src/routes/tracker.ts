@@ -585,7 +585,8 @@ function getFallbackResumeAnalysis(): ResumeAnalysis {
     australianResumeComplianceCheck: {
       compliant: true,
       issues: []
-    }
+    },
+    coverLetter: "Dear Hiring Manager,\n\nI am writing to express my strong interest in the Software Engineer position. With a solid foundation in frontend and backend development, and experience in building scalable applications, I am confident in my ability to contribute effectively to your team.\n\nDuring my career, I have focused on design patterns, clean code, and optimizing performance to deliver reliable user experiences. I look forward to the opportunity to discuss how my skills and background align with your organization's goals.\n\nSincerely,\nJohn Doe"
   };
 }
 
@@ -655,6 +656,7 @@ function parseGeminiResumeAnalysis(rawText: string): ResumeAnalysis {
         ? parsed.australianResumeComplianceCheck.issues.map((item: unknown) => String(item).trim()).filter(Boolean)
         : [],
     },
+    coverLetter: parsed.coverLetter ? String(parsed.coverLetter).trim() : undefined,
   };
 }
 
@@ -681,7 +683,7 @@ async function analyzeResumeWithGemini(base64: string, mimeType: string): Promis
                   "Act as a strict Applicant Tracking System resume auditor and career advisor.",
                   "Evaluate only the supplied resume. Do not invent experience or skills.",
                   "Score general ATS readiness and return the evaluation in strict JSON.",
-                  "You must return a JSON object with the exact keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions, roleSpecificScore, missingKeywords, skillGapAnalysis, formattingIssues, grammarSuggestions, achievementRewriting, resumeVersionComparison, jobDescriptionCompatibility, recruiterReadabilityScore, australianResumeComplianceCheck.",
+                  "You must return a JSON object with the exact keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions, roleSpecificScore, missingKeywords, skillGapAnalysis, formattingIssues, grammarSuggestions, achievementRewriting, resumeVersionComparison, jobDescriptionCompatibility, recruiterReadabilityScore, australianResumeComplianceCheck, coverLetter.",
                   "The values must follow this schema:",
                   "atsScore: integer 0-100",
                   "aiMatchScore: integer 0-100",
@@ -700,7 +702,8 @@ async function analyzeResumeWithGemini(base64: string, mimeType: string): Promis
                   "resumeVersionComparison: string comparing this layout/version to industry standards",
                   "jobDescriptionCompatibility: integer 0-100 compatibility rating",
                   "recruiterReadabilityScore: integer 0-100 score indicating recruiter review ease",
-                  "australianResumeComplianceCheck: object with keys 'compliant' (boolean) and 'issues' (array of strings, e.g., removal of photo, date of birth, localized terms)."
+                  "australianResumeComplianceCheck: object with keys 'compliant' (boolean) and 'issues' (array of strings, e.g., removal of photo, date of birth, localized terms),",
+                  "coverLetter: a professional, high-quality, auto-generated cover letter string based on the candidate's resume (markdown formatted, using \\n for newlines, ready to be customized by the candidate)."
                 ].join(" "),
               },
               { inlineData: { mimeType, data: base64 } },
