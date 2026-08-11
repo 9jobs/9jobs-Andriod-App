@@ -538,6 +538,75 @@ function buildProfilePayload(application: any) {
   };
 }
 
+async function syncQuickUpdateReminder(application: any, patch: Record<string, unknown>) {
+  if (!Object.prototype.hasOwnProperty.call(patch, "next_action_date")) {
+    return;
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return;
+  }
+
+  const applicationId = Number(application?.id);
+  const clientId = String(application?.user_id || application?.client_id || "").trim();
+  if (!Number.isFinite(applicationId) || !clientId) {
+    return;
+  }
+
+  const existingReminderQuery = supabase
+    .from("follow_ups")
+    .select("id")
+    .eq("application_id", applicationId)
+    .eq("created_by", "admin-quick-update")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!application?.next_action_date) {
+    const { data: existingReminder, error: readError } = await existingReminderQuery;
+    if (readError) throw readError;
+
+    if (existingReminder?.id) {
+      const { error: deleteError } = await supabase
+        .from("follow_ups")
+        .delete()
+        .eq("id", Number(existingReminder.id));
+      if (deleteError) throw deleteError;
+    }
+
+    return;
+  }
+
+  const reminderPayload = {
+    client_id: clientId,
+    application_id: applicationId,
+    follow_up_type: "Reminder",
+    due_date: application.next_action_date,
+    status: "pending",
+    contact_person: String(application?.hiring_manager_name || application?.recruiter_name || "").trim(),
+    contact_email: String(application?.hiring_manager_email || application?.recruiter_email || "").trim(),
+    notes: JSON.stringify({
+      notes: String(application?.next_action || "").trim() || "Reminder updated from admin quick update.",
+    }),
+    created_by: "admin-quick-update",
+  };
+
+  const { data: existingReminder, error: readError } = await existingReminderQuery;
+  if (readError) throw readError;
+
+  if (existingReminder?.id) {
+    const { error: updateError } = await supabase
+      .from("follow_ups")
+      .update(reminderPayload)
+      .eq("id", Number(existingReminder.id));
+    if (updateError) throw updateError;
+    return;
+  }
+
+  const { error: insertError } = await supabase.from("follow_ups").insert([reminderPayload]);
+  if (insertError) throw insertError;
+}
+
 function clampScore(value: unknown) {
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? Math.max(0, Math.min(100, Math.round(numberValue))) : 0;
@@ -1637,6 +1706,8 @@ router.patch("/admin/tracker/applications/:id", authMiddleware, async (req: Auth
       .select()
       .single();
     if (error) throw error;
+
+    await syncQuickUpdateReminder(data, patch);
 
     if (data?.user_id && data?.job_id) {
       if (data.is_saved || data.status === "saved") {
