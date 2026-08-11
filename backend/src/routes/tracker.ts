@@ -2869,16 +2869,22 @@ router.get("/admin/resume-scores", authMiddleware, async (req: AuthenticatedRequ
 
     const userIds = [...new Set((scores ?? []).map((score: any) => score.user_id).filter(Boolean))];
     const profilesById = new Map<string, any>();
+    const coverLettersById = new Map<string, any>();
 
     if (userIds.length > 0) {
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select("*")
-        .in("id", userIds);
-      if (profilesError) throw profilesError;
+      const [profilesRes, coverLettersRes] = await Promise.all([
+        supabase.from("profiles").select("*").in("id", userIds),
+        supabase.from("cover_letters").select("*").in("user_id", userIds),
+      ]);
 
-      for (const profile of profiles ?? []) {
+      if (profilesRes.error) throw profilesRes.error;
+
+      for (const profile of profilesRes.data ?? []) {
         profilesById.set(String(profile.id), profile);
+      }
+
+      for (const cl of coverLettersRes.data ?? []) {
+        coverLettersById.set(String(cl.user_id), cl);
       }
     }
 
@@ -2887,6 +2893,7 @@ router.get("/admin/resume-scores", authMiddleware, async (req: AuthenticatedRequ
       resumeScores: (scores ?? []).map((score: any) => ({
         ...score,
         profiles: profilesById.get(String(score.user_id)) ?? null,
+        coverLetter: coverLettersById.get(String(score.user_id)) ?? null,
       })),
     });
   } catch (err: any) {
@@ -3120,6 +3127,17 @@ router.post("/mobile/resumes/analyze", authMiddleware, async (req: Authenticated
       throw clientScoreResult.error;
     }
 
+    if (analysis.coverLetter) {
+      const coverLetterResult = await supabase.from("cover_letters").upsert({
+        user_id: requester.userId,
+        content: analysis.coverLetter,
+        updated_at: uploadedAt,
+      }, { onConflict: "user_id" });
+      if (coverLetterResult.error) {
+        console.error("[Cover Letter Save Failed]", coverLetterResult.error);
+      }
+    }
+
     return res.json({ ...analysis, resumeUrl, fileName, uploadedAt });
   } catch (err: any) {
     console.error("[Resume Intelligence] upload/analyze failed:", err);
@@ -3231,6 +3249,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
         return { data: await getLocalSuccessStories(), error: null };
       }
 
+
       return result;
     })();
 
@@ -3253,6 +3272,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
+      coverLetterResult,
     ] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", targetUserId).maybeSingle(),
       supabase.from("jobs").select("*").order("created_at", { ascending: false }),
@@ -3272,6 +3292,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       supabase.from("cold_emails").select("*").eq("client_id", targetUserId).order("sent_at", { ascending: false }),
       supabase.from("client_scores").select("*").eq("client_id", targetUserId).order("calculated_at", { ascending: false }),
       supabase.from("notifications").select("*").eq("user_id", targetUserId).order("sent_at", { ascending: false }),
+      supabase.from("cover_letters").select("*").eq("user_id", targetUserId).maybeSingle(),
     ]);
 
     const localProfile = await getLocalProfile(targetUserId);
@@ -3298,6 +3319,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
+      coverLetterResult,
     ];
 
     for (const result of results) {
@@ -3383,6 +3405,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmails: coldEmailsResult.data ?? [],
       clientScores: clientScoresResult.data ?? [],
       notifications: notificationsResult.data ?? [],
+      coverLetter: coverLetterResult.data,
       activityLogs:
         (
           await supabase

@@ -9,6 +9,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { useUploadResumeMutation } from "@/features/jobs/hooks";
 import { ResumeDataTransferSpline } from "@/components/resume/ResumeDataTransferSpline";
 import { AppIcon } from "@/components/ui/AppIcon";
+import * as Clipboard from "expo-clipboard";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -50,7 +51,8 @@ function CircularScanner() {
 
 export default function ResumeScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
-  const [activeTab, setActiveTab] = useState<"score" | "optimize" | "compare">("score");
+  const [activeTab, setActiveTab] = useState<"score" | "optimize" | "compare" | "cover_letter">("score");
+  const [coverLetter, setCoverLetter] = useState<string>("");
   const [isScanning, setIsScanning] = useState(true);
   const [scoreTicker, setScoreTicker] = useState(0);
   const [matchTicker, setMatchTicker] = useState(0);
@@ -211,6 +213,9 @@ export default function ResumeScreen() {
           recruiterReadabilityScore: analysis.recruiterReadabilityScore || 0,
           australianResumeComplianceCheck: analysis.australianResumeComplianceCheck || { compliant: true, issues: [] },
         });
+        if (analysis.coverLetter) {
+          setCoverLetter(analysis.coverLetter);
+        }
         setScoreTicker(analysis.atsScore);
         setMatchTicker(analysis.aiMatchScore);
         Alert.alert("Resume analyzed", `Your Gemini ATS score is ${analysis.atsScore}/100.`);
@@ -252,6 +257,12 @@ export default function ResumeScreen() {
       });
     }
   }, [snapshot?.resumeAnalysis]);
+
+  useEffect(() => {
+    if (snapshot?.coverLetter) {
+      setCoverLetter(snapshot.coverLetter.content || "");
+    }
+  }, [snapshot?.coverLetter]);
 
   if (isScanning) {
     return (
@@ -325,6 +336,7 @@ export default function ResumeScreen() {
         <Segment label="Score" active={activeTab === "score"} onPress={() => setActiveTab("score")} />
         <Segment label="Optimize" active={activeTab === "optimize"} onPress={() => setActiveTab("optimize")} />
         <Segment label="Compare" active={activeTab === "compare"} onPress={() => setActiveTab("compare")} />
+        <Segment label="Cover Letter" active={activeTab === "cover_letter"} onPress={() => setActiveTab("cover_letter")} />
       </View>
 
       {/* Conditionally render tab content */}
@@ -671,6 +683,30 @@ export default function ResumeScreen() {
                 <Text style={styles.compareBarLabel}>Top 10% (88)</Text>
               </View>
             </View>
+          </View>
+        </View>
+      )}
+
+      {activeTab === "cover_letter" && (
+        <View style={styles.tabContentContainer}>
+          <Text style={styles.tabTitleText}>AI-Generated Cover Letter</Text>
+          <View style={styles.coverLetterCard}>
+            {coverLetter ? (
+              <>
+                <Text style={styles.coverLetterBody}>{coverLetter}</Text>
+                <Pressable
+                  style={styles.copyButton}
+                  onPress={async () => {
+                    await Clipboard.setStringAsync(coverLetter);
+                    Alert.alert("Copied to Clipboard", "Cover letter copied successfully!");
+                  }}
+                >
+                  <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Text style={styles.emptyText}>Upload your resume to generate a customized cover letter.</Text>
+            )}
           </View>
         </View>
       )}
@@ -1452,5 +1488,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.mutedText,
     lineHeight: 19,
+  },
+  coverLetterCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: spacing.md,
+    ...shadows.card,
+  },
+  coverLetterBody: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 22,
+    fontFamily: "monospace",
+    backgroundColor: colors.chipMuted,
+    padding: spacing.md,
+    borderRadius: radii.sm,
+  },
+  copyButton: {
+    backgroundColor: colors.accent,
+    borderRadius: radii.md,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.xs,
+  },
+  copyButtonText: {
+    color: colors.dark,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

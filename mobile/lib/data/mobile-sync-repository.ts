@@ -436,6 +436,7 @@ export type MobileSyncSnapshot = {
   pricingContent: PremiumScreenContent;
   successStories: LiveSuccessStory[];
   activePlanId: string | null;
+  coverLetter?: { content: string } | null;
 };
 
 const seedSuccessStories: SuccessStoryRow[] = [
@@ -985,6 +986,7 @@ function buildSnapshotFromSource({
   clientScoresRows,
   notificationRows,
   activityLogRows,
+  coverLetterRow,
 }: {
   activeUser: ReturnType<typeof resolveActiveUser>;
   profileRow?: ProfileRow | null;
@@ -1006,6 +1008,7 @@ function buildSnapshotFromSource({
   clientScoresRows: ClientScoreRow[];
   notificationRows: NotificationRow[];
   activityLogRows: ActivityLogRow[];
+  coverLetterRow?: { user_id: string; content: string } | null;
 }): MobileSyncSnapshot {
   const categoriesById = Object.fromEntries(
     categoriesRows.map((category) => [category.id, category.name]),
@@ -1120,6 +1123,7 @@ function buildSnapshotFromSource({
     pricingContent: buildPricingScreenContent(plansRows, activePlanId),
     successStories: mapSuccessStories(successStoriesRows),
     activePlanId,
+    coverLetter: coverLetterRow ?? null,
   };
 }
 
@@ -1513,6 +1517,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           clientScoresRows: (backendSnapshot.clientScores as ClientScoreRow[]) ?? [],
           notificationRows: (backendSnapshot.notifications as NotificationRow[]) ?? [],
           activityLogRows: (backendSnapshot.activityLogs as ActivityLogRow[]) ?? [],
+          coverLetterRow: backendSnapshot.coverLetter ?? null,
         });
 
         snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
@@ -1557,7 +1562,6 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       }
     })();
 
-
     const [
       profileResult,
       jobsResult,
@@ -1578,6 +1582,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       clientScoresResult,
       notificationsResult,
       activityLogsResult,
+      coverLetterResult,
     ] = await Promise.all([
       client.from("profiles").select("*").eq("id", activeUser.id).single(),
       client.from("jobs").select("*").order("created_at", { ascending: false }),
@@ -1598,6 +1603,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       client.from("client_scores").select("*").eq("client_id", activeUser.id).order("calculated_at", { ascending: false }),
       client.from("notifications").select("*").eq("user_id", activeUser.id).order("sent_at", { ascending: false }),
       client.from("activity_logs").select("*").eq("client_id", activeUser.id).order("created_at", { ascending: false }),
+      client.from("cover_letters").select("*").eq("user_id", activeUser.id).maybeSingle(),
     ]);
 
     const results = [
@@ -1620,6 +1626,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       clientScoresResult,
       notificationsResult,
       activityLogsResult,
+      coverLetterResult,
     ];
 
     for (const result of results) {
@@ -1649,6 +1656,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       clientScoresRows: (clientScoresResult.data as ClientScoreRow[] | null) ?? [],
       notificationRows: (notificationsResult.data as NotificationRow[] | null) ?? [],
       activityLogRows: (activityLogsResult.data as ActivityLogRow[] | null) ?? [],
+      coverLetterRow: (coverLetterResult.data as { user_id: string; content: string } | null) ?? null,
     });
 
     snapshot.messages = await applySeenStatusToMessages(snapshot.messages);

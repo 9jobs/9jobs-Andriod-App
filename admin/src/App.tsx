@@ -768,7 +768,7 @@ export default function App() {
 
   // Modal / Form states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<"user" | "questionnaire" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session">("job");
+  const [modalType, setModalType] = useState<"user" | "questionnaire" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session" | "cover_letter">("job");
   const [editItem, setEditItem] = useState<any>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -4258,6 +4258,8 @@ export default function App() {
       ? `${editItem ? "Edit" : "Create"} Success Story`
       : modalType === "questionnaire"
         ? "Candidate Questionnaire"
+      : modalType === "cover_letter"
+        ? "AI Generated Cover Letter"
       : `${editItem ? "Edit " : "Create "}${modalType.charAt(0).toUpperCase() + modalType.slice(1)}`;
 
   // Show full page loader while loading authentication status initially
@@ -6095,6 +6097,7 @@ export default function App() {
                       <td>{new Date(r.updated_at).toLocaleDateString()}</td>
                       <td>
                         <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("resume", r)} title="Edit AI score"><Edit size={14} /></button>
+                        <button className="btn btn-secondary" style={{ padding: "6px", marginLeft: "5px" }} onClick={() => openEditModal("cover_letter", r)} title="View Cover Letter"><FileText size={14} /></button>
                       </td>
                     </tr>
                   ))}
@@ -6508,6 +6511,34 @@ export default function App() {
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save AI Evaluation</button>
               </form>
+            )}
+
+            {/* AI Generated Cover Letter Modal */}
+            {modalType === "cover_letter" && (
+              <div>
+                <div className="form-group">
+                  <label className="form-label">Candidate Name</label>
+                  <input type="text" className="form-input" disabled value={editItem?.profiles?.full_name || ""} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cover Letter Content</label>
+                  <textarea
+                    rows={15}
+                    className="form-input"
+                    value={editItem?.coverLetter?.content || "No cover letter generated yet."}
+                    readOnly
+                    style={{ fontFamily: "monospace", fontSize: "14px", lineHeight: "1.5" }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ width: "100%", marginTop: "10px" }}
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
             )}
 
             {modalType === "tracker" && (
