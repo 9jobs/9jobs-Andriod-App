@@ -312,7 +312,7 @@ export default function ResumeScreen() {
     <Screen scroll={true} contentStyle={styles.screenContent}>
       {/* Back Button & Title */}
       <BackHeader label="Back" />
-      <Text style={styles.title}>Resume Intelligence</Text>
+      <Text style={styles.title}>{activeTab === "cover_letter" ? "Cover Letter" : "Resume Intelligence"}</Text>
 
       {/* Resume Grid Preview Card (Well-spaced to prevent overlaps) */}
       <View style={styles.chartCard}>
@@ -686,9 +686,34 @@ export default function ResumeScreen() {
                 >
                   <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
                 </Pressable>
+
+                <Pressable
+                  style={[styles.uploadButton, { marginTop: spacing.md }, uploadResumeMutation.isPending && styles.buttonDisabled]}
+                  onPress={handleUploadResume}
+                  disabled={uploadResumeMutation.isPending}
+                >
+                  {uploadResumeMutation.isPending ? (
+                    <ActivityIndicator color={colors.dark} />
+                  ) : (
+                    <Text style={styles.uploadButtonText}>Upload New Resume</Text>
+                  )}
+                </Pressable>
               </>
             ) : (
-              <Text style={styles.emptyText}>Upload your resume to generate a customized cover letter.</Text>
+              <View style={{ gap: spacing.md }}>
+                <Text style={styles.emptyText}>Upload your resume to generate a customized cover letter.</Text>
+                <Pressable
+                  style={[styles.uploadButton, uploadResumeMutation.isPending && styles.buttonDisabled]}
+                  onPress={handleUploadResume}
+                  disabled={uploadResumeMutation.isPending}
+                >
+                  {uploadResumeMutation.isPending ? (
+                    <ActivityIndicator color={colors.dark} />
+                  ) : (
+                    <Text style={styles.uploadButtonText}>Upload Resume from Device</Text>
+                  )}
+                </Pressable>
+              </View>
             )}
           </View>
         </View>
