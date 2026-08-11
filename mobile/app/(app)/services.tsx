@@ -71,7 +71,7 @@ import { CardFloatingParticles } from "@/components/motion/card-floating-particl
 export default function ServicesScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
   const serviceOrder = ["job-tracker", "tracker", "resume-intelligence", "resume", "hiring-manager-outreach", "outreach", "interview-prep", "interview", "success-stories", "stories", "pricing"];
-  const services = [...(snapshot?.services ?? SERVICES_DATA)]
+  const services = [...(snapshot?.services && snapshot.services.length > 0 ? snapshot.services : SERVICES_DATA)]
     .map((service) => {
       if (service.id === "job-tracker" || service.id === "tracker" || service.title === "Job Tracker") {
         return {
