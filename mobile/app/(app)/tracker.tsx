@@ -769,27 +769,96 @@ export default function TrackerScreen() {
                 {/* Interview Calendar */}
                 <Text style={styles.sectionHeading}>INTERVIEW CALENDAR</Text>
                 {jobInterviews.length > 0 ? (
-                  jobInterviews.map((interview) => (
-                    <View key={interview.id} style={styles.jobFeatureCard}>
-                      <View style={styles.featureHeaderRow}>
-                        <AppIcon name="tracker" size={14} color={colors.accent} strokeWidth={2.5} />
-                        <Text style={styles.featureCardRound}>{interview.interview_round || "Interview Round"}</Text>
+                  jobInterviews.map((interview) => {
+                    let notes = interview.admin_notes || "";
+                    let aboutCompany = "";
+                    let keyResponsibilities = "";
+                    let jobLink = "";
+                    let companyName = "";
+                    if (typeof notes === "string" && notes.trim().startsWith("{")) {
+                      try {
+                        const parsed = JSON.parse(notes);
+                        notes = parsed.notes || "";
+                        aboutCompany = parsed.about_company || "";
+                        keyResponsibilities = parsed.key_responsibilities || "";
+                        jobLink = parsed.job_link || "";
+                        companyName = parsed.company || "";
+                      } catch (e) {
+                        console.warn("Failed to parse serialized interview notes:", e);
+                      }
+                    }
+
+                    return (
+                      <View key={interview.id} style={styles.jobFeatureCard}>
+                        <View style={styles.featureHeaderRow}>
+                          <AppIcon name="tracker" size={14} color={colors.accent} strokeWidth={2.5} />
+                          <Text style={styles.featureCardRound}>{interview.interview_round || "Interview Round"}</Text>
+                        </View>
+                        
+                        <Text style={styles.featureCardDate}>
+                          When: <Text style={{ color: colors.text, fontWeight: "500" }}>{formatInterviewDate(interview.interview_date)}</Text>
+                        </Text>
+                        
+                        <Text style={styles.featureCardType}>
+                          Type: <Text style={styles.featureHighlight}>{interview.interview_type || "Video"}</Text>
+                        </Text>
+                        
+                        {companyName ? (
+                          <Text style={styles.featureCardDetail}>
+                            Company: <Text style={styles.featureHighlight}>{companyName}</Text>
+                          </Text>
+                        ) : null}
+                        
+                        {interview.interviewer_name ? (
+                          <Text style={styles.featureCardDetail}>
+                            Interviewer: <Text style={{ fontWeight: "600", color: colors.text }}>{interview.interviewer_name}</Text>
+                          </Text>
+                        ) : null}
+
+                        {interview.interviewer_email ? (
+                          <Text style={styles.featureCardDetail}>
+                            From Email: <Text style={{ color: colors.mutedText }}>{interview.interviewer_email}</Text>
+                          </Text>
+                        ) : null}
+
+                        {interview.location ? (
+                          <Text style={styles.featureCardDetail}>
+                            Location: <Text style={{ fontWeight: "600", color: colors.text }}>{interview.location}</Text>
+                          </Text>
+                        ) : null}
+
+                        {interview.meeting_link ? (
+                          <Pressable onPress={() => Linking.openURL(interview.meeting_link!)}>
+                            <Text style={styles.featureCardLink}>Mail/Video Link: Join Meeting</Text>
+                          </Pressable>
+                        ) : null}
+
+                        {jobLink ? (
+                          <Pressable onPress={() => Linking.openURL(jobLink)}>
+                            <Text style={styles.featureCardLink}>Job Description Link</Text>
+                          </Pressable>
+                        ) : null}
+
+                        {aboutCompany ? (
+                          <View style={styles.nestedDetailBlock}>
+                            <Text style={styles.nestedDetailLabel}>About Company</Text>
+                            <Text style={styles.nestedDetailText}>{aboutCompany}</Text>
+                          </View>
+                        ) : null}
+
+                        {keyResponsibilities ? (
+                          <View style={styles.nestedDetailBlock}>
+                            <Text style={styles.nestedDetailLabel}>Key Responsibilities</Text>
+                            <Text style={styles.nestedDetailText}>{keyResponsibilities}</Text>
+                          </View>
+                        ) : null}
+
+                        {notes ? (
+                          <Text style={styles.featureCardNotes}>Notes: {notes}</Text>
+                        ) : null}
                       </View>
-                      <Text style={styles.featureCardDate}>{formatInterviewDate(interview.interview_date)}</Text>
-                      <Text style={styles.featureCardType}>Type: <Text style={styles.featureHighlight}>{interview.interview_type || "Video"}</Text></Text>
-                      {interview.interviewer_name ? (
-                        <Text style={styles.featureCardDetail}>Interviewer: {interview.interviewer_name}</Text>
-                      ) : null}
-                      {interview.meeting_link ? (
-                        <Pressable onPress={() => Linking.openURL(interview.meeting_link!)}>
-                          <Text style={styles.featureCardLink}>Join Meeting Link</Text>
-                        </Pressable>
-                      ) : null}
-                      {interview.admin_notes ? (
-                        <Text style={styles.featureCardNotes}>Notes: {interview.admin_notes}</Text>
-                      ) : null}
-                    </View>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={styles.featureEmptyText}>No interview scheduled for this role.</Text>
                 )}
@@ -1622,5 +1691,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     paddingLeft: 4,
     marginTop: spacing.xs,
+  },
+  nestedDetailBlock: {
+    marginTop: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    padding: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+  },
+  nestedDetailLabel: {
+    ...typography.label,
+    fontSize: 10,
+    color: colors.accent,
+    textTransform: "uppercase",
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  nestedDetailText: {
+    ...typography.body,
+    fontSize: 11,
+    color: colors.text,
+    lineHeight: 15,
   },
 });
