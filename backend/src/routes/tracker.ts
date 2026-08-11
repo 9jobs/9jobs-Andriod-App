@@ -3323,7 +3323,6 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
-      coverLetterResult,
     ];
 
     for (const result of results) {

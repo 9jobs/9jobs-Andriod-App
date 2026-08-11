@@ -1626,7 +1626,6 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       clientScoresResult,
       notificationsResult,
       activityLogsResult,
-      coverLetterResult,
     ];
 
     for (const result of results) {
