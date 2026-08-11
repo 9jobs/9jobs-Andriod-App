@@ -612,7 +612,9 @@ import {
   FileText,
   Eye,
   EyeOff,
-  Star
+  Star,
+  ChevronDown,
+  Calendar
 } from "lucide-react";
 
 import { useUser, useAuth, useSignIn } from "@clerk/clerk-react";
@@ -758,6 +760,7 @@ export default function App() {
   const [interviewPrepResponses, setInterviewPrepResponses] = useState<any[]>([]);
   const [selectedTrackerClientId, setSelectedTrackerClientId] = useState("");
   const [trackerSection, setTrackerSection] = useState<"overview" | "applications" | "interviews" | "follow_ups" | "contacts" | "cold_emails" | "scores" | "activity">("overview");
+  const [isInterviewManagementOpen, setIsInterviewManagementOpen] = useState(false);
   const [stats, setStats] = useState({
     usersCount: 0,
     jobsCount: 0,
@@ -1017,6 +1020,12 @@ export default function App() {
   useEffect(() => {
     setSearchQuery("");
     setFilterType("all");
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "job_tracker") {
+      setIsInterviewManagementOpen(true);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -4400,10 +4409,63 @@ export default function App() {
             <Layers size={18} />
             <span>Applications</span>
           </a>
-          <a className={`sidebar-item ${activeTab === "job_tracker" ? "active" : ""}`} onClick={() => setActiveTab("job_tracker")}>
-            <Layers size={18} />
-            <span>Job Tracker</span>
-          </a>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <a
+              className={`sidebar-item ${activeTab === "job_tracker" ? "active" : ""}`}
+              onClick={() => {
+                setActiveTab("job_tracker");
+                setIsInterviewManagementOpen(!isInterviewManagementOpen);
+              }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <Layers size={18} />
+                <span>Job Tracker</span>
+              </div>
+              <ChevronDown
+                size={16}
+                style={{
+                  transform: isInterviewManagementOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.2s ease"
+                }}
+              />
+            </a>
+
+            {isInterviewManagementOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", margin: "4px 0" }}>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "job_tracker" && trackerSection === "interviews" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("job_tracker");
+                    setTrackerSection("interviews");
+                  }}
+                >
+                  <Calendar size={14} />
+                  <span>Interview Calendar</span>
+                </a>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "job_tracker" && trackerSection === "follow_ups" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("job_tracker");
+                    setTrackerSection("follow_ups");
+                  }}
+                >
+                  <Bell size={14} />
+                  <span>Interview Reminders</span>
+                </a>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "job_tracker" && trackerSection === "applications" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("job_tracker");
+                    setTrackerSection("applications");
+                  }}
+                >
+                  <FileText size={14} />
+                  <span>Job-description Summary</span>
+                </a>
+              </div>
+            )}
+          </div>
           <a className={`sidebar-item ${activeTab === "hiring_managers" ? "active" : ""}`} onClick={() => setActiveTab("hiring_managers")}>
             <Users size={18} />
             <span>Hiring Managers</span>
