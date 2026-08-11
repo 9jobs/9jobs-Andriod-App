@@ -834,7 +834,7 @@ export default function App() {
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "", status: "sent" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
-  const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "" });
+  const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
   const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
   const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
   const [contactForm, setContactForm] = useState({ client_id: "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
@@ -2647,7 +2647,7 @@ export default function App() {
         salary_range: selectedJob.salary,
         work_type: selectedJob.job_type || "Full-time",
         employment_type: selectedJob.job_type || "Full-time",
-        job_description: selectedJob.description || "",
+        job_description: trackerForm.description || selectedJob.description || "",
         before_screenshot_url: trackerForm.before_screenshot_url || "",
         after_screenshot_url: trackerForm.after_screenshot_url || "",
         created_by_admin_id: user?.id || "admin",
@@ -3937,7 +3937,7 @@ export default function App() {
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "", status: "sent" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
-    setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "" });
+    setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
     setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
     setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
     setContactForm({ client_id: selectedTrackerClientId || "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
@@ -4061,6 +4061,7 @@ export default function App() {
         status: item.status || "applied",
         before_screenshot_url: item.before_screenshot_url || "",
         after_screenshot_url: item.after_screenshot_url || "",
+        description: item.job_description || item.jobs?.description || "",
       });
     } else if (type === "interview") {
       setInterviewForm({ client_id: item.client_id, application_id: String(item.application_id), interview_type: item.interview_type || "video", interview_round: item.interview_round || "", interview_date: item.interview_date || "", status: item.status || "scheduled", interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "", admin_notes: item.admin_notes || "" });
@@ -5459,6 +5460,12 @@ export default function App() {
               )}
 
               {trackerSection === "interviews" && (
+                <>
+                <div className="controls-row" style={{ marginBottom: "18px", justifyContent: "flex-end" }}>
+                  <button className="btn btn-primary" onClick={() => openAddModal("interview")} disabled={!selectedTrackerClientId}>
+                    <Plus size={16} /> Add Interview
+                  </button>
+                </div>
                 <div className="table-responsive">
                   <table className="table">
                     <thead><tr><th>Type</th><th>Round</th><th>Date</th><th>Status</th><th>Interviewer</th><th>Actions</th></tr></thead>
@@ -5477,9 +5484,16 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
 
               {trackerSection === "follow_ups" && (
+                <>
+                <div className="controls-row" style={{ marginBottom: "18px", justifyContent: "flex-end" }}>
+                  <button className="btn btn-primary" onClick={() => openAddModal("follow_up")} disabled={!selectedTrackerClientId}>
+                    <Plus size={16} /> Add Reminder
+                  </button>
+                </div>
                 <div className="table-responsive">
                   <table className="table">
                     <thead><tr><th>Type</th><th>Due Date</th><th>Status</th><th>Contact</th><th>Notes</th><th>Actions</th></tr></thead>
@@ -5498,6 +5512,7 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
 
               {trackerSection === "contacts" && (
@@ -6648,6 +6663,16 @@ export default function App() {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Job-description Summary</label>
+                  <textarea
+                    rows={4}
+                    className="form-input"
+                    placeholder="Enter short summary of the job description..."
+                    value={trackerForm.description}
+                    onChange={(e) => setTrackerForm({ ...trackerForm, description: e.target.value })}
+                  />
                 </div>
                 <div className="form-row">
                   <div className="form-group">
