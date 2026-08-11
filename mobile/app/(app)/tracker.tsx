@@ -45,6 +45,114 @@ const stageOptions = [
   { label: "Rejected", value: "rejected" },
 ] as const;
 
+function formatInterviewDate(dateString: string) {
+  try {
+    const d = new Date(dateString);
+    return d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return dateString;
+  }
+}
+
+function formatManagementDate(dateString: string) {
+  try {
+    return new Date(dateString).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  } catch {
+    return dateString;
+  }
+}
+
+function formatManagementTime(dateString: string) {
+  try {
+    return new Date(dateString).toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return dateString;
+  }
+}
+
+function parseStructuredTrackerNotes(rawNotes: unknown) {
+  const defaults = {
+    notes: typeof rawNotes === "string" ? rawNotes : "",
+    interviewType: "",
+    company: "",
+    interviewerEmail: "",
+    location: "",
+    aboutCompany: "",
+    keyResponsibilities: "",
+    meetingLink: "",
+    jobLink: "",
+  };
+
+  if (typeof rawNotes !== "string" || !rawNotes.trim().startsWith("{")) {
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(rawNotes);
+    return {
+      notes: String(parsed.notes || ""),
+      interviewType: String(parsed.interview_type || ""),
+      company: String(parsed.company || ""),
+      interviewerEmail: String(parsed.interviewer_email || ""),
+      location: String(parsed.location || ""),
+      aboutCompany: String(parsed.about_company || ""),
+      keyResponsibilities: String(parsed.key_responsibilities || ""),
+      meetingLink: String(parsed.meeting_link || ""),
+      jobLink: String(parsed.job_link || ""),
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function splitResponsibilities(value: string) {
+  return value
+    .split(/\r?\n|•/g)
+    .map((item) => item.replace(/^[\s\-*.]+/, "").trim())
+    .filter(Boolean);
+}
+
+function normalizeReminderLinks(primaryLink: string, secondaryLink: string) {
+  const looksLikeEmailLink = (value: string) => {
+    const normalized = value.toLowerCase();
+    return (
+      normalized.includes("mail.google.com") ||
+      normalized.startsWith("mailto:") ||
+      normalized.includes("/mail/") ||
+      normalized.includes("outlook.office.com")
+    );
+  };
+
+  const first = String(primaryLink || "").trim();
+  const second = String(secondaryLink || "").trim();
+
+  if (looksLikeEmailLink(first) && !looksLikeEmailLink(second)) {
+    return { emailLink: first, jobLink: second };
+  }
+
+  if (looksLikeEmailLink(second) && !looksLikeEmailLink(first)) {
+    return { emailLink: second, jobLink: first };
+  }
+
+  return { emailLink: first, jobLink: second };
+}
+
 export default function TrackerScreen() {
   const { user } = useSession();
   const { data: snapshot, isLoading, isRefetching, isError, refetch } = usePreviewSyncQuery();
@@ -262,6 +370,89 @@ export default function TrackerScreen() {
       return rightDate - leftDate;
     });
   }, [jobs, activeFilter, applicationsByJobId, todayApplicationJobIds]);
+
+  const jobInterviews = useMemo(() => {
+    if (!selectedJob || !snapshot?.trackerInterviews) return [];
+    const rawApplication = applicationsByJobId.get(selectedJob.id);
+    if (!rawApplication) return [];
+    return snapshot.trackerInterviews.filter(
+      (int) => Number(int.application_id) === Number(rawApplication.id)
+    );
+  }, [selectedJob, snapshot?.trackerInterviews, applicationsByJobId]);
+
+  const jobFollowUps = useMemo(() => {
+    if (!selectedJob || !snapshot?.trackerFollowUps) return [];
+    const rawApplication = applicationsByJobId.get(selectedJob.id);
+    if (!rawApplication) return [];
+    return snapshot.trackerFollowUps.filter(
+      (fup) => Number(fup.application_id) === Number(rawApplication.id)
+    );
+  }, [selectedJob, snapshot?.trackerFollowUps, applicationsByJobId]);
+
+  const followUpsByApplicationId = useMemo(() => {
+    const mapped = new Map<number, any[]>();
+    (snapshot?.trackerFollowUps ?? []).forEach((followUp) => {
+      const applicationId = Number(followUp.application_id);
+      if (!Number.isFinite(applicationId)) {
+        return;
+      }
+
+      const current = mapped.get(applicationId) ?? [];
+      current.push(followUp);
+      mapped.set(applicationId, current);
+    });
+
+    mapped.forEach((items, applicationId) => {
+      mapped.set(
+        applicationId,
+        [...items].sort(
+          (left, right) => new Date(left.due_date || 0).getTime() - new Date(right.due_date || 0).getTime(),
+        ),
+      );
+    });
+
+    return mapped;
+  }, [snapshot?.trackerFollowUps]);
+
+  const interviewReminderEntries = useMemo(() => {
+    const todayKey = toTimezoneDateKey(new Date().toISOString());
+    return filteredJobs.flatMap((job) => {
+      const rawApplication = applicationsByJobId.get(job.id);
+      const applicationId = Number(rawApplication?.id);
+      if (!Number.isFinite(applicationId)) {
+        return [];
+      }
+
+      const linkedFollowUps = [...(followUpsByApplicationId.get(applicationId) ?? [])].sort((left, right) => {
+        const leftTime = new Date(left.updated_at || left.created_at || left.due_date || 0).getTime();
+        const rightTime = new Date(right.updated_at || right.created_at || right.due_date || 0).getTime();
+        return rightTime - leftTime;
+      });
+      const futureDatedReminder =
+        linkedFollowUps.find((item) => toTimezoneDateKey(item.due_date) > todayKey) ?? null;
+      const reminder = futureDatedReminder ?? linkedFollowUps[0];
+      if (!reminder) {
+        return [];
+      }
+
+      const details = parseStructuredTrackerNotes(reminder.notes);
+      const normalizedLinks = normalizeReminderLinks(details.meetingLink, details.jobLink);
+      return [{
+        key: `reminder-feed-${job.id}-${reminder.id}`,
+        jobTitle: job.title,
+        companyName: details.company || job.company || "",
+        dueDate: reminder.due_date,
+        fromName: reminder.contact_person || "Admin Panel",
+        email: details.interviewerEmail || reminder.contact_email || "",
+        contact: reminder.contact_person || "",
+        location: details.location || "",
+        aboutCompany: details.aboutCompany || "",
+        responsibilities: splitResponsibilities(details.keyResponsibilities),
+        emailLink: normalizedLinks.emailLink,
+        jobLink: normalizedLinks.jobLink,
+      }];
+    });
+  }, [filteredJobs, applicationsByJobId, followUpsByApplicationId, toTimezoneDateKey]);
 
   const activeFocusText = useMemo(() => {
     switch (activeFilter) {
@@ -619,6 +810,51 @@ export default function TrackerScreen() {
         )}
       </View>
 
+      {interviewReminderEntries.length > 0 ? (
+        <View style={[styles.sectionCard, { backgroundColor: colors.surface, marginTop: spacing.lg }]}>
+          <Text style={[styles.sectionLabel, { color: colors.accent }]}>INTERVIEW REMINDER</Text>
+          <View style={styles.interviewReminderStack}>
+            {interviewReminderEntries.map((entry) => (
+              <View key={entry.key} style={styles.interviewReminderCard}>
+                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*When:* </Text>{formatManagementDate(entry.dueDate)}</Text>
+                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Time:* </Text>{formatManagementTime(entry.dueDate)}</Text>
+                {entry.companyName ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Company:* </Text>{entry.companyName}</Text> : null}
+                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*From:* </Text>{entry.fromName}</Text>
+                {entry.email ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Email:* </Text>{entry.email}</Text> : null}
+                {entry.contact ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Contact:* </Text>{entry.contact}</Text> : null}
+                {entry.location ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Location:* </Text>{entry.location}</Text> : null}
+                {entry.aboutCompany ? (
+                  <View style={styles.interviewReminderBlock}>
+                    <Text style={styles.interviewReminderLabel}>*About the Company:*</Text>
+                    <Text style={styles.interviewReminderBody}>{entry.aboutCompany}</Text>
+                  </View>
+                ) : null}
+                {entry.responsibilities.length > 0 ? (
+                  <View style={styles.interviewReminderBlock}>
+                    <Text style={styles.interviewReminderLabel}>*Key Responsibilities:*</Text>
+                    {entry.responsibilities.map((item, itemIndex) => (
+                      <Text key={`${entry.key}-responsibility-${itemIndex}`} style={styles.interviewReminderBullet}>- {item}</Text>
+                    ))}
+                  </View>
+                ) : null}
+                {entry.emailLink ? (
+                  <Pressable onPress={() => Linking.openURL(entry.emailLink)} style={styles.interviewReminderLinkBox}>
+                    <Text style={styles.interviewReminderLinkLabel}>Email Link</Text>
+                    <Text style={styles.interviewReminderLink}>{entry.emailLink}</Text>
+                  </Pressable>
+                ) : null}
+                {entry.jobLink ? (
+                  <Pressable onPress={() => Linking.openURL(entry.jobLink)} style={styles.interviewReminderLinkBox}>
+                    <Text style={styles.interviewReminderLinkLabel}>Job Link</Text>
+                    <Text style={styles.interviewReminderLink}>{entry.jobLink}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {/* Activity Timeline */}
       <View style={[styles.sectionCard, { backgroundColor: colors.surface, marginTop: spacing.lg }]}>
         <Text style={[styles.sectionLabel, { color: colors.accent }]}>ACTIVITY TIMELINE</Text>
@@ -721,6 +957,114 @@ export default function TrackerScreen() {
                   <Text style={styles.detailLabel}>Compensation</Text>
                   <Text style={[styles.detailValue, { color: colors.text }]}>{selectedJob.salary || "Not Specified"}</Text>
                 </View>
+
+                {/* Job Description Summary */}
+                <Text style={styles.sectionHeading}>JOB DESCRIPTION SUMMARY</Text>
+                <View style={styles.summarySectionCard}>
+                  <Text style={styles.summaryText}>
+                    {selectedJob.description
+                      ? selectedJob.description
+                      : "No job description summary available."}
+                  </Text>
+                </View>
+
+                <Text style={styles.sectionHeading}>INTERVIEW MANAGEMENT</Text>
+                {jobInterviews.length > 0 || jobFollowUps.length > 0 ? (
+                  <>
+                    {jobInterviews.map((interview) => {
+                      const details = parseStructuredTrackerNotes(interview.admin_notes);
+                      const responsibilityItems = splitResponsibilities(details.keyResponsibilities);
+
+                      return (
+                        <View key={`interview-${interview.id}`} style={styles.jobFeatureCard}>
+                          <Text style={styles.managementCardTitle}>
+                            Interview: {selectedJob.title} Position {details.company ? `with ${details.company}` : ""}
+                          </Text>
+                          <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>When:</Text> {formatManagementDate(interview.interview_date)}</Text>
+                          <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Time:</Text> {formatManagementTime(interview.interview_date)}</Text>
+                          {details.company ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Company:</Text> {details.company}</Text> : null}
+                          {interview.interviewer_name ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>From:</Text> {interview.interviewer_name}</Text> : null}
+                          {interview.interviewer_email ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Email:</Text> {interview.interviewer_email}</Text> : null}
+                          {interview.location ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Location:</Text> {interview.location}</Text> : null}
+                          {details.aboutCompany ? (
+                            <View style={styles.managementBlock}>
+                              <Text style={styles.managementBlockLabel}>About the Company:</Text>
+                              <Text style={styles.managementBlockText}>{details.aboutCompany}</Text>
+                            </View>
+                          ) : null}
+                          {responsibilityItems.length > 0 ? (
+                            <View style={styles.managementBlock}>
+                              <Text style={styles.managementBlockLabel}>Key Responsibilities:</Text>
+                              {responsibilityItems.map((item, itemIndex) => (
+                                <Text key={`interview-responsibility-${interview.id}-${itemIndex}`} style={styles.managementBulletLine}>• {item}</Text>
+                              ))}
+                            </View>
+                          ) : null}
+                          {interview.meeting_link ? (
+                            <Pressable onPress={() => Linking.openURL(interview.meeting_link!)}>
+                              <Text style={styles.managementCardLink}>Email Link: {interview.meeting_link}</Text>
+                            </Pressable>
+                          ) : null}
+                          {details.jobLink ? (
+                            <Pressable onPress={() => Linking.openURL(details.jobLink)}>
+                              <Text style={styles.managementCardLink}>Job Link: {details.jobLink}</Text>
+                            </Pressable>
+                          ) : null}
+                          {details.notes ? <Text style={styles.featureCardNotes}>Notes: {details.notes}</Text> : null}
+                        </View>
+                      );
+                    })}
+
+                    {jobFollowUps.map((reminder) => {
+                      const details = parseStructuredTrackerNotes(reminder.notes);
+                      const responsibilityItems = splitResponsibilities(details.keyResponsibilities);
+                      const senderName = reminder.contact_person || "Admin Panel";
+                      const senderEmail = details.interviewerEmail || reminder.contact_email || "";
+
+                      return (
+                        <View key={`reminder-${reminder.id}`} style={styles.jobFeatureCard}>
+                          <Text style={styles.managementCardTitle}>
+                            Reminder: Interview for {selectedJob.title} Position {details.company ? `with ${details.company}` : ""}
+                          </Text>
+                          <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>When:</Text> {formatManagementDate(reminder.due_date)}</Text>
+                          <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Time:</Text> {formatManagementTime(reminder.due_date)}</Text>
+                          {details.company ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Company:</Text> {details.company}</Text> : null}
+                          <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>From:</Text> {senderName}</Text>
+                          {senderEmail ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Email:</Text> {senderEmail}</Text> : null}
+                          {reminder.contact_person ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Contact:</Text> {reminder.contact_person}</Text> : null}
+                          {details.location ? <Text style={styles.managementCardLine}><Text style={styles.managementCardLabel}>Location:</Text> {details.location}</Text> : null}
+                          {details.aboutCompany ? (
+                            <View style={styles.managementBlock}>
+                              <Text style={styles.managementBlockLabel}>About the Company:</Text>
+                              <Text style={styles.managementBlockText}>{details.aboutCompany}</Text>
+                            </View>
+                          ) : null}
+                          {responsibilityItems.length > 0 ? (
+                            <View style={styles.managementBlock}>
+                              <Text style={styles.managementBlockLabel}>Key Responsibilities:</Text>
+                              {responsibilityItems.map((item, itemIndex) => (
+                                <Text key={`reminder-responsibility-${reminder.id}-${itemIndex}`} style={styles.managementBulletLine}>• {item}</Text>
+                              ))}
+                            </View>
+                          ) : null}
+                          {details.meetingLink ? (
+                            <Pressable onPress={() => Linking.openURL(details.meetingLink)}>
+                              <Text style={styles.managementCardLink}>Email Link: {details.meetingLink}</Text>
+                            </Pressable>
+                          ) : null}
+                          {details.jobLink ? (
+                            <Pressable onPress={() => Linking.openURL(details.jobLink)}>
+                              <Text style={styles.managementCardLink}>Job Link: {details.jobLink}</Text>
+                            </Pressable>
+                          ) : null}
+                          {details.notes ? <Text style={styles.featureCardNotes}>Notes: {details.notes}</Text> : null}
+                        </View>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <Text style={styles.featureEmptyText}>No interview management synced for this role.</Text>
+                )}
 
                 <Text style={styles.sectionHeading}>BEFORE SCREENSHOT</Text>
                 {selectedJob.beforeScreenshotUri ? (
@@ -1015,6 +1359,76 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     fontSize: 11,
+  },
+  interviewReminderStack: {
+    marginTop: spacing.sm,
+    gap: spacing.md,
+  },
+  interviewReminderCard: {
+    borderRadius: radii.md,
+    backgroundColor: "#F7F8F2",
+    borderWidth: 1.5,
+    borderColor: "rgba(163, 230, 53, 0.35)",
+    padding: spacing.md,
+    gap: 6,
+    ...shadows.card,
+  },
+  interviewReminderTitle: {
+    ...typography.title,
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "700",
+  },
+  interviewReminderLine: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  interviewReminderLabel: {
+    color: colors.dark,
+    fontWeight: "700",
+  },
+  interviewReminderBlock: {
+    marginTop: 10,
+    gap: 6,
+  },
+  interviewReminderBody: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 23,
+  },
+  interviewReminderBullet: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 23,
+    paddingLeft: 4,
+  },
+  interviewReminderLinkBox: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: radii.sm,
+    backgroundColor: "#EEF1E4",
+    borderWidth: 1,
+    borderColor: "rgba(10, 10, 8, 0.08)",
+    gap: 4,
+  },
+  interviewReminderLinkLabel: {
+    ...typography.label,
+    color: colors.dark,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  interviewReminderLink: {
+    ...typography.body,
+    color: colors.mutedText,
+    fontSize: 14,
+    lineHeight: 21,
+    textDecorationLine: "underline",
   },
   timelineContainer: {
     marginTop: spacing.xs,
@@ -1451,4 +1865,151 @@ const styles = StyleSheet.create({
   updatedResumeName: { ...typography.body, color: colors.darkMuted, fontSize: 11 },
   updatedResumeAction: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.pill, backgroundColor: colors.accent },
   updatedResumeActionText: { ...typography.label, color: colors.dark, fontSize: 10, fontWeight: "900" },
+  summarySectionCard: {
+    backgroundColor: colors.background,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  summaryText: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  jobFeatureCard: {
+    backgroundColor: colors.background,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+    gap: 4,
+  },
+  featureHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  featureCardRound: {
+    ...typography.title,
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    textTransform: "capitalize",
+  },
+  featureCardDate: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.accent,
+    fontWeight: "600",
+  },
+  featureCardType: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.mutedText,
+  },
+  featureHighlight: {
+    color: colors.text,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  featureCardDetail: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.text,
+  },
+  featureCardLink: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: "underline",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  featureCardNotes: {
+    ...typography.body,
+    fontSize: 11,
+    color: colors.mutedText,
+    fontStyle: "italic",
+    marginTop: 2,
+  },
+  managementCardTitle: {
+    ...typography.title,
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: "700",
+  },
+  managementCardLine: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  managementCardLabel: {
+    color: colors.text,
+    fontWeight: "700",
+  },
+  managementBlock: {
+    marginTop: 6,
+    gap: 4,
+  },
+  managementBlockLabel: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  managementBlockText: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  managementBulletLine: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 20,
+    paddingLeft: 4,
+  },
+  managementCardLink: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: "underline",
+    lineHeight: 18,
+  },
+  featureEmptyText: {
+    ...typography.body,
+    color: colors.subtleText,
+    fontSize: 12,
+    paddingLeft: 4,
+    marginTop: spacing.xs,
+  },
+  nestedDetailBlock: {
+    marginTop: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
+    padding: 8,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+  },
+  nestedDetailLabel: {
+    ...typography.label,
+    fontSize: 10,
+    color: colors.accent,
+    textTransform: "uppercase",
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  nestedDetailText: {
+    ...typography.body,
+    fontSize: 11,
+    color: colors.text,
+    lineHeight: 15,
+  },
 });

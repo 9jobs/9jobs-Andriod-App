@@ -6,7 +6,7 @@ import { parseHiringManagersCsv } from "./lib/hiringManagers";
 import { io } from "socket.io-client";
 
 let adminSocket: any = null;
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000" : "");
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000" : "https://backend-theta-ten-27.vercel.app");
 const previewTrackerClient = {
   id: "preview-user-9jobs",
   full_name: "Test User",
@@ -612,7 +612,9 @@ import {
   FileText,
   Eye,
   EyeOff,
-  Star
+  Star,
+  ChevronDown,
+  Calendar
 } from "lucide-react";
 
 import { useUser, useAuth, useSignIn } from "@clerk/clerk-react";
@@ -758,6 +760,7 @@ export default function App() {
   const [interviewPrepResponses, setInterviewPrepResponses] = useState<any[]>([]);
   const [selectedTrackerClientId, setSelectedTrackerClientId] = useState("");
   const [trackerSection, setTrackerSection] = useState<"overview" | "applications" | "interviews" | "follow_ups" | "contacts" | "cold_emails" | "scores" | "activity">("overview");
+  const [isInterviewManagementOpen, setIsInterviewManagementOpen] = useState(false);
   const [stats, setStats] = useState({
     usersCount: 0,
     jobsCount: 0,
@@ -831,9 +834,9 @@ export default function App() {
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "", status: "sent" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
-  const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "" });
-  const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
-  const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
+  const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
+  const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "", meeting_link: "", location: "", about_company: "", key_responsibilities: "", job_link: "", company: "" });
+  const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "", interview_type: "video", company: "", interviewer_email: "", location: "", about_company: "", key_responsibilities: "", meeting_link: "", job_link: "" });
   const [contactForm, setContactForm] = useState({ client_id: "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
   const [coldEmailForm, setColdEmailForm] = useState({ client_id: "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
   const [scoreForm, setScoreForm] = useState({ client_id: "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
@@ -1017,6 +1020,12 @@ export default function App() {
   useEffect(() => {
     setSearchQuery("");
     setFilterType("all");
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "job_tracker") {
+      setIsInterviewManagementOpen(true);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -2638,7 +2647,7 @@ export default function App() {
         salary_range: selectedJob.salary,
         work_type: selectedJob.job_type || "Full-time",
         employment_type: selectedJob.job_type || "Full-time",
-        job_description: selectedJob.description || "",
+        job_description: trackerForm.description || selectedJob.description || "",
         before_screenshot_url: trackerForm.before_screenshot_url || "",
         after_screenshot_url: trackerForm.after_screenshot_url || "",
         created_by_admin_id: user?.id || "admin",
@@ -2730,7 +2739,15 @@ export default function App() {
         status: interviewForm.status,
         interviewer_name: interviewForm.interviewer_name,
         interviewer_email: interviewForm.interviewer_email,
-        admin_notes: interviewForm.admin_notes,
+        meeting_link: interviewForm.meeting_link,
+        location: interviewForm.location,
+        admin_notes: JSON.stringify({
+          notes: interviewForm.admin_notes,
+          about_company: interviewForm.about_company,
+          key_responsibilities: interviewForm.key_responsibilities,
+          job_link: interviewForm.job_link,
+          company: interviewForm.company,
+        }),
       };
 
       const token = await ensureAdminToken();
@@ -2771,7 +2788,17 @@ export default function App() {
         status: followUpForm.status,
         contact_person: followUpForm.contact_person,
         contact_email: followUpForm.contact_email,
-        notes: followUpForm.notes,
+        notes: JSON.stringify({
+          notes: followUpForm.notes,
+          interview_type: followUpForm.interview_type,
+          company: followUpForm.company,
+          interviewer_email: followUpForm.interviewer_email,
+          location: followUpForm.location,
+          about_company: followUpForm.about_company,
+          key_responsibilities: followUpForm.key_responsibilities,
+          meeting_link: followUpForm.meeting_link,
+          job_link: followUpForm.job_link,
+        }),
         created_by: user?.primaryEmailAddress?.emailAddress || "admin",
       };
 
@@ -3928,9 +3955,9 @@ export default function App() {
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "", status: "sent" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
-    setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "" });
-    setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "" });
-    setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "" });
+    setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
+    setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "", meeting_link: "", location: "", about_company: "", key_responsibilities: "", job_link: "", company: "" });
+    setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "", interview_type: "video", company: "", interviewer_email: "", location: "", about_company: "", key_responsibilities: "", meeting_link: "", job_link: "" });
     setContactForm({ client_id: selectedTrackerClientId || "", application_id: "", recruiter_name: "", position: "", email: "", linkedin_url: "", contact_date: "", response_status: "no_response", notes: "" });
     setColdEmailForm({ client_id: selectedTrackerClientId || "", application_id: "", recipient_name: "", recipient_email: "", company_name: "", subject: "", message: "", sent_at: "", delivery_status: "sent", response_status: "no_response" });
     setScoreForm({ client_id: selectedTrackerClientId || "", application_id: "", ats_score: 0, ai_match_score: 0, score_reason: "", recommendations: "" });
@@ -4052,11 +4079,87 @@ export default function App() {
         status: item.status || "applied",
         before_screenshot_url: item.before_screenshot_url || "",
         after_screenshot_url: item.after_screenshot_url || "",
+        description: item.job_description || item.jobs?.description || "",
       });
     } else if (type === "interview") {
-      setInterviewForm({ client_id: item.client_id, application_id: String(item.application_id), interview_type: item.interview_type || "video", interview_round: item.interview_round || "", interview_date: item.interview_date || "", status: item.status || "scheduled", interviewer_name: item.interviewer_name || "", interviewer_email: item.interviewer_email || "", admin_notes: item.admin_notes || "" });
+      let notes = item.admin_notes || "";
+      let aboutCompany = "";
+      let keyResponsibilities = "";
+      let jobLink = "";
+      let company = "";
+      if (typeof notes === "string" && notes.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(notes);
+          notes = parsed.notes || "";
+          aboutCompany = parsed.about_company || "";
+          keyResponsibilities = parsed.key_responsibilities || "";
+          jobLink = parsed.job_link || "";
+          company = parsed.company || "";
+        } catch (e) {
+          console.warn("Failed to parse serialized interview notes:", e);
+        }
+      }
+      setInterviewForm({
+        client_id: item.client_id,
+        application_id: String(item.application_id),
+        interview_type: item.interview_type || "video",
+        interview_round: item.interview_round || "",
+        interview_date: item.interview_date || "",
+        status: item.status || "scheduled",
+        interviewer_name: item.interviewer_name || "",
+        interviewer_email: item.interviewer_email || "",
+        admin_notes: notes,
+        meeting_link: item.meeting_link || "",
+        location: item.location || "",
+        about_company: aboutCompany,
+        key_responsibilities: keyResponsibilities,
+        job_link: jobLink,
+        company: company,
+      });
     } else if (type === "follow_up") {
-      setFollowUpForm({ client_id: item.client_id, application_id: String(item.application_id), follow_up_type: item.follow_up_type || "email", due_date: item.due_date || "", status: item.status || "pending", contact_person: item.contact_person || "", contact_email: item.contact_email || "", notes: item.notes || "" });
+      let notesText = item.notes || "";
+      let interviewType = "video";
+      let company = "";
+      let interviewerEmail = "";
+      let location = "";
+      let aboutCompany = "";
+      let keyResponsibilities = "";
+      let meetingLink = "";
+      let jobLink = "";
+      if (typeof notesText === "string" && notesText.trim().startsWith("{")) {
+        try {
+          const parsed = JSON.parse(notesText);
+          notesText = parsed.notes || "";
+          interviewType = parsed.interview_type || "video";
+          company = parsed.company || "";
+          interviewerEmail = parsed.interviewer_email || "";
+          location = parsed.location || "";
+          aboutCompany = parsed.about_company || "";
+          keyResponsibilities = parsed.key_responsibilities || "";
+          meetingLink = parsed.meeting_link || "";
+          jobLink = parsed.job_link || "";
+        } catch (e) {
+          console.warn("Failed to parse serialized follow_up notes:", e);
+        }
+      }
+      setFollowUpForm({
+        client_id: item.client_id,
+        application_id: String(item.application_id),
+        follow_up_type: item.follow_up_type || "email",
+        due_date: item.due_date || "",
+        status: item.status || "pending",
+        contact_person: item.contact_person || "",
+        contact_email: item.contact_email || "",
+        notes: notesText,
+        interview_type: interviewType,
+        company: company,
+        interviewer_email: interviewerEmail,
+        location: location,
+        about_company: aboutCompany,
+        key_responsibilities: keyResponsibilities,
+        meeting_link: meetingLink,
+        job_link: jobLink,
+      });
     } else if (type === "contact") {
       setContactForm({ client_id: item.client_id, application_id: item.application_id ? String(item.application_id) : "", recruiter_name: item.recruiter_name || "", position: item.company_name || "", email: item.email || "", linkedin_url: item.linkedin_url || "", contact_date: item.contact_date || "", response_status: item.response_status || "no_response", notes: item.notes || "" });
     } else if (type === "cold_email") {
@@ -4400,10 +4503,63 @@ export default function App() {
             <Layers size={18} />
             <span>Applications</span>
           </a>
-          <a className={`sidebar-item ${activeTab === "job_tracker" ? "active" : ""}`} onClick={() => setActiveTab("job_tracker")}>
-            <Layers size={18} />
-            <span>Job Tracker</span>
-          </a>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <a
+              className={`sidebar-item ${activeTab === "job_tracker" ? "active" : ""}`}
+              onClick={() => {
+                setActiveTab("job_tracker");
+                setIsInterviewManagementOpen(!isInterviewManagementOpen);
+              }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <Layers size={18} />
+                <span>Job Tracker</span>
+              </div>
+              <ChevronDown
+                size={16}
+                style={{
+                  transform: isInterviewManagementOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.2s ease"
+                }}
+              />
+            </a>
+
+            {isInterviewManagementOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", margin: "4px 0" }}>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "job_tracker" && trackerSection === "interviews" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("job_tracker");
+                    setTrackerSection("interviews");
+                  }}
+                >
+                  <Calendar size={14} />
+                  <span>Interview Calendar</span>
+                </a>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "job_tracker" && trackerSection === "follow_ups" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("job_tracker");
+                    setTrackerSection("follow_ups");
+                  }}
+                >
+                  <Bell size={14} />
+                  <span>Interview Reminders</span>
+                </a>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "job_tracker" && trackerSection === "applications" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("job_tracker");
+                    setTrackerSection("applications");
+                  }}
+                >
+                  <FileText size={14} />
+                  <span>Job-description Summary</span>
+                </a>
+              </div>
+            )}
+          </div>
           <a className={`sidebar-item ${activeTab === "hiring_managers" ? "active" : ""}`} onClick={() => setActiveTab("hiring_managers")}>
             <Users size={18} />
             <span>Hiring Managers</span>
@@ -5397,6 +5553,12 @@ export default function App() {
               )}
 
               {trackerSection === "interviews" && (
+                <>
+                <div className="controls-row" style={{ marginBottom: "18px", justifyContent: "flex-end" }}>
+                  <button className="btn btn-primary" onClick={() => openAddModal("interview")} disabled={!selectedTrackerClientId}>
+                    <Plus size={16} /> Add Interview
+                  </button>
+                </div>
                 <div className="table-responsive">
                   <table className="table">
                     <thead><tr><th>Type</th><th>Round</th><th>Date</th><th>Status</th><th>Interviewer</th><th>Actions</th></tr></thead>
@@ -5415,9 +5577,16 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
 
               {trackerSection === "follow_ups" && (
+                <>
+                <div className="controls-row" style={{ marginBottom: "18px", justifyContent: "flex-end" }}>
+                  <button className="btn btn-primary" onClick={() => openAddModal("follow_up")} disabled={!selectedTrackerClientId}>
+                    <Plus size={16} /> Add Reminder
+                  </button>
+                </div>
                 <div className="table-responsive">
                   <table className="table">
                     <thead><tr><th>Type</th><th>Due Date</th><th>Status</th><th>Contact</th><th>Notes</th><th>Actions</th></tr></thead>
@@ -5436,6 +5605,7 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                </>
               )}
 
               {trackerSection === "contacts" && (
@@ -6587,6 +6757,16 @@ export default function App() {
                     ))}
                   </select>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Job-description Summary</label>
+                  <textarea
+                    rows={4}
+                    className="form-input"
+                    placeholder="Enter short summary of the job description..."
+                    value={trackerForm.description}
+                    onChange={(e) => setTrackerForm({ ...trackerForm, description: e.target.value })}
+                  />
+                </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Before Screenshot</label>
@@ -6625,9 +6805,9 @@ export default function App() {
                   <label className="form-label">Application</label>
                   <select className="form-input" required value={interviewForm.application_id} onChange={(e) => setInterviewForm({ ...interviewForm, application_id: e.target.value })}>
                     <option value="">Select application</option>
-                    {applications.map((application) => (
+                    {trackerApplicationOptions.map((application) => (
                       <option key={application.id} value={application.id}>
-                        {(application.job_title || application.jobs?.title || "Application")} - {(application.company_name || application.jobs?.company || "Company")}
+                        {application.label}
                       </option>
                     ))}
                   </select>
@@ -6656,7 +6836,7 @@ export default function App() {
                     </select>
                   </div>
                 </div>
-                <div className="form-row">
+                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label">Round</label>
                     <input type="text" className="form-input" value={interviewForm.interview_round} onChange={(e) => setInterviewForm({ ...interviewForm, interview_round: e.target.value })} />
@@ -6665,6 +6845,54 @@ export default function App() {
                     <label className="form-label">Interview Date</label>
                     <input type="datetime-local" className="form-input" required value={interviewForm.interview_date} onChange={(e) => setInterviewForm({ ...interviewForm, interview_date: e.target.value })} />
                   </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Company</label>
+                    <input type="text" className="form-input" value={interviewForm.company} onChange={(e) => setInterviewForm({ ...interviewForm, company: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Job Link</label>
+                    <input type="url" className="form-input" value={interviewForm.job_link} onChange={(e) => setInterviewForm({ ...interviewForm, job_link: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Interviewer Name</label>
+                    <input type="text" className="form-input" value={interviewForm.interviewer_name} onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_name: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Interviewer Email</label>
+                    <input type="email" className="form-input" value={interviewForm.interviewer_email} onChange={(e) => setInterviewForm({ ...interviewForm, interviewer_email: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Location</label>
+                    <input type="text" className="form-input" value={interviewForm.location} onChange={(e) => setInterviewForm({ ...interviewForm, location: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Meeting Link</label>
+                    <input type="url" className="form-input" value={interviewForm.meeting_link} onChange={(e) => setInterviewForm({ ...interviewForm, meeting_link: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">About Company</label>
+                  <textarea rows={3} className="form-input" value={interviewForm.about_company} onChange={(e) => setInterviewForm({ ...interviewForm, about_company: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Key Responsibilities</label>
+                  <textarea rows={3} className="form-input" value={interviewForm.key_responsibilities} onChange={(e) => setInterviewForm({ ...interviewForm, key_responsibilities: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
+                  <textarea rows={2} className="form-input" value={interviewForm.admin_notes} onChange={(e) => setInterviewForm({ ...interviewForm, admin_notes: e.target.value })} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Interview</button>
               </form>
@@ -6692,6 +6920,67 @@ export default function App() {
                     <label className="form-label">Due Date</label>
                     <input type="datetime-local" className="form-input" required value={followUpForm.due_date} onChange={(e) => setFollowUpForm({ ...followUpForm, due_date: e.target.value })} />
                   </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Interview Type</label>
+                    <select className="form-input" value={followUpForm.interview_type} onChange={(e) => setFollowUpForm({ ...followUpForm, interview_type: e.target.value })}>
+                      <option value="phone">phone</option>
+                      <option value="video">video</option>
+                      <option value="face_to_face">face_to_face</option>
+                      <option value="assessment">assessment</option>
+                      <option value="technical">technical</option>
+                      <option value="hr">hr</option>
+                      <option value="final">final</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Company</label>
+                    <input type="text" className="form-input" value={followUpForm.company} onChange={(e) => setFollowUpForm({ ...followUpForm, company: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Contact / Interviewer Name</label>
+                    <input type="text" className="form-input" value={followUpForm.contact_person} onChange={(e) => setFollowUpForm({ ...followUpForm, contact_person: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Contact / Interviewer Email</label>
+                    <input type="email" className="form-input" value={followUpForm.contact_email} onChange={(e) => setFollowUpForm({ ...followUpForm, contact_email: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label className="form-label">Location</label>
+                    <input type="text" className="form-input" value={followUpForm.location} onChange={(e) => setFollowUpForm({ ...followUpForm, location: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Meeting Link (Mail Link)</label>
+                    <input type="url" className="form-input" value={followUpForm.meeting_link} onChange={(e) => setFollowUpForm({ ...followUpForm, meeting_link: e.target.value })} />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Job Link</label>
+                  <input type="url" className="form-input" value={followUpForm.job_link} onChange={(e) => setFollowUpForm({ ...followUpForm, job_link: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">About Company</label>
+                  <textarea rows={3} className="form-input" value={followUpForm.about_company} onChange={(e) => setFollowUpForm({ ...followUpForm, about_company: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Key Responsibilities</label>
+                  <textarea rows={3} className="form-input" value={followUpForm.key_responsibilities} onChange={(e) => setFollowUpForm({ ...followUpForm, key_responsibilities: e.target.value })} />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
+                  <textarea rows={2} className="form-input" value={followUpForm.notes} onChange={(e) => setFollowUpForm({ ...followUpForm, notes: e.target.value })} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save Follow-up</button>
               </form>
