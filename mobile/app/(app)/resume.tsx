@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Animated, Easing } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Animated, Easing, Clipboard } from "react-native";
 import { router } from "expo-router";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
@@ -9,7 +9,6 @@ import * as DocumentPicker from "expo-document-picker";
 import { useUploadResumeMutation } from "@/features/jobs/hooks";
 import { ResumeDataTransferSpline } from "@/components/resume/ResumeDataTransferSpline";
 import { AppIcon } from "@/components/ui/AppIcon";
-import * as Clipboard from "expo-clipboard";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -51,7 +50,7 @@ function CircularScanner() {
 
 export default function ResumeScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
-  const [activeTab, setActiveTab] = useState<"score" | "optimize" | "compare" | "cover_letter">("score");
+  const [activeTab, setActiveTab] = useState<"score" | "compare" | "cover_letter">("score");
   const [coverLetter, setCoverLetter] = useState<string>("");
   const [isScanning, setIsScanning] = useState(true);
   const [scoreTicker, setScoreTicker] = useState(0);
@@ -334,7 +333,6 @@ export default function ResumeScreen() {
       {/* Interactive Tab Selector */}
       <View style={styles.segmentRow}>
         <Segment label="Score" active={activeTab === "score"} onPress={() => setActiveTab("score")} />
-        <Segment label="Optimize" active={activeTab === "optimize"} onPress={() => setActiveTab("optimize")} />
         <Segment label="Compare" active={activeTab === "compare"} onPress={() => setActiveTab("compare")} />
         <Segment label="Cover Letter" active={activeTab === "cover_letter"} onPress={() => setActiveTab("cover_letter")} />
       </View>
@@ -641,22 +639,7 @@ export default function ResumeScreen() {
         </>
       )}
 
-      {activeTab === "optimize" && (
-        <View style={styles.tabContentContainer}>
-          <Text style={styles.tabTitleText}>Optimizations Required</Text>
-          {getOptimizations(scoreTicker).map((opt, idx) => (
-            <View key={idx} style={styles.optimizationCard}>
-              <View style={styles.optIconBadge}>
-                <Text style={styles.optBadgeText}>{opt.pts}</Text>
-              </View>
-              <View style={styles.optCopy}>
-                <Text style={styles.optTitle}>{opt.title}</Text>
-                <Text style={styles.optBody}>{opt.body}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
+
 
       {activeTab === "compare" && (
         <View style={styles.tabContentContainer}>
@@ -696,8 +679,8 @@ export default function ResumeScreen() {
                 <Text style={styles.coverLetterBody}>{coverLetter}</Text>
                 <Pressable
                   style={styles.copyButton}
-                  onPress={async () => {
-                    await Clipboard.setStringAsync(coverLetter);
+                  onPress={() => {
+                    Clipboard.setString(coverLetter);
                     Alert.alert("Copied to Clipboard", "Cover letter copied successfully!");
                   }}
                 >

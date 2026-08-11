@@ -2908,6 +2908,7 @@ export type ResumeAnalysisResult = {
   jobDescriptionCompatibility?: number;
   recruiterReadabilityScore?: number;
   australianResumeComplianceCheck?: { compliant: boolean; issues: string[] };
+  coverLetter?: string;
 };
 
 export async function uploadAndAnalyzeResume(
