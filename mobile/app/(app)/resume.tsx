@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Animated, Easing, Clipboard } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Animated, Easing, Clipboard, TextInput } from "react-native";
 import { router } from "expo-router";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
@@ -50,6 +50,36 @@ function CircularScanner() {
 
 export default function ResumeScreen() {
   const { data: snapshot } = usePreviewSyncQuery();
+  
+  const copyToClipboard = async (text: string) => {
+    try {
+      const ExpoClipboard = require("expo-clipboard");
+      if (ExpoClipboard && ExpoClipboard.setStringAsync) {
+        await ExpoClipboard.setStringAsync(text);
+        Alert.alert("Copied to Clipboard", "Cover letter copied to clipboard!");
+        return;
+      }
+    } catch (e) {
+      console.warn("expo-clipboard dynamic load failed:", e);
+    }
+
+    try {
+      const rnClipboard = require("react-native").Clipboard;
+      if (rnClipboard && rnClipboard.setString) {
+        rnClipboard.setString(text);
+        Alert.alert("Copied to Clipboard", "Cover letter copied to clipboard!");
+        return;
+      }
+    } catch (e) {
+      console.warn("react-native Clipboard dynamic load failed:", e);
+    }
+
+    Alert.alert(
+      "Copy Cover Letter",
+      "Auto-copy is not fully supported in this dev client. Please select and copy the text box below manually.",
+      [{ text: "OK" }]
+    );
+  };
   const [activeTab, setActiveTab] = useState<"score" | "compare" | "cover_letter">("score");
   const [coverLetter, setCoverLetter] = useState<string>("");
   const [isScanning, setIsScanning] = useState(true);
@@ -676,13 +706,17 @@ export default function ResumeScreen() {
           <View style={styles.coverLetterCard}>
             {coverLetter ? (
               <>
-                <Text style={styles.coverLetterBody}>{coverLetter}</Text>
+                <TextInput
+                  style={styles.coverLetterBody}
+                  multiline={true}
+                  scrollEnabled={false}
+                  value={coverLetter}
+                  onChangeText={setCoverLetter}
+                  selectTextOnFocus={true}
+                />
                 <Pressable
                   style={styles.copyButton}
-                  onPress={() => {
-                    Clipboard.setString(coverLetter);
-                    Alert.alert("Copied to Clipboard", "Cover letter copied successfully!");
-                  }}
+                  onPress={() => copyToClipboard(coverLetter)}
                 >
                   <Text style={styles.copyButtonText}>Copy to Clipboard</Text>
                 </Pressable>
