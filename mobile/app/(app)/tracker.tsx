@@ -45,6 +45,22 @@ const stageOptions = [
   { label: "Rejected", value: "rejected" },
 ] as const;
 
+function formatInterviewDate(dateString: string) {
+  try {
+    const d = new Date(dateString);
+    return d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return dateString;
+  }
+}
+
 export default function TrackerScreen() {
   const { user } = useSession();
   const { data: snapshot, isLoading, isRefetching, isError, refetch } = usePreviewSyncQuery();
@@ -262,6 +278,24 @@ export default function TrackerScreen() {
       return rightDate - leftDate;
     });
   }, [jobs, activeFilter, applicationsByJobId, todayApplicationJobIds]);
+
+  const jobInterviews = useMemo(() => {
+    if (!selectedJob || !snapshot?.trackerInterviews) return [];
+    const rawApplication = applicationsByJobId.get(selectedJob.id);
+    if (!rawApplication) return [];
+    return snapshot.trackerInterviews.filter(
+      (int) => Number(int.application_id) === Number(rawApplication.id)
+    );
+  }, [selectedJob, snapshot?.trackerInterviews, applicationsByJobId]);
+
+  const jobFollowUps = useMemo(() => {
+    if (!selectedJob || !snapshot?.trackerFollowUps) return [];
+    const rawApplication = applicationsByJobId.get(selectedJob.id);
+    if (!rawApplication) return [];
+    return snapshot.trackerFollowUps.filter(
+      (fup) => Number(fup.application_id) === Number(rawApplication.id)
+    );
+  }, [selectedJob, snapshot?.trackerFollowUps, applicationsByJobId]);
 
   const activeFocusText = useMemo(() => {
     switch (activeFilter) {
@@ -721,6 +755,66 @@ export default function TrackerScreen() {
                   <Text style={styles.detailLabel}>Compensation</Text>
                   <Text style={[styles.detailValue, { color: colors.text }]}>{selectedJob.salary || "Not Specified"}</Text>
                 </View>
+
+                {/* Job Description Summary */}
+                <Text style={styles.sectionHeading}>JOB DESCRIPTION SUMMARY</Text>
+                <View style={styles.summarySectionCard}>
+                  <Text style={styles.summaryText}>
+                    {selectedJob.description
+                      ? selectedJob.description
+                      : "No job description summary available."}
+                  </Text>
+                </View>
+
+                {/* Interview Calendar */}
+                <Text style={styles.sectionHeading}>INTERVIEW CALENDAR</Text>
+                {jobInterviews.length > 0 ? (
+                  jobInterviews.map((interview) => (
+                    <View key={interview.id} style={styles.jobFeatureCard}>
+                      <View style={styles.featureHeaderRow}>
+                        <AppIcon name="tracker" size={14} color={colors.accent} strokeWidth={2.5} />
+                        <Text style={styles.featureCardRound}>{interview.interview_round || "Interview Round"}</Text>
+                      </View>
+                      <Text style={styles.featureCardDate}>{formatInterviewDate(interview.interview_date)}</Text>
+                      <Text style={styles.featureCardType}>Type: <Text style={styles.featureHighlight}>{interview.interview_type || "Video"}</Text></Text>
+                      {interview.interviewer_name ? (
+                        <Text style={styles.featureCardDetail}>Interviewer: {interview.interviewer_name}</Text>
+                      ) : null}
+                      {interview.meeting_link ? (
+                        <Pressable onPress={() => Linking.openURL(interview.meeting_link!)}>
+                          <Text style={styles.featureCardLink}>Join Meeting Link</Text>
+                        </Pressable>
+                      ) : null}
+                      {interview.admin_notes ? (
+                        <Text style={styles.featureCardNotes}>Notes: {interview.admin_notes}</Text>
+                      ) : null}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.featureEmptyText}>No interview scheduled for this role.</Text>
+                )}
+
+                {/* Interview Reminders */}
+                <Text style={styles.sectionHeading}>INTERVIEW REMINDERS</Text>
+                {jobFollowUps.length > 0 ? (
+                  jobFollowUps.map((reminder) => (
+                    <View key={reminder.id} style={styles.jobFeatureCard}>
+                      <View style={styles.featureHeaderRow}>
+                        <AppIcon name="info" size={14} color={colors.accent} strokeWidth={2.5} />
+                        <Text style={styles.featureCardRound}>{reminder.follow_up_type || "Reminder"}</Text>
+                      </View>
+                      <Text style={styles.featureCardDate}>Due: {formatInterviewDate(reminder.due_date)}</Text>
+                      {reminder.message ? (
+                        <Text style={styles.featureCardDetail}>{reminder.message}</Text>
+                      ) : null}
+                      {reminder.notes ? (
+                        <Text style={styles.featureCardNotes}>Notes: {reminder.notes}</Text>
+                      ) : null}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.featureEmptyText}>No reminders set.</Text>
+                )}
 
                 <Text style={styles.sectionHeading}>BEFORE SCREENSHOT</Text>
                 {selectedJob.beforeScreenshotUri ? (
@@ -1451,4 +1545,82 @@ const styles = StyleSheet.create({
   updatedResumeName: { ...typography.body, color: colors.darkMuted, fontSize: 11 },
   updatedResumeAction: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.pill, backgroundColor: colors.accent },
   updatedResumeActionText: { ...typography.label, color: colors.dark, fontSize: 10, fontWeight: "900" },
+  summarySectionCard: {
+    backgroundColor: colors.background,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+  },
+  summaryText: {
+    ...typography.body,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  jobFeatureCard: {
+    backgroundColor: colors.background,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
+    gap: 4,
+  },
+  featureHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  featureCardRound: {
+    ...typography.title,
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    textTransform: "capitalize",
+  },
+  featureCardDate: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.accent,
+    fontWeight: "600",
+  },
+  featureCardType: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.mutedText,
+  },
+  featureHighlight: {
+    color: colors.text,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  featureCardDetail: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.text,
+  },
+  featureCardLink: {
+    ...typography.body,
+    fontSize: 12,
+    color: colors.accent,
+    textDecorationLine: "underline",
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  featureCardNotes: {
+    ...typography.body,
+    fontSize: 11,
+    color: colors.mutedText,
+    fontStyle: "italic",
+    marginTop: 2,
+  },
+  featureEmptyText: {
+    ...typography.body,
+    color: colors.subtleText,
+    fontSize: 12,
+    paddingLeft: 4,
+    marginTop: spacing.xs,
+  },
 });
