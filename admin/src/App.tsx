@@ -6,7 +6,7 @@ import { parseHiringManagersCsv } from "./lib/hiringManagers";
 import { io } from "socket.io-client";
 
 let adminSocket: any = null;
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000" : "");
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000" : "https://backend-theta-ten-27.vercel.app");
 const previewTrackerClient = {
   id: "preview-user-9jobs",
   full_name: "Test User",
@@ -6625,9 +6625,9 @@ export default function App() {
                   <label className="form-label">Application</label>
                   <select className="form-input" required value={interviewForm.application_id} onChange={(e) => setInterviewForm({ ...interviewForm, application_id: e.target.value })}>
                     <option value="">Select application</option>
-                    {applications.map((application) => (
+                    {trackerApplicationOptions.map((application) => (
                       <option key={application.id} value={application.id}>
-                        {(application.job_title || application.jobs?.title || "Application")} - {(application.company_name || application.jobs?.company || "Company")}
+                        {application.label}
                       </option>
                     ))}
                   </select>
