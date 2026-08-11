@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { DarkHeroCard, PremiumScaffold } from "@/components/premium/PremiumScaffold";
+import { PremiumScaffold } from "@/components/premium/PremiumScaffold";
 import { JobCard } from "@/components/ui/JobCard";
 import { Pill } from "@/components/ui/Pill";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
@@ -96,14 +96,6 @@ export default function SearchScreen() {
       title="Search roles"
       subtitle="Filter high-fit opportunities by skill, location, and saved state."
       kicker="JOBS"
-      hero={
-        <DarkHeroCard>
-          <Text style={styles.heroTitle}>Recommended job feed</Text>
-          <Text style={styles.heroBody}>
-            Search across the same premium pipeline shown in the design.
-          </Text>
-        </DarkHeroCard>
-      }
     >
       <TextInput
         value={filters.query}
@@ -215,14 +207,6 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  heroTitle: {
-    ...typography.headline,
-    color: colors.surface,
-  },
-  heroBody: {
-    ...typography.body,
-    color: colors.darkMuted,
-  },
   search: {
     minHeight: 56,
     borderRadius: 24,

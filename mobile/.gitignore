@@ -44,3 +44,5 @@ yarn-error.*
 # local verification artifacts
 artifacts/
 web-dist/
+
+.vercel

@@ -74,74 +74,6 @@ const previewTrackerJobs = [
   },
 ] as const;
 
-const australianLocationOptions = [
-  "Remote - Australia",
-  "New South Wales",
-  "Sydney, NSW",
-  "Newcastle, NSW",
-  "Wollongong, NSW",
-  "Central Coast, NSW",
-  "Maitland, NSW",
-  "Coffs Harbour, NSW",
-  "Wagga Wagga, NSW",
-  "Albury, NSW",
-  "Orange, NSW",
-  "Dubbo, NSW",
-  "Victoria",
-  "Melbourne, VIC",
-  "Geelong, VIC",
-  "Ballarat, VIC",
-  "Bendigo, VIC",
-  "Shepparton, VIC",
-  "Mildura, VIC",
-  "Warrnambool, VIC",
-  "Queensland",
-  "Brisbane, QLD",
-  "Gold Coast, QLD",
-  "Sunshine Coast, QLD",
-  "Townsville, QLD",
-  "Cairns, QLD",
-  "Toowoomba, QLD",
-  "Mackay, QLD",
-  "Rockhampton, QLD",
-  "Bundaberg, QLD",
-  "South Australia",
-  "Adelaide, SA",
-  "Mount Gambier, SA",
-  "Whyalla, SA",
-  "Murray Bridge, SA",
-  "Port Lincoln, SA",
-  "Western Australia",
-  "Perth, WA",
-  "Fremantle, WA",
-  "Mandurah, WA",
-  "Bunbury, WA",
-  "Geraldton, WA",
-  "Albany, WA",
-  "Kalgoorlie, WA",
-  "Tasmania",
-  "Hobart, TAS",
-  "Launceston, TAS",
-  "Devonport, TAS",
-  "Burnie, TAS",
-  "Northern Territory",
-  "Darwin, NT",
-  "Alice Springs, NT",
-  "Palmerston, NT",
-  "Australian Capital Territory",
-  "Canberra, ACT",
-] as const;
-
-function getAustraliaLocationOptions(currentLocation?: string) {
-  if (!currentLocation?.trim()) {
-    return australianLocationOptions;
-  }
-
-  return australianLocationOptions.includes(currentLocation as (typeof australianLocationOptions)[number])
-    ? australianLocationOptions
-    : [currentLocation, ...australianLocationOptions];
-}
-
 function readLocalSuccessStories() {
   try {
     const raw = localStorage.getItem(SUCCESS_STORIES_LOCAL_KEY);
@@ -389,6 +321,8 @@ function mergeSavedJobEntriesFromRows({
       employment_type: linkedApplication?.employment_type || job?.job_type || "Full-time",
       job_description: linkedApplication?.job_description || job?.description || "",
       source_url: linkedApplication?.source_url || job?.job_link || "",
+      before_screenshot_url: linkedApplication?.before_screenshot_url || "",
+      after_screenshot_url: linkedApplication?.after_screenshot_url || "",
     });
   }
 
@@ -422,6 +356,8 @@ function mergeSavedJobEntriesFromRows({
       employment_type: application.employment_type || job?.job_type || "Full-time",
       job_description: application.job_description || job?.description || "",
       source_url: application.source_url || job?.job_link || "",
+      before_screenshot_url: application.before_screenshot_url || "",
+      after_screenshot_url: application.after_screenshot_url || "",
     });
   }
 
@@ -430,6 +366,219 @@ function mergeSavedJobEntriesFromRows({
     const bTime = new Date(b.created_at || 0).getTime();
     return bTime - aTime;
   });
+}
+
+function normalizeAdminRolePart(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function buildAdminApplicationRoleKey(application: any) {
+  return [
+    normalizeAdminRolePart(application?.user_id || application?.client_id),
+    normalizeAdminRolePart(application?.job_title || application?.jobs?.title),
+    normalizeAdminRolePart(application?.company_name || application?.jobs?.company),
+    normalizeAdminRolePart(application?.job_location || application?.jobs?.location),
+    normalizeAdminRolePart(application?.employment_type || application?.work_type || application?.jobs?.job_type),
+  ].join("|");
+}
+
+function getAdminApplicationScore(application: any) {
+  return (
+    (String(application?.before_screenshot_url || "").trim() ? 50 : 0) +
+    (String(application?.after_screenshot_url || "").trim() ? 50 : 0) +
+    (String(application?.job_title || "").trim() ? 10 : 0) +
+    (String(application?.company_name || "").trim() ? 10 : 0) +
+    (String(application?.applied_at || "").trim() ? 5 : 0)
+  );
+}
+
+function getAdminApplicationTime(application: any) {
+  return new Date(
+    application?.application_date ||
+    application?.applied_at ||
+    application?.updated_at ||
+    application?.created_at ||
+    0,
+  ).getTime();
+}
+
+function mergeAdminApplication(base: any, supplement: any) {
+  const baseScore = getAdminApplicationScore(base);
+  const supplementScore = getAdminApplicationScore(supplement);
+  const preferred =
+    supplementScore > baseScore || (supplementScore === baseScore && getAdminApplicationTime(supplement) > getAdminApplicationTime(base))
+      ? supplement
+      : base;
+  const fallback = preferred === base ? supplement : base;
+
+  return {
+    ...fallback,
+    ...preferred,
+    jobs: preferred?.jobs || fallback?.jobs || null,
+    job_title: preferred?.job_title || fallback?.job_title || "",
+    company_name: preferred?.company_name || fallback?.company_name || "",
+    job_location: preferred?.job_location || fallback?.job_location || "",
+    before_screenshot_url: preferred?.before_screenshot_url || fallback?.before_screenshot_url || "",
+    after_screenshot_url: preferred?.after_screenshot_url || fallback?.after_screenshot_url || "",
+    application_date: preferred?.application_date || fallback?.application_date || null,
+    applied_at: preferred?.applied_at || fallback?.applied_at || null,
+  };
+}
+
+function dedupeAdminApplications(applications: any[]) {
+  const map = new Map<string, any>();
+
+  for (const application of applications) {
+    const roleKey = buildAdminApplicationRoleKey(application);
+    const fallbackKey = `${normalizeAdminRolePart(application?.user_id || application?.client_id)}|job:${normalizeAdminRolePart(application?.job_id)}`;
+    const key = roleKey.replace(/\|/g, "") ? roleKey : fallbackKey;
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, application);
+      continue;
+    }
+
+    map.set(key, mergeAdminApplication(existing, application));
+  }
+
+  return Array.from(map.values()).sort((left, right) => getAdminApplicationTime(right) - getAdminApplicationTime(left));
+}
+
+function buildAdminJobRoleKey(job: any) {
+  return [
+    normalizeAdminRolePart(job?.title || job?.job_title),
+    normalizeAdminRolePart(job?.company || job?.company_name),
+    normalizeAdminRolePart(job?.location || job?.job_location),
+    normalizeAdminRolePart(job?.job_type || job?.employment_type || job?.work_type),
+  ].join("|");
+}
+
+function buildCanonicalAdminJobs(jobs: any[], applications: any[]) {
+  const canonicalApplications = dedupeAdminApplications(applications);
+  const preferredApplicationByRole = new Map(
+    canonicalApplications.map((application) => [
+      buildAdminJobRoleKey({
+        title: application?.job_title,
+        company: application?.company_name,
+        location: application?.job_location,
+        job_type: application?.employment_type || application?.work_type,
+      }),
+      application,
+    ]),
+  );
+
+  const jobsByRole = new Map<string, any>();
+
+  for (const rawJob of jobs) {
+    const job = {
+      ...rawJob,
+      title: String(rawJob?.title || "").trim(),
+      company: String(rawJob?.company || "").trim(),
+      location: String(rawJob?.location || "").trim(),
+      salary: String(rawJob?.salary || "").trim(),
+      job_type: String(rawJob?.job_type || "").trim(),
+      description: String(rawJob?.description || "").trim(),
+    };
+    const roleKey = buildAdminJobRoleKey(job) || `job:${String(job?.id || "")}`;
+    const linkedApplication = preferredApplicationByRole.get(roleKey) || null;
+    const existing = jobsByRole.get(roleKey);
+      const enrichedJob = {
+        ...job,
+        user_id: linkedApplication?.user_id || linkedApplication?.client_id || "",
+        client_id: linkedApplication?.client_id || linkedApplication?.user_id || "",
+        user_name:
+          String(linkedApplication?.profiles?.full_name || linkedApplication?.user_name || "").trim(),
+        application_id: linkedApplication?.id ? String(linkedApplication.id) : "",
+        status: linkedApplication?.status || "",
+        current_stage: linkedApplication?.current_stage || linkedApplication?.status || "",
+      before_screenshot_url: linkedApplication?.before_screenshot_url || "",
+      after_screenshot_url: linkedApplication?.after_screenshot_url || "",
+      application_date: linkedApplication?.application_date || "",
+      applied_at: linkedApplication?.applied_at || "",
+      match_score: Number(job?.match_score || 80),
+    };
+
+    if (!existing) {
+      jobsByRole.set(roleKey, enrichedJob);
+      continue;
+    }
+
+    jobsByRole.set(roleKey, {
+      ...existing,
+      ...enrichedJob,
+      title: existing.title || enrichedJob.title,
+      company: existing.company || enrichedJob.company,
+      location: existing.location || enrichedJob.location,
+      salary: existing.salary || enrichedJob.salary,
+      job_type: existing.job_type || enrichedJob.job_type,
+      description: existing.description || enrichedJob.description,
+      user_id: enrichedJob.user_id || existing.user_id || "",
+      client_id: enrichedJob.client_id || existing.client_id || "",
+      application_id: enrichedJob.application_id || existing.application_id || "",
+      status: enrichedJob.status || existing.status || "",
+      current_stage: enrichedJob.current_stage || existing.current_stage || "",
+      before_screenshot_url: enrichedJob.before_screenshot_url || existing.before_screenshot_url || "",
+      after_screenshot_url: enrichedJob.after_screenshot_url || existing.after_screenshot_url || "",
+      application_date: enrichedJob.application_date || existing.application_date || "",
+      applied_at: enrichedJob.applied_at || existing.applied_at || "",
+      match_score: Number(existing.match_score || enrichedJob.match_score || 80),
+    });
+  }
+
+  for (const application of canonicalApplications) {
+    const normalizedStatus = normalizeAdminRolePart(application?.status);
+    if (!normalizedStatus || normalizedStatus === "saved") {
+      continue;
+    }
+
+    const roleKey =
+      buildAdminJobRoleKey({
+        title: application?.job_title,
+        company: application?.company_name,
+        location: application?.job_location,
+        job_type: application?.employment_type || application?.work_type,
+      }) || `application:${String(application?.id || "")}`;
+
+    if (jobsByRole.has(roleKey)) {
+      continue;
+    }
+
+    jobsByRole.set(roleKey, {
+      id: String(application?.job_id || application?.id || roleKey),
+      title: String(application?.job_title || "Untitled Role").trim(),
+      company: String(application?.company_name || "9Jobs").trim(),
+      location: String(application?.job_location || "Australia").trim(),
+      salary: String(application?.salary_range || "Not disclosed").trim(),
+      job_type: String(application?.employment_type || application?.work_type || "Full-time").trim(),
+      job_link: String(application?.source_url || "").trim(),
+      posted_at: application?.application_date || application?.applied_at || application?.created_at || "Just now",
+      match_score: 80,
+      tags: [],
+      description:
+        String(application?.job_description || "").trim() ||
+        `${String(application?.job_title || "This role").trim()} at ${String(application?.company_name || "the company").trim()}.`,
+      user_id: application?.user_id || application?.client_id || "",
+      client_id: application?.client_id || application?.user_id || "",
+      user_name: String(application?.profiles?.full_name || application?.user_name || "").trim(),
+      application_id: application?.id ? String(application.id) : "",
+      status: application?.status || "",
+      current_stage: application?.current_stage || application?.status || "",
+      before_screenshot_url: application?.before_screenshot_url || "",
+      after_screenshot_url: application?.after_screenshot_url || "",
+      application_date: application?.application_date || "",
+      applied_at: application?.applied_at || "",
+    });
+  }
+
+  return Array.from(jobsByRole.values()).sort((left, right) =>
+    String(right.updated_at || right.created_at || right.posted_at || "").localeCompare(
+      String(left.updated_at || left.created_at || left.posted_at || ""),
+    ),
+  );
 }
 
 function disconnectAdminSocket() {
@@ -660,7 +809,25 @@ export default function App() {
     twitter_url: "",
     subscription_plan: "free",
   });
-  const [jobForm, setJobForm] = useState({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: "", application_id: "" });
+  const [jobForm, setJobForm] = useState({
+    id: "",
+    title: "",
+    company: "",
+    location: "",
+    salary: "",
+    job_type: "Full-time",
+    description: "",
+    tags: "",
+    job_link: "",
+    user_id: "",
+    application_id: "",
+    status: "applied",
+    current_stage: "applied",
+    before_screenshot_url: "",
+    after_screenshot_url: "",
+    application_date: "",
+    applied_at: "",
+  });
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "", status: "sent" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
@@ -1523,17 +1690,29 @@ export default function App() {
     }
 
     const { data: jobsData, error: jobsError } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
+    const { data: applicationsData, error: applicationsError } = await supabase
+      .from("applications")
+      .select("*, profiles(full_name, email)")
+      .order("created_at", { ascending: false });
+
     if (jobsError && !isRowLevelSecurityError(jobsError) && !isMissingRelationError(jobsError)) throw jobsError;
-    setJobs((jobsData || []) as any[]);
+    if (applicationsError && !isRowLevelSecurityError(applicationsError) && !isMissingRelationError(applicationsError)) throw applicationsError;
+
+    setJobs(
+      buildCanonicalAdminJobs(
+        (jobsData || []) as any[],
+        (applicationsData || []) as any[],
+      ),
+    );
   };
 
   const fetchApplications = async () => {
     const { data, error } = await supabase
       .from("applications")
-      .select("*, profiles!inner(*), jobs!inner(*)")
+      .select("*, profiles(*), jobs(*)")
       .order("created_at", { ascending: false });
     if (error) throw error;
-    setApplications(data || []);
+    setApplications(dedupeAdminApplications(data || []));
   };
 
   const fetchSavedJobs = async () => {
@@ -1713,7 +1892,7 @@ export default function App() {
 
       if (response.ok) {
         const payload = await response.json();
-        setApplications(payload.applications || []);
+        setApplications(dedupeAdminApplications(payload.applications || []));
         setTrackerInterviews(payload.interviews || []);
         setTrackerFollowUps(payload.followUps || []);
         setTrackerContacts(payload.contacts || []);
@@ -1811,7 +1990,7 @@ export default function App() {
     const firstError = results.find((result) => result.error)?.error;
     if (firstError) throw firstError;
 
-    setApplications(applicationsResult.data || []);
+    setApplications(dedupeAdminApplications(applicationsResult.data || []));
     setTrackerInterviews(interviewsResult.data || []);
     setTrackerFollowUps(followUpsResult.data || []);
     setTrackerContacts(contactsResult.data || []);
@@ -2159,9 +2338,9 @@ export default function App() {
       const payload = {
         title: jobForm.title,
         company: jobForm.company,
-        location: jobForm.location,
+        location: jobForm.location || "Australia",
         salary: jobForm.salary || "Not disclosed",
-        job_type: jobForm.job_type,
+        job_type: jobForm.job_type || "Full-time",
         job_link: jobForm.job_link.trim(),
         description: jobForm.description.trim() || `${jobForm.title} role at ${jobForm.company}.`,
         tags: jobForm.tags.split(",").map((t) => t.trim()).filter(Boolean)
@@ -2176,18 +2355,30 @@ export default function App() {
             (entry.user_id === jobForm.user_id && entry.job_id === jobId)
           );
         });
-        const trackerStatus = existingSavedJob?.status || "saved";
+        const existingStatus = String(existingSavedJob?.status || "").trim().toLowerCase();
+        const trackerStatus = existingStatus && existingStatus !== "saved" ? existingSavedJob.status : "applied";
+        const trackerStage =
+          String(existingSavedJob?.current_stage || "").trim() && String(existingSavedJob?.current_stage || "").trim().toLowerCase() !== "saved"
+            ? existingSavedJob.current_stage
+            : trackerStatus;
         const trackerPayload = {
           ...(applicationId ? { id: applicationId } : {}),
           user_id: jobForm.user_id,
           client_id: jobForm.user_id,
           job_id: jobId,
           status: trackerStatus,
-          current_stage: existingSavedJob?.current_stage || trackerStatus,
-          is_saved: true,
+          current_stage: trackerStage,
+          is_saved: false,
           is_active: !["hired", "rejected", "withdrawn", "closed"].includes(trackerStatus),
-          application_date: existingSavedJob?.application_date || existingSavedJob?.created_at || new Date().toISOString(),
-          applied_at: existingSavedJob?.applied_at || null,
+          application_date:
+            jobForm.application_date ||
+            existingSavedJob?.application_date ||
+            existingSavedJob?.created_at ||
+            new Date().toISOString(),
+          applied_at:
+            jobForm.applied_at ||
+            existingSavedJob?.applied_at ||
+            new Date().toISOString(),
           company_name: payload.company,
           job_title: payload.title,
           job_location: payload.location,
@@ -2197,6 +2388,8 @@ export default function App() {
           work_type: payload.location.toLowerCase().includes("remote") ? "Remote" : "On-site",
           employment_type: payload.job_type,
           job_description: payload.description,
+          before_screenshot_url: jobForm.before_screenshot_url || existingSavedJob?.before_screenshot_url || "",
+          after_screenshot_url: jobForm.after_screenshot_url || existingSavedJob?.after_screenshot_url || "",
           created_by_admin_id: user?.id || "admin",
         };
         try {
@@ -3713,7 +3906,25 @@ export default function App() {
       twitter_url: "",
       subscription_plan: "free",
     });
-    setJobForm({ id: "", title: "", company: "", location: "", salary: "", job_type: "Full-time", description: "", tags: "", job_link: "", user_id: defaultSavedJobUserId, application_id: "" });
+    setJobForm({
+      id: "",
+      title: "",
+      company: "",
+      location: "",
+      salary: "",
+      job_type: "Full-time",
+      description: "",
+      tags: "",
+      job_link: "",
+      user_id: defaultSavedJobUserId,
+      application_id: "",
+      status: "applied",
+      current_stage: "applied",
+      before_screenshot_url: "",
+      after_screenshot_url: "",
+      application_date: "",
+      applied_at: "",
+    });
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "", status: "sent" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
@@ -3816,6 +4027,12 @@ export default function App() {
         job_link: item.job_link || "",
         user_id: item.user_id || item.client_id || "",
         application_id: item.application_id ? String(item.application_id) : "",
+        status: item.status || "applied",
+        current_stage: item.current_stage || item.status || "applied",
+        before_screenshot_url: item.before_screenshot_url || "",
+        after_screenshot_url: item.after_screenshot_url || "",
+        application_date: item.application_date || "",
+        applied_at: item.applied_at || "",
       });
     } else if (type === "plan") {
       setPlanForm({ id: item.id, name: item.name, price: item.price, features: item.features?.join(", ") || "" });
@@ -3883,9 +4100,12 @@ export default function App() {
 
   const filteredJobs = jobs.filter((j) => {
     const query = searchQuery.toLowerCase();
-    const matchesSearch = j.title?.toLowerCase().includes(query) || j.company?.toLowerCase().includes(query) || j.location?.toLowerCase().includes(query);
-    if (filterType === "all") return matchesSearch;
-    return matchesSearch && j.job_type === filterType;
+    return (
+      j.title?.toLowerCase().includes(query) ||
+      j.company?.toLowerCase().includes(query) ||
+      j.user_name?.toLowerCase?.().includes(query) ||
+      j.user_email?.toLowerCase?.().includes(query)
+    );
   });
 
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
@@ -4561,38 +4781,25 @@ export default function App() {
                 <Search size={18} />
                 <input
                   type="text"
-                  placeholder="Search openings by title, company, or city..."
+                  placeholder="Search openings by position, company, or user..."
                   className="form-input search-input"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
-              </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <Filter size={16} style={{ color: "var(--text-secondary)" }} />
-                <select className="form-input" style={{ width: "160px" }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
-                  <option value="all">All Types</option>
-                  <option value="Full-time">Full-time</option>
-                  <option value="Part-time">Part-time</option>
-                  <option value="Remote">Remote</option>
-                  <option value="Contract">Contract</option>
-                </select>
               </div>
             </div>
 
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Company</th><th>Job Title</th><th>Location</th><th>Salary</th><th>Type</th><th>Score Match</th><th>Actions</th></tr>
+                  <tr><th>Company</th><th>Position</th><th>User Name</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {filteredJobs.map((j) => (
                     <tr key={j.id}>
                       <td><strong>{j.company}</strong></td>
                       <td>{j.title}</td>
-                      <td>{j.location}</td>
-                      <td><span className="badge badge-success">{j.salary}</span></td>
-                      <td><span className="badge badge-info">{j.job_type}</span></td>
-                      <td><strong>{j.match_score}%</strong></td>
+                      <td>{j.user_name || "General opportunity"}</td>
                       <td>
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("job", j)}><Edit size={14} /></button>
@@ -4602,7 +4809,7 @@ export default function App() {
                     </tr>
                   ))}
                   {filteredJobs.length === 0 && (
-                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No opportunities listed matching search.</td></tr>
+                    <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No opportunities listed matching search.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -6250,46 +6457,6 @@ export default function App() {
                     <label className="form-label">Company Name</label>
                     <input type="text" className="form-input" required placeholder="e.g. Atlassian" value={jobForm.company} onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })} />
                   </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Location</label>
-                    <select className="form-input" required value={jobForm.location} onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })}>
-                      <option value="">Select Australia location</option>
-                      {getAustraliaLocationOptions(jobForm.location).map((location) => (
-                        <option key={location} value={location}>
-                          {location}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Salary Range</label>
-                    <input type="text" className="form-input" placeholder="e.g. AUD 90k - AUD 120k" value={jobForm.salary} onChange={(e) => setJobForm({ ...jobForm, salary: e.target.value })} />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Opportunity Type</label>
-                    <select className="form-input" value={jobForm.job_type} onChange={(e) => setJobForm({ ...jobForm, job_type: e.target.value })}>
-                      <option value="Full-time">Full-time</option>
-                      <option value="Part-time">Part-time</option>
-                      <option value="Remote">Remote</option>
-                      <option value="Contract">Contract</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Job Link</label>
-                    <input type="url" className="form-input" placeholder="https://..." value={jobForm.job_link} onChange={(e) => setJobForm({ ...jobForm, job_link: e.target.value })} />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Tags (comma separated)</label>
-                  <input type="text" className="form-input" placeholder="React, Node, TypeScript" value={jobForm.tags} onChange={(e) => setJobForm({ ...jobForm, tags: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Opportunity Notes</label>
-                  <textarea rows={5} className="form-input" placeholder="Enter role details so the 9Jobs team can apply on behalf of candidates..." value={jobForm.description} onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>{jobForm.user_id ? "Save And Sync To App" : "Save Opportunity"}</button>
               </form>

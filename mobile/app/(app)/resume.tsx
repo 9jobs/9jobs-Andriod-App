@@ -60,6 +60,17 @@ export default function ResumeScreen() {
     formatting: 0,
     experience: 0,
     impactVerbs: 0,
+    atsScore: 0,
+    roleSpecificScore: 0,
+    missingKeywords: [] as string[],
+    skillGapAnalysis: [] as string[],
+    formattingIssues: [] as string[],
+    grammarSuggestions: [] as string[],
+    achievementRewriting: [] as Array<{ original: string; rewritten: string }>,
+    resumeVersionComparison: "",
+    jobDescriptionCompatibility: 0,
+    recruiterReadabilityScore: 0,
+    australianResumeComplianceCheck: { compliant: true, issues: [] as string[] },
   });
 
   const uploadResumeMutation = useUploadResumeMutation();
@@ -105,23 +116,7 @@ export default function ResumeScreen() {
     outputRange: [6, 172],
   });
 
-  // Animate metrics progress bars
-  const barWidth1 = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0%", `${analysisMetrics.keywords}%`],
-  });
-  const barWidth2 = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0%", `${analysisMetrics.formatting}%`],
-  });
-  const barWidth3 = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0%", `${analysisMetrics.experience}%`],
-  });
-  const barWidth4 = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0%", `${analysisMetrics.impactVerbs}%`],
-  });
+  // Progress bar widths are dynamically calculated frame-by-frame using progressVal state
 
   const startScan = () => {
     setIsScanning(true);
@@ -204,6 +199,17 @@ export default function ResumeScreen() {
           formatting: analysis.formatting,
           experience: analysis.experience,
           impactVerbs: analysis.impactVerbs,
+          atsScore: analysis.atsScore || 0,
+          roleSpecificScore: analysis.roleSpecificScore || 0,
+          missingKeywords: analysis.missingKeywords || [],
+          skillGapAnalysis: analysis.skillGapAnalysis || [],
+          formattingIssues: analysis.formattingIssues || [],
+          grammarSuggestions: analysis.grammarSuggestions || [],
+          achievementRewriting: analysis.achievementRewriting || [],
+          resumeVersionComparison: analysis.resumeVersionComparison || "",
+          jobDescriptionCompatibility: analysis.jobDescriptionCompatibility || 0,
+          recruiterReadabilityScore: analysis.recruiterReadabilityScore || 0,
+          australianResumeComplianceCheck: analysis.australianResumeComplianceCheck || { compliant: true, issues: [] },
         });
         setScoreTicker(analysis.atsScore);
         setMatchTicker(analysis.aiMatchScore);
@@ -227,7 +233,23 @@ export default function ResumeScreen() {
 
   useEffect(() => {
     if (snapshot?.resumeAnalysis) {
-      setAnalysisMetrics(snapshot.resumeAnalysis);
+      setAnalysisMetrics({
+        keywords: snapshot.resumeAnalysis.keywords || 0,
+        formatting: snapshot.resumeAnalysis.formatting || 0,
+        experience: snapshot.resumeAnalysis.experience || 0,
+        impactVerbs: snapshot.resumeAnalysis.impactVerbs || 0,
+        atsScore: snapshot.resumeAnalysis.atsScore || 0,
+        roleSpecificScore: snapshot.resumeAnalysis.roleSpecificScore || 0,
+        missingKeywords: snapshot.resumeAnalysis.missingKeywords || [],
+        skillGapAnalysis: snapshot.resumeAnalysis.skillGapAnalysis || [],
+        formattingIssues: snapshot.resumeAnalysis.formattingIssues || [],
+        grammarSuggestions: snapshot.resumeAnalysis.grammarSuggestions || [],
+        achievementRewriting: snapshot.resumeAnalysis.achievementRewriting || [],
+        resumeVersionComparison: snapshot.resumeAnalysis.resumeVersionComparison || "",
+        jobDescriptionCompatibility: snapshot.resumeAnalysis.jobDescriptionCompatibility || 0,
+        recruiterReadabilityScore: snapshot.resumeAnalysis.recruiterReadabilityScore || 0,
+        australianResumeComplianceCheck: snapshot.resumeAnalysis.australianResumeComplianceCheck || { compliant: true, issues: [] },
+      });
     }
   }, [snapshot?.resumeAnalysis]);
 
@@ -365,15 +387,8 @@ export default function ResumeScreen() {
 
           {/* Detailed Breakdown List */}
           <View style={styles.metricsStack}>
-            {metrics.map((metric, index) => {
-              const animatedWidth =
-                index === 0
-                  ? barWidth1
-                  : index === 1
-                  ? barWidth2
-                  : index === 2
-                  ? barWidth3
-                  : barWidth4;
+            {metrics.map((metric) => {
+              const fillWidth = `${Math.round(progressVal * metric.value)}%`;
 
               return (
                 <View key={metric.label} style={styles.metricRow}>
@@ -386,7 +401,7 @@ export default function ResumeScreen() {
                     </Text>
                   </View>
                   <View style={styles.metricTrack}>
-                    <Animated.View style={[styles.metricFill, { width: animatedWidth }]} />
+                    <View style={[styles.metricFill, { width: fillWidth }]} />
                   </View>
                 </View>
               );
@@ -417,6 +432,198 @@ export default function ResumeScreen() {
               <Pressable style={styles.rescanButton} onPress={startScan}>
                 <Text style={styles.rescanButtonText}>Re-scan Resume</Text>
               </Pressable>
+            </View>
+          )}
+
+          {/* AI Resume Intelligence Dashboard */}
+          {!isScanning && (
+            <View style={styles.aiIntelContainer}>
+              <Text style={styles.aiIntelTitle}>AI Resume Intelligence</Text>
+              
+              {/* Score Progress Bars (Styled like Keywords, Formatting, etc.) */}
+              <View style={[styles.metricsStack, { marginBottom: spacing.md }]}>
+                {/* 1. ATS Score Detail */}
+                <View style={styles.metricRow}>
+                  <View style={styles.metricHeader}>
+                    <Text style={styles.metricLabel}>ATS Score Detail</Text>
+                    <Text style={styles.metricValue}>
+                      {isScanning
+                        ? `${Math.floor((scoreTicker / Math.max(atsScore, 1)) * (analysisMetrics.atsScore || scoreTicker))}%`
+                        : `${analysisMetrics.atsScore || scoreTicker}%`}
+                    </Text>
+                  </View>
+                  <View style={styles.metricTrack}>
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * (analysisMetrics.atsScore || scoreTicker))}%` }]} />
+                  </View>
+                </View>
+
+                {/* 2. Role-Specific Score */}
+                <View style={styles.metricRow}>
+                  <View style={styles.metricHeader}>
+                    <Text style={styles.metricLabel}>Role-Specific Score</Text>
+                    <Text style={styles.metricValue}>
+                      {isScanning
+                        ? `${Math.floor((scoreTicker / Math.max(atsScore, 1)) * analysisMetrics.roleSpecificScore)}%`
+                        : `${analysisMetrics.roleSpecificScore}%`}
+                    </Text>
+                  </View>
+                  <View style={styles.metricTrack}>
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.roleSpecificScore)}%` }]} />
+                  </View>
+                </View>
+
+                {/* 9. JD Compatibility */}
+                <View style={styles.metricRow}>
+                  <View style={styles.metricHeader}>
+                    <Text style={styles.metricLabel}>Job Description Compatibility</Text>
+                    <Text style={styles.metricValue}>
+                      {isScanning
+                        ? `${Math.floor((scoreTicker / Math.max(atsScore, 1)) * analysisMetrics.jobDescriptionCompatibility)}%`
+                        : `${analysisMetrics.jobDescriptionCompatibility}%`}
+                    </Text>
+                  </View>
+                  <View style={styles.metricTrack}>
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.jobDescriptionCompatibility)}%` }]} />
+                  </View>
+                </View>
+
+                {/* 10. Recruiter Readability Score */}
+                <View style={styles.metricRow}>
+                  <View style={styles.metricHeader}>
+                    <Text style={styles.metricLabel}>Recruiter Readability Score</Text>
+                    <Text style={styles.metricValue}>
+                      {isScanning
+                        ? `${Math.floor((scoreTicker / Math.max(atsScore, 1)) * analysisMetrics.recruiterReadabilityScore)}%`
+                        : `${analysisMetrics.recruiterReadabilityScore}%`}
+                    </Text>
+                  </View>
+                  <View style={styles.metricTrack}>
+                    <View style={[styles.metricFill, { width: `${Math.round(progressVal * analysisMetrics.recruiterReadabilityScore)}%` }]} />
+                  </View>
+                </View>
+              </View>
+
+              {/* 11. Australian Resume Compliance Check */}
+              <View style={styles.complianceCard}>
+                <View style={styles.complianceHeader}>
+                  <Text style={styles.complianceTitle}>Australian Compliance Check</Text>
+                  <View style={[styles.complianceBadge, { backgroundColor: (analysisMetrics.australianResumeComplianceCheck?.compliant) ? "rgba(110, 231, 183, 0.18)" : "rgba(250, 204, 21, 0.18)" }]}>
+                    <Text style={[styles.complianceBadgeText, { color: (analysisMetrics.australianResumeComplianceCheck?.compliant) ? colors.accentDark : colors.warning }]}>
+                      {(analysisMetrics.australianResumeComplianceCheck?.compliant) ? "COMPLIANT" : "ACTION REQUIRED"}
+                    </Text>
+                  </View>
+                </View>
+                {analysisMetrics.australianResumeComplianceCheck?.issues && analysisMetrics.australianResumeComplianceCheck.issues.length > 0 ? (
+                  <View style={styles.bulletList}>
+                    {analysisMetrics.australianResumeComplianceCheck.issues.map((issue, idx) => (
+                      <View key={idx} style={styles.bulletItem}>
+                        <Text style={styles.bulletDot}>⚠️</Text>
+                        <Text style={styles.bulletText}>{issue}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.complianceSuccessText}>✓ Resume meets all standard Australian compliance criteria (no photo, no personal details, clean format).</Text>
+                )}
+              </View>
+
+              {/* 3. Missing Keywords */}
+              <View style={styles.aiDetailCard}>
+                <Text style={styles.cardSectionTitle}>Missing Keywords</Text>
+                {analysisMetrics.missingKeywords && analysisMetrics.missingKeywords.length > 0 ? (
+                  <View style={styles.keywordBadgeContainer}>
+                    {analysisMetrics.missingKeywords.map((kw, idx) => (
+                      <View key={idx} style={styles.keywordBadge}>
+                        <Text style={styles.keywordBadgeText}>+ {kw}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>No missing keywords detected. Resume is highly optimized!</Text>
+                )}
+              </View>
+
+              {/* 4. Skill-gap Analysis */}
+              <View style={styles.aiDetailCard}>
+                <Text style={styles.cardSectionTitle}>Skill-Gap Analysis</Text>
+                {analysisMetrics.skillGapAnalysis && analysisMetrics.skillGapAnalysis.length > 0 ? (
+                  <View style={styles.bulletList}>
+                    {analysisMetrics.skillGapAnalysis.map((gap, idx) => (
+                      <View key={idx} style={styles.bulletItem}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>{gap}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>No major skill gaps identified for your target roles.</Text>
+                )}
+              </View>
+
+              {/* 5. Formatting Issues */}
+              <View style={styles.aiDetailCard}>
+                <Text style={styles.cardSectionTitle}>Formatting Issues</Text>
+                {analysisMetrics.formattingIssues && analysisMetrics.formattingIssues.length > 0 ? (
+                  <View style={styles.bulletList}>
+                    {analysisMetrics.formattingIssues.map((issue, idx) => (
+                      <View key={idx} style={styles.bulletItem}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>{issue}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>No formatting issues detected. Layout looks clean!</Text>
+                )}
+              </View>
+
+              {/* 6. Grammar Suggestions */}
+              <View style={styles.aiDetailCard}>
+                <Text style={styles.cardSectionTitle}>Grammar & Language Suggestions</Text>
+                {analysisMetrics.grammarSuggestions && analysisMetrics.grammarSuggestions.length > 0 ? (
+                  <View style={styles.bulletList}>
+                    {analysisMetrics.grammarSuggestions.map((sug, idx) => (
+                      <View key={idx} style={styles.bulletItem}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>{sug}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>No grammatical errors or spelling issues found.</Text>
+                )}
+              </View>
+
+              {/* 7. Achievement Rewriting */}
+              <View style={styles.aiDetailCard}>
+                <Text style={styles.cardSectionTitle}>Achievement Rewriting Suggestions</Text>
+                {analysisMetrics.achievementRewriting && analysisMetrics.achievementRewriting.length > 0 ? (
+                  <View style={{ gap: spacing.md }}>
+                    {analysisMetrics.achievementRewriting.map((rewrite, idx) => (
+                      <View key={idx} style={styles.rewriteContainer}>
+                        <View style={styles.rewriteOriginal}>
+                          <Text style={styles.rewriteLabel}>Original</Text>
+                          <Text style={styles.rewriteTextOriginal}>"{rewrite.original}"</Text>
+                        </View>
+                        <View style={styles.rewriteSuggested}>
+                          <Text style={[styles.rewriteLabel, { color: colors.accentDark }]}>Suggested AI Rewrite</Text>
+                          <Text style={styles.rewriteTextSuggested}>"{rewrite.rewritten}"</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text style={styles.emptyText}>Your achievements are already written in high-impact action-oriented language.</Text>
+                )}
+              </View>
+
+              {/* 8. Resume Version Comparison */}
+              <View style={styles.aiDetailCard}>
+                <Text style={styles.cardSectionTitle}>Resume Version & Standard Comparison</Text>
+                <Text style={styles.comparisonBody}>
+                  {analysisMetrics.resumeVersionComparison || "Comparison information will load after scanning your resume."}
+                </Text>
+              </View>
             </View>
           )}
         </>
@@ -1081,5 +1288,169 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     paddingHorizontal: spacing.xl,
     marginTop: spacing.md,
+  },
+  aiIntelContainer: {
+    marginTop: spacing.md,
+    gap: spacing.md,
+  },
+  aiIntelTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.text,
+    letterSpacing: -0.3,
+    marginBottom: spacing.xs,
+  },
+  aiIntelRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  aiIntelMetricCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: 6,
+    ...shadows.card,
+  },
+  aiIntelMetricLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.mutedText,
+  },
+  aiIntelMetricValue: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  aiIntelProgressBg: {
+    height: 4,
+    backgroundColor: colors.border,
+    borderRadius: 2,
+    overflow: "hidden",
+    marginTop: 4,
+  },
+  aiIntelProgressFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
+  complianceCard: {
+    backgroundColor: colors.darkCard || colors.dark,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  complianceHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  complianceTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  complianceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+  },
+  complianceBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  bulletList: {
+    gap: 8,
+  },
+  bulletItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  bulletDot: {
+    fontSize: 14,
+    color: colors.accent,
+    marginTop: -1,
+  },
+  bulletText: {
+    fontSize: 13,
+    color: colors.mutedText,
+    lineHeight: 18,
+    flex: 1,
+  },
+  complianceSuccessText: {
+    fontSize: 13,
+    color: colors.accent,
+    lineHeight: 18,
+  },
+  aiDetailCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...shadows.card,
+  },
+  cardSectionTitle: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: colors.text,
+  },
+  keywordBadgeContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  keywordBadge: {
+    backgroundColor: colors.chipMuted,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+  },
+  keywordBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: colors.mutedText,
+    fontStyle: "italic",
+  },
+  rewriteContainer: {
+    backgroundColor: colors.surfaceMuted || "#FCFBF7",
+    borderRadius: radii.sm,
+    padding: spacing.sm,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  rewriteOriginal: {
+    gap: 2,
+  },
+  rewriteSuggested: {
+    gap: 2,
+  },
+  rewriteLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: colors.mutedText,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  rewriteTextOriginal: {
+    fontSize: 13,
+    color: colors.subtleText,
+    fontStyle: "italic",
+  },
+  rewriteTextSuggested: {
+    fontSize: 13.5,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  comparisonBody: {
+    fontSize: 13,
+    color: colors.mutedText,
+    lineHeight: 19,
   },
 });

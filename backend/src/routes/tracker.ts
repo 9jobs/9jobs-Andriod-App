@@ -29,6 +29,16 @@ type ResumeAnalysis = {
   impactVerbs: number;
   summary: string;
   suggestions: string[];
+  roleSpecificScore: number;
+  missingKeywords: string[];
+  skillGapAnalysis: string[];
+  formattingIssues: string[];
+  grammarSuggestions: string[];
+  achievementRewriting: Array<{ original: string; rewritten: string }>;
+  resumeVersionComparison: string;
+  jobDescriptionCompatibility: number;
+  recruiterReadabilityScore: number;
+  australianResumeComplianceCheck: { compliant: boolean; issues: string[] };
 };
 
 function sanitizeAttachmentName(fileName: string) {
@@ -139,6 +149,124 @@ function normalizeApplicationPayload(application: any) {
   };
 }
 
+function normalizeRolePart(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function getApplicationTimestamp(application: any) {
+  return new Date(
+    application?.application_date ||
+      application?.applied_at ||
+      application?.updated_at ||
+      application?.created_at ||
+      0,
+  ).getTime();
+}
+
+function getApplicationRichnessScore(application: any) {
+  const before = String(application?.before_screenshot_url || "").trim();
+  const after = String(application?.after_screenshot_url || "").trim();
+  const title = String(application?.job_title || "").trim();
+  const company = String(application?.company_name || "").trim();
+  const location = String(application?.job_location || "").trim();
+  const salary = String(application?.salary_range || "").trim();
+  const appliedAt = String(application?.applied_at || "").trim();
+  const status = normalizeRolePart(application?.status);
+
+  return (
+    (before ? 50 : 0) +
+    (after ? 50 : 0) +
+    (title ? 10 : 0) +
+    (company ? 10 : 0) +
+    (location ? 5 : 0) +
+    (salary ? 5 : 0) +
+    (appliedAt ? 5 : 0) +
+    (status && status !== "saved" ? 5 : 0)
+  );
+}
+
+function buildApplicationRoleKey(application: any) {
+  return [
+    normalizeRolePart(application?.user_id || application?.client_id),
+    normalizeRolePart(application?.job_title),
+    normalizeRolePart(application?.company_name),
+    normalizeRolePart(application?.job_location),
+    normalizeRolePart(application?.employment_type || application?.work_type),
+  ].join("|");
+}
+
+function buildJobRoleKey(job: any) {
+  return [
+    normalizeRolePart(job?.title),
+    normalizeRolePart(job?.company),
+    normalizeRolePart(job?.location),
+    normalizeRolePart(job?.job_type),
+  ].join("|");
+}
+
+function choosePreferredApplication(left: any, right: any) {
+  const leftScore = getApplicationRichnessScore(left);
+  const rightScore = getApplicationRichnessScore(right);
+  if (rightScore !== leftScore) {
+    return rightScore > leftScore ? right : left;
+  }
+
+  return getApplicationTimestamp(right) > getApplicationTimestamp(left) ? right : left;
+}
+
+function mergeApplicationRecords(base: any, supplement: any) {
+  const preferred = choosePreferredApplication(base, supplement);
+  const fallback = preferred === base ? supplement : base;
+
+  return {
+    ...fallback,
+    ...preferred,
+    job_title: String(preferred?.job_title || fallback?.job_title || "").trim(),
+    company_name: String(preferred?.company_name || fallback?.company_name || "").trim(),
+    job_location: String(preferred?.job_location || fallback?.job_location || "").trim(),
+    salary_range: String(preferred?.salary_range || fallback?.salary_range || "").trim(),
+    employment_type: String(preferred?.employment_type || fallback?.employment_type || "").trim(),
+    work_type: String(preferred?.work_type || fallback?.work_type || "").trim(),
+    job_description: String(preferred?.job_description || fallback?.job_description || "").trim(),
+    source_url: String(preferred?.source_url || fallback?.source_url || "").trim(),
+    before_screenshot_url:
+      String(preferred?.before_screenshot_url || "").trim() ||
+      String(fallback?.before_screenshot_url || "").trim(),
+    after_screenshot_url:
+      String(preferred?.after_screenshot_url || "").trim() ||
+      String(fallback?.after_screenshot_url || "").trim(),
+    applied_at: preferred?.applied_at || fallback?.applied_at || null,
+    application_date: preferred?.application_date || fallback?.application_date || null,
+    updated_at: preferred?.updated_at || fallback?.updated_at || null,
+    created_at: preferred?.created_at || fallback?.created_at || null,
+  };
+}
+
+function dedupeApplicationsByRole(applications: any[]) {
+  const applicationsByKey = new Map<string, any>();
+
+  for (const application of applications) {
+    const roleKey = buildApplicationRoleKey(application);
+    const fallbackKey = `${normalizeRolePart(application?.user_id || application?.client_id)}|job:${normalizeRolePart(application?.job_id)}`;
+    const key = roleKey.replace(/\|/g, "") ? roleKey : fallbackKey;
+    const existing = applicationsByKey.get(key);
+
+    if (!existing) {
+      applicationsByKey.set(key, application);
+      continue;
+    }
+
+    applicationsByKey.set(key, mergeApplicationRecords(existing, application));
+  }
+
+  return Array.from(applicationsByKey.values()).sort(
+    (left, right) => getApplicationTimestamp(right) - getApplicationTimestamp(left),
+  );
+}
+
 function mergeSavedJobEntries({
   savedJobsData,
   applicationsData,
@@ -150,6 +278,7 @@ function mergeSavedJobEntries({
   profilesData: any[];
   jobsData: any[];
 }) {
+  const canonicalApplications = dedupeApplicationsByRole(applicationsData);
   const profileMap = new Map(profilesData.map((profile) => [profile.id, profile]));
   const jobMap = new Map(jobsData.map((job) => [job.id, job]));
   const entryMap = new Map<string, any>();
@@ -159,7 +288,7 @@ function mergeSavedJobEntries({
     const job = jobMap.get(row.job_id) || null;
     const profile = profileMap.get(row.user_id) || null;
     const linkedApplication =
-      applicationsData.find((application) => (application.user_id || application.client_id) === row.user_id && application.job_id === row.job_id) || null;
+      canonicalApplications.find((application) => (application.user_id || application.client_id) === row.user_id && application.job_id === row.job_id) || null;
 
     entryMap.set(compositeKey, {
       id: linkedApplication?.id ? String(linkedApplication.id) : compositeKey,
@@ -182,10 +311,12 @@ function mergeSavedJobEntries({
       employment_type: linkedApplication?.employment_type || job?.job_type || "Full-time",
       job_description: linkedApplication?.job_description || job?.description || "",
       source_url: linkedApplication?.source_url || job?.job_link || "",
+      before_screenshot_url: linkedApplication?.before_screenshot_url || "",
+      after_screenshot_url: linkedApplication?.after_screenshot_url || "",
     });
   }
 
-  for (const application of applicationsData) {
+  for (const application of canonicalApplications) {
     const isSaved = Boolean(application.is_saved) || application.status === "saved";
     if (!isSaved) continue;
 
@@ -215,6 +346,8 @@ function mergeSavedJobEntries({
       employment_type: application.employment_type || job?.job_type || "Full-time",
       job_description: application.job_description || job?.description || "",
       source_url: application.source_url || job?.job_link || "",
+      before_screenshot_url: application.before_screenshot_url || "",
+      after_screenshot_url: application.after_screenshot_url || "",
     });
   }
 
@@ -432,6 +565,38 @@ function parseGeminiResumeAnalysis(rawText: string): ResumeAnalysis {
       ? summary.slice(0, 600)
       : "Resume analyzed by Gemini for ATS readiness.",
     suggestions,
+
+    // New fields:
+    roleSpecificScore: clampScore(parsed.roleSpecificScore),
+    missingKeywords: Array.isArray(parsed.missingKeywords)
+      ? parsed.missingKeywords.map((item: unknown) => String(item).trim()).filter(Boolean)
+      : [],
+    skillGapAnalysis: Array.isArray(parsed.skillGapAnalysis)
+      ? parsed.skillGapAnalysis.map((item: unknown) => String(item).trim()).filter(Boolean)
+      : [],
+    formattingIssues: Array.isArray(parsed.formattingIssues)
+      ? parsed.formattingIssues.map((item: unknown) => String(item).trim()).filter(Boolean)
+      : [],
+    grammarSuggestions: Array.isArray(parsed.grammarSuggestions)
+      ? parsed.grammarSuggestions.map((item: unknown) => String(item).trim()).filter(Boolean)
+      : [],
+    achievementRewriting: Array.isArray(parsed.achievementRewriting)
+      ? parsed.achievementRewriting.map((item: any) => ({
+          original: String(item?.original || "").trim(),
+          rewritten: String(item?.rewritten || "").trim(),
+        })).filter((x: { original: string; rewritten: string }) => x.original && x.rewritten)
+      : [],
+    resumeVersionComparison: String(parsed.resumeVersionComparison || "").trim(),
+    jobDescriptionCompatibility: clampScore(parsed.jobDescriptionCompatibility),
+    recruiterReadabilityScore: clampScore(parsed.recruiterReadabilityScore),
+    australianResumeComplianceCheck: {
+      compliant: typeof parsed.australianResumeComplianceCheck?.compliant === "boolean"
+        ? parsed.australianResumeComplianceCheck.compliant
+        : true,
+      issues: Array.isArray(parsed.australianResumeComplianceCheck?.issues)
+        ? parsed.australianResumeComplianceCheck.issues.map((item: unknown) => String(item).trim()).filter(Boolean)
+        : [],
+    },
   };
 }
 
@@ -452,11 +617,29 @@ async function analyzeResumeWithGemini(base64: string, mimeType: string): Promis
           parts: [
             {
               text: [
-                "Act as a strict Applicant Tracking System resume auditor.",
+                "Act as a strict Applicant Tracking System resume auditor and career advisor.",
                 "Evaluate only the supplied resume. Do not invent experience or skills.",
-                "Score general ATS readiness when no job description is supplied.",
-                "Return JSON only with keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions.",
-                "All six scores must be integers from 0 to 100. suggestions must be an array of short actionable strings.",
+                "Score general ATS readiness and return the evaluation in strict JSON.",
+                "You must return a JSON object with the exact keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions, roleSpecificScore, missingKeywords, skillGapAnalysis, formattingIssues, grammarSuggestions, achievementRewriting, resumeVersionComparison, jobDescriptionCompatibility, recruiterReadabilityScore, australianResumeComplianceCheck.",
+                "The values must follow this schema:",
+                "atsScore: integer 0-100",
+                "aiMatchScore: integer 0-100",
+                "keywords: integer 0-100",
+                "formatting: integer 0-100",
+                "experience: integer 0-100",
+                "impactVerbs: integer 0-100",
+                "summary: short executive summary string (max 600 chars)",
+                "suggestions: array of short actionable strings",
+                "roleSpecificScore: integer 0-100 based on targeting roles",
+                "missingKeywords: array of string keywords missing from resume",
+                "skillGapAnalysis: array of string gaps found in candidate's skills",
+                "formattingIssues: array of string design/format flaws detected",
+                "grammarSuggestions: array of string grammar/spelling/phrasing corrections",
+                "achievementRewriting: array of objects with 'original' (string) and 'rewritten' (string) fields",
+                "resumeVersionComparison: string comparing this layout/version to industry standards",
+                "jobDescriptionCompatibility: integer 0-100 compatibility rating",
+                "recruiterReadabilityScore: integer 0-100 score indicating recruiter review ease",
+                "australianResumeComplianceCheck: object with keys 'compliant' (boolean) and 'issues' (array of strings, e.g., removal of photo, date of birth, localized terms)."
               ].join(" "),
             },
             { inlineData: { mimeType, data: base64 } },
@@ -500,6 +683,41 @@ async function findLatestSupabaseApplicationId(userId: string, jobId: string) {
   }
 
   return data?.[0]?.id ? Number(data[0].id) : null;
+}
+
+async function findEquivalentSupabaseApplicationId(application: any) {
+  const userId = String(application?.user_id || "").trim();
+  if (!userId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("applications")
+    .select("id, user_id, client_id, job_id, job_title, company_name, job_location, employment_type, work_type, salary_range, before_screenshot_url, after_screenshot_url, application_date, applied_at, updated_at, created_at, status")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const targetKey = buildApplicationRoleKey(application);
+  const targetFallbackKey = `${normalizeRolePart(application?.user_id || application?.client_id)}|job:${normalizeRolePart(application?.job_id)}`;
+  const target = targetKey.replace(/\|/g, "") ? targetKey : targetFallbackKey;
+
+  const matching = (data || []).filter((candidate: any) => {
+    const roleKey = buildApplicationRoleKey(candidate);
+    const fallbackKey = `${normalizeRolePart(candidate?.user_id || candidate?.client_id)}|job:${normalizeRolePart(candidate?.job_id)}`;
+    const key = roleKey.replace(/\|/g, "") ? roleKey : fallbackKey;
+    return key === target;
+  });
+
+  if (matching.length === 0) {
+    return null;
+  }
+
+  const preferred = matching.reduce((best: any, current: any) => choosePreferredApplication(best, current));
+  return preferred?.id ? Number(preferred.id) : null;
 }
 
 function normalizePersonalInfoPayload(profile: any, fallbackUserId?: string, fallbackEmail?: string) {
@@ -1101,10 +1319,11 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
 
       const existingApplicationId = application.id
         ? Number(application.id)
-        : await findLatestSupabaseApplicationId(
+        : (await findEquivalentSupabaseApplicationId(normalizedApplication)) ??
+          (await findLatestSupabaseApplicationId(
             normalizedApplication.user_id,
             normalizedApplication.job_id,
-          );
+          ));
       const query = existingApplicationId
         ? supabase.from("applications").update(normalizedApplication).eq("id", existingApplicationId).select().single()
         : supabase.from("applications").insert([normalizedApplication]).select().single();
@@ -1236,7 +1455,7 @@ router.get("/admin/tracker/client-data", authMiddleware, async (req: Authenticat
     }
 
     return res.json({
-      applications: applicationsResult.data ?? [],
+      applications: dedupeApplicationsByRole((applicationsResult.data ?? []) as any[]),
       interviews: interviewsResult.data ?? [],
       followUps: followUpsResult.data ?? [],
       contacts: contactsResult.data ?? [],
@@ -1968,13 +2187,156 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
   }
 
   try {
-    const { data, error } = await supabase
-      .from("jobs")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+    const [jobsResult, applicationsResult, profilesResult] = await Promise.all([
+      supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+      supabase.from("applications").select("*").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, full_name, email"),
+    ]);
 
-    return res.json({ success: true, jobs: data ?? [] });
+    const firstError = [jobsResult, applicationsResult, profilesResult].find((result) => result.error)?.error;
+    if (firstError) throw firstError;
+
+    const profileMap = new Map(
+      ((profilesResult.data ?? []) as any[]).map((profile) => [String(profile.id || ""), profile]),
+    );
+    const canonicalApplications = dedupeApplicationsByRole((applicationsResult.data ?? []) as any[]);
+    const preferredApplicationByRole = new Map(
+      canonicalApplications.map((application) => [buildJobRoleKey({
+        title: application.job_title,
+        company: application.company_name,
+        location: application.job_location,
+        job_type: application.employment_type || application.work_type,
+      }), application]),
+    );
+
+    const jobsByRole = new Map<string, any>();
+
+    for (const job of (jobsResult.data ?? []) as any[]) {
+      const normalizedJob = {
+        ...job,
+        title: String(job.title || "").trim(),
+        company: String(job.company || "").trim(),
+        location: String(job.location || "").trim(),
+        salary: String(job.salary || "").trim(),
+        description: String(job.description || "").trim(),
+      };
+      const roleKey = buildJobRoleKey(normalizedJob) || `job:${String(job.id || "")}`;
+      const linkedApplication = preferredApplicationByRole.get(roleKey) || null;
+      const existing = jobsByRole.get(roleKey);
+      const linkedProfile = profileMap.get(String(linkedApplication?.user_id || linkedApplication?.client_id || ""));
+      const enrichedJob = {
+        ...normalizedJob,
+        user_id: linkedApplication?.user_id || linkedApplication?.client_id || "",
+        client_id: linkedApplication?.client_id || linkedApplication?.user_id || "",
+        user_name: String(linkedProfile?.full_name || "").trim(),
+        user_email: String(linkedProfile?.email || "").trim(),
+        application_id: linkedApplication?.id ? String(linkedApplication.id) : "",
+        status: linkedApplication?.status || "",
+        current_stage: linkedApplication?.current_stage || linkedApplication?.status || "",
+        before_screenshot_url: linkedApplication?.before_screenshot_url || "",
+        after_screenshot_url: linkedApplication?.after_screenshot_url || "",
+        application_date: linkedApplication?.application_date || "",
+        applied_at: linkedApplication?.applied_at || "",
+      };
+
+      if (!existing) {
+        jobsByRole.set(roleKey, enrichedJob);
+        continue;
+      }
+
+      const existingLinkedApplication = existing.application_id ? preferredApplicationByRole.get(roleKey) : null;
+      const preferred = linkedApplication
+        ? (existingLinkedApplication ? mergeApplicationRecords(existingLinkedApplication, linkedApplication) : linkedApplication)
+        : existingLinkedApplication;
+
+      jobsByRole.set(roleKey, {
+        ...existing,
+        ...enrichedJob,
+        id: existing.id || enrichedJob.id,
+        title: existing.title || enrichedJob.title,
+        company: existing.company || enrichedJob.company,
+        location: existing.location || enrichedJob.location,
+        salary: existing.salary || enrichedJob.salary,
+        job_type: existing.job_type || enrichedJob.job_type,
+        description: existing.description || enrichedJob.description,
+        user_id: preferred?.user_id || preferred?.client_id || existing.user_id || enrichedJob.user_id || "",
+        client_id: preferred?.client_id || preferred?.user_id || existing.client_id || enrichedJob.client_id || "",
+        user_name:
+          String(profileMap.get(String(preferred?.user_id || preferred?.client_id || existing.user_id || enrichedJob.user_id || ""))?.full_name || "").trim() ||
+          existing.user_name ||
+          enrichedJob.user_name ||
+          "",
+        user_email:
+          String(profileMap.get(String(preferred?.user_id || preferred?.client_id || existing.user_id || enrichedJob.user_id || ""))?.email || "").trim() ||
+          existing.user_email ||
+          enrichedJob.user_email ||
+          "",
+        application_id: preferred?.id ? String(preferred.id) : existing.application_id || enrichedJob.application_id || "",
+        status: preferred?.status || existing.status || enrichedJob.status || "",
+        current_stage: preferred?.current_stage || preferred?.status || existing.current_stage || enrichedJob.current_stage || "",
+        before_screenshot_url:
+          String(preferred?.before_screenshot_url || "").trim() ||
+          existing.before_screenshot_url ||
+          enrichedJob.before_screenshot_url ||
+          "",
+        after_screenshot_url:
+          String(preferred?.after_screenshot_url || "").trim() ||
+          existing.after_screenshot_url ||
+          enrichedJob.after_screenshot_url ||
+          "",
+        application_date: preferred?.application_date || existing.application_date || enrichedJob.application_date || "",
+        applied_at: preferred?.applied_at || existing.applied_at || enrichedJob.applied_at || "",
+      });
+    }
+
+    for (const application of canonicalApplications) {
+      const linkedProfile = profileMap.get(String(application.user_id || application.client_id || ""));
+      const roleKey = buildJobRoleKey({
+        title: application.job_title,
+        company: application.company_name,
+        location: application.job_location,
+        job_type: application.employment_type || application.work_type,
+      }) || `application:${String(application.id || "")}`;
+
+      if (jobsByRole.has(roleKey)) {
+        continue;
+      }
+
+      jobsByRole.set(roleKey, {
+        id: String(application.job_id || application.id || roleKey),
+        title: String(application.job_title || "Untitled Role").trim(),
+        company: String(application.company_name || "9Jobs").trim(),
+        location: String(application.job_location || "Australia").trim(),
+        salary: String(application.salary_range || "Not disclosed").trim(),
+        job_type: String(application.employment_type || application.work_type || "Full-time").trim(),
+        job_link: String(application.source_url || "").trim(),
+        posted_at: application.application_date || application.applied_at || application.created_at || "Just now",
+        match_score: 80,
+        tags: [],
+        description:
+          String(application.job_description || "").trim() ||
+          `${String(application.job_title || "This role").trim()} at ${String(application.company_name || "the company").trim()}.`,
+        user_id: application.user_id || application.client_id || "",
+        client_id: application.client_id || application.user_id || "",
+        user_name: String(linkedProfile?.full_name || "").trim(),
+        user_email: String(linkedProfile?.email || "").trim(),
+        application_id: application.id ? String(application.id) : "",
+        status: application.status || "",
+        current_stage: application.current_stage || application.status || "",
+        before_screenshot_url: application.before_screenshot_url || "",
+        after_screenshot_url: application.after_screenshot_url || "",
+        application_date: application.application_date || "",
+        applied_at: application.applied_at || "",
+      });
+    }
+
+    const jobs = Array.from(jobsByRole.values()).sort((left, right) =>
+      String(right.updated_at || right.created_at || right.posted_at || "").localeCompare(
+        String(left.updated_at || left.created_at || left.posted_at || ""),
+      ),
+    );
+
+    return res.json({ success: true, jobs });
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/tracker/jobs failed:", err);
     return res.status(500).json({ error: err.message || "Failed to load tracker opportunities" });
@@ -2652,6 +3014,17 @@ router.post("/mobile/resumes/analyze", authMiddleware, async (req: Authenticated
         experience: analysis.experience,
         impactVerbs: analysis.impactVerbs,
         aiMatchScore: analysis.aiMatchScore,
+        atsScore: analysis.atsScore,
+        roleSpecificScore: analysis.roleSpecificScore,
+        missingKeywords: analysis.missingKeywords,
+        skillGapAnalysis: analysis.skillGapAnalysis,
+        formattingIssues: analysis.formattingIssues,
+        grammarSuggestions: analysis.grammarSuggestions,
+        achievementRewriting: analysis.achievementRewriting,
+        resumeVersionComparison: analysis.resumeVersionComparison,
+        jobDescriptionCompatibility: analysis.jobDescriptionCompatibility,
+        recruiterReadabilityScore: analysis.recruiterReadabilityScore,
+        australianResumeComplianceCheck: analysis.australianResumeComplianceCheck,
       },
     });
 
@@ -2866,11 +3239,68 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       }
     }
 
+    const canonicalApplications = dedupeApplicationsByRole((applicationsResult.data ?? []) as any[]);
+    const canonicalJobsByRole = new Map<string, any>();
+
+    for (const job of (jobsResult.data ?? []) as any[]) {
+      const normalizedJob = {
+        ...job,
+        title: String(job.title || "").trim(),
+        company: String(job.company || "").trim(),
+        location: String(job.location || "").trim(),
+        salary: String(job.salary || "").trim(),
+        job_type: String(job.job_type || "").trim(),
+        description: String(job.description || "").trim(),
+      };
+      const roleKey = buildJobRoleKey(normalizedJob) || `job:${String(job.id || "")}`;
+      if (!canonicalJobsByRole.has(roleKey)) {
+        canonicalJobsByRole.set(roleKey, normalizedJob);
+      }
+    }
+
+    for (const application of canonicalApplications) {
+      const roleKey = buildJobRoleKey({
+        title: application.job_title,
+        company: application.company_name,
+        location: application.job_location,
+        job_type: application.employment_type || application.work_type,
+      }) || `application:${String(application.id || "")}`;
+      const existing = canonicalJobsByRole.get(roleKey);
+      if (existing) {
+        canonicalJobsByRole.set(roleKey, {
+          ...existing,
+          title: existing.title || String(application.job_title || "").trim(),
+          company: existing.company || String(application.company_name || "").trim(),
+          location: existing.location || String(application.job_location || "").trim(),
+          salary: existing.salary || String(application.salary_range || "").trim(),
+          job_type: existing.job_type || String(application.employment_type || application.work_type || "").trim(),
+          description: existing.description || String(application.job_description || "").trim(),
+        });
+        continue;
+      }
+
+      canonicalJobsByRole.set(roleKey, {
+        id: String(application.job_id || application.id || roleKey),
+        title: String(application.job_title || "Untitled Role").trim(),
+        company: String(application.company_name || "9Jobs").trim(),
+        location: String(application.job_location || "Australia").trim(),
+        salary: String(application.salary_range || "Not disclosed").trim(),
+        job_type: String(application.employment_type || application.work_type || "Full-time").trim(),
+        job_link: String(application.source_url || "").trim(),
+        posted_at: application.application_date || application.applied_at || application.created_at || "Just now",
+        match_score: 80,
+        tags: [],
+        description:
+          String(application.job_description || "").trim() ||
+          `${String(application.job_title || "This role").trim()} at ${String(application.company_name || "the company").trim()}.`,
+      });
+    }
+
     return res.json({
       userId: targetUserId,
       profile: resolvedProfile,
-      jobs: jobsResult.data ?? [],
-      applications: applicationsResult.data ?? [],
+      jobs: Array.from(canonicalJobsByRole.values()),
+      applications: canonicalApplications,
       savedJobs: savedJobsResult.data ?? [],
       categories: categoriesResult.data ?? [],
       messages: messagesResult.data ?? [],

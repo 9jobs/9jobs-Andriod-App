@@ -7,7 +7,6 @@ import { Screen } from "@/components/ui/Screen";
 import { colors, radii, spacing } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
-import { useApplyMutation } from "@/features/jobs/hooks";
 import { useJobFilters } from "@/features/jobs/useJobFilters";
 
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
@@ -23,25 +22,7 @@ export default function HomeScreen() {
   const profile = snapshot?.profile;
   const metrics = snapshot?.homeMetrics;
   const [searchQuery, setSearchQuery] = useState("");
-  const recommendedJobs = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    const jobs = snapshot?.jobs ?? [];
-
-    if (!normalizedQuery) {
-      return jobs.slice(0, 3);
-    }
-
-    return jobs
-      .filter((job) =>
-        [job.title, job.company, job.location, job.description, ...job.tags]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery),
-      )
-      .slice(0, 3);
-  }, [searchQuery, snapshot?.jobs]);
   const hasUnreadNotifications = snapshot?.notifications.some((item) => item.unread) ?? false;
-  const applyMutation = useApplyMutation();
 
   // 1. Calculate next upcoming interview
   const nextInterview = useMemo(() => {
@@ -321,63 +302,6 @@ export default function HomeScreen() {
               <View style={[styles.progressBarFill, { width: `${weeklyProgress.percentage}%` }]} />
             </View>
           </AnimatedPressable>
-        </View>
-      </FadeInView>
-
-      {/* 6. Recommended Roles Section */}
-      <FadeInView type="fade-up" delay={250}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recommended</Text>
-          <AnimatedPressable
-            onPress={() => router.push("/(app)/jobs/search" as never)}
-            scaleTo={0.96}
-          >
-            <Text style={styles.sectionAction}>See all →</Text>
-          </AnimatedPressable>
-        </View>
-
-        <View style={styles.jobStack}>
-          {recommendedJobs.map((job, idx) => (
-            <FadeInView key={job.id} type="fade-up" delay={280 + idx * 40}>
-              <View style={styles.recommendedCard}>
-                <View style={styles.cardTopRow}>
-                  <View style={styles.avatarCircle}>
-                    <Text style={styles.avatarLetter}>{job.company.charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={styles.cardCopy}>
-                    <Text style={styles.jobTitle}>{job.title}</Text>
-                    <Text style={styles.jobSubtitle}>
-                      {job.company} · {job.location}
-                    </Text>
-                  </View>
-                  <View style={styles.matchBadge}>
-                    <Text style={styles.matchText}>Match {job.matchScore}%</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardBottomRow}>
-                  <Text style={styles.salaryText}>
-                    {job.salary.split("/")[0]}
-                    <Text style={styles.salaryPeriod}>/yr</Text>
-                  </Text>
-                  <AnimatedPressable
-                    style={[styles.applyButton, job.isApplied && styles.appliedButton]}
-                    onPress={() => {
-                      if (!job.isApplied) {
-                        applyMutation.mutate(job.id);
-                      }
-                    }}
-                    disabled={job.isApplied || applyMutation.isPending}
-                    scaleTo={0.96}
-                  >
-                    <Text style={[styles.applyButtonText, job.isApplied && styles.appliedButtonText]}>
-                      {job.isApplied ? "Applied" : "Apply →"}
-                    </Text>
-                  </AnimatedPressable>
-                </View>
-              </View>
-            </FadeInView>
-          ))}
         </View>
       </FadeInView>
 

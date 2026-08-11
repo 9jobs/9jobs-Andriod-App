@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { DarkHeroCard, PremiumScaffold, SoftPanel } from "@/components/premium/PremiumScaffold";
@@ -12,12 +13,22 @@ export default function JobDetailScreen() {
   const apply = useApplyMutation();
   const toggleSave = useToggleSaveMutation();
 
+  useEffect(() => {
+    if (job?.isApplied) {
+      router.back();
+    }
+  }, [job?.isApplied]);
+
   if (!job) {
     return (
       <PremiumScaffold title="Job not found">
         <Text style={styles.title}>Job not found</Text>
       </PremiumScaffold>
     );
+  }
+
+  if (job.isApplied) {
+    return null;
   }
 
   return (

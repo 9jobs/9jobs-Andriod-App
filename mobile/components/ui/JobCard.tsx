@@ -16,9 +16,7 @@ export function JobCard({ job, onPress, onToggleSave }: JobCardProps) {
   return (
     <AnimatedPressable onPress={onPress} style={styles.card}>
       <View style={styles.topRow}>
-        <View style={styles.matchBadge}>
-          <Text style={styles.matchValue}>{job.matchScore}</Text>
-        </View>
+        <View />
         <Pressable onPress={onToggleSave} hitSlop={8}>
           <AppIcon
             name="saved"
@@ -31,7 +29,6 @@ export function JobCard({ job, onPress, onToggleSave }: JobCardProps) {
       <Text style={styles.company}>
         {job.company} • {job.location}
       </Text>
-      <Text style={styles.salary}>{job.salary}</Text>
       <View style={styles.tags}>
         {job.tags.map((tag) => (
           <Pill key={tag} label={tag} />
@@ -60,21 +57,8 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
-  },
-  matchBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  matchValue: {
-    ...typography.title,
-    fontSize: 15,
-    color: colors.text,
   },
   title: {
     ...typography.title,
@@ -84,11 +68,6 @@ const styles = StyleSheet.create({
   company: {
     ...typography.body,
     color: colors.mutedText,
-  },
-  salary: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: "700",
   },
   tags: {
     flexDirection: "row",

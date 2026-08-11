@@ -30,6 +30,11 @@ type ApplicationRow = {
   recruiter_email?: string | null;
   recruiter_phone?: string | null;
   hiring_manager_email?: string | null;
+  company_name?: string | null;
+  job_title?: string | null;
+  job_location?: string | null;
+  salary_range?: string | null;
+  job_description?: string | null;
   match_score?: number | null;
 };
 

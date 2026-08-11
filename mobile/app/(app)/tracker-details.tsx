@@ -111,17 +111,7 @@ export default function TrackerDetailsScreen() {
   }, [snapshot?.profile?.timezone]);
 
   const applicationsByJobId = useMemo(() => {
-    const mapped = new Map<string, {
-      id: number;
-      status?: string | null;
-      application_date?: string | null;
-      applied_at?: string | null;
-      created_at: string;
-      offer_received_at?: string | null;
-      hired_at?: string | null;
-      before_screenshot_url?: string | null;
-      after_screenshot_url?: string | null;
-    }>();
+    const mapped = new Map<string, MobileSyncSnapshot["rawApplications"][number]>();
     (snapshot?.rawApplications ?? []).forEach((application) => {
       mapped.set(application.job_id, application);
     });
@@ -537,6 +527,9 @@ export default function TrackerDetailsScreen() {
         <View style={styles.cards}>
           {filteredJobs.map((job, idx) => {
             const rawApplication = applicationsByJobId.get(job.id);
+            const jobTitle = rawApplication?.job_title?.trim() || job.title || "Job Application";
+            const companyName = rawApplication?.company_name?.trim() || job.company || "Company";
+            const locationName = rawApplication?.job_location?.trim() || job.location || "Australia";
             const syncedDate =
               rawApplication?.application_date ??
               rawApplication?.applied_at ??
@@ -567,8 +560,8 @@ export default function TrackerDetailsScreen() {
                 <View style={styles.detailCard}>
                   <View style={styles.detailHeader}>
                     <View style={styles.detailCopy}>
-                      <Text style={styles.detailTitle}>{job.title}</Text>
-                      <Text style={styles.detailMeta}>{job.company} • {job.location}</Text>
+                      <Text style={styles.detailTitle}>{jobTitle}</Text>
+                      <Text style={styles.detailMeta}>{companyName} • {locationName}</Text>
                     </View>
                     <View
                       style={[
@@ -588,14 +581,12 @@ export default function TrackerDetailsScreen() {
                           job.status === "interview_completed" && styles.interviewCompletedBadgeText,
                         ]}
                       >
-                        {job.status === "interview_completed" ? "Interview Completed" : job.status}
+                        {job.status === "interview_completed" ? "Interview Completed" : formatStatusLabel(job.status)}
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.factGrid}>
-                    <FactPill label="Match" value={`${job.matchScore ?? 0}%`} />
-                    <FactPill label="Salary" value={job.salary || "N/A"} />
                     <FactPill label="Applied" value={syncedDate ? toTimezoneDateKey(syncedDate) : "Live"} />
                     {shouldShowScreenshots ? (
                       <FactPill
@@ -716,6 +707,18 @@ function BackHeader({ label }: { label: string }) {
       <Text style={styles.backText}>{label}</Text>
     </AnimatedPressable>
   );
+}
+
+function formatStatusLabel(status: string | null | undefined) {
+  const normalized = String(status || "live")
+    .replace(/[_-]+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return "Live";
+  }
+
+  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function FactPill({ label, value }: { label: string; value: string }) {

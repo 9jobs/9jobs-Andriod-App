@@ -416,6 +416,17 @@ export type MobileSyncSnapshot = {
     formatting: number;
     experience: number;
     impactVerbs: number;
+    atsScore?: number;
+    roleSpecificScore?: number;
+    missingKeywords?: string[];
+    skillGapAnalysis?: string[];
+    formattingIssues?: string[];
+    grammarSuggestions?: string[];
+    achievementRewriting?: Array<{ original: string; rewritten: string }>;
+    resumeVersionComparison?: string;
+    jobDescriptionCompatibility?: number;
+    recruiterReadabilityScore?: number;
+    australianResumeComplianceCheck?: { compliant: boolean; issues: string[] };
   };
   notifications: LiveNotification[];
   messages: LiveMessage[];
@@ -1028,6 +1039,17 @@ function buildSnapshotFromSource({
         formatting: Math.max(0, Math.min(100, Number(storedMetrics.formatting) || 0)),
         experience: Math.max(0, Math.min(100, Number(storedMetrics.experience) || 0)),
         impactVerbs: Math.max(0, Math.min(100, Number(storedMetrics.impactVerbs) || 0)),
+        atsScore: Math.max(0, Math.min(100, Number(storedMetrics.atsScore) || 0)),
+        roleSpecificScore: Math.max(0, Math.min(100, Number(storedMetrics.roleSpecificScore) || 0)),
+        missingKeywords: storedMetrics.missingKeywords || [],
+        skillGapAnalysis: storedMetrics.skillGapAnalysis || [],
+        formattingIssues: storedMetrics.formattingIssues || [],
+        grammarSuggestions: storedMetrics.grammarSuggestions || [],
+        achievementRewriting: storedMetrics.achievementRewriting || [],
+        resumeVersionComparison: storedMetrics.resumeVersionComparison || "",
+        jobDescriptionCompatibility: Math.max(0, Math.min(100, Number(storedMetrics.jobDescriptionCompatibility) || 0)),
+        recruiterReadabilityScore: Math.max(0, Math.min(100, Number(storedMetrics.recruiterReadabilityScore) || 0)),
+        australianResumeComplianceCheck: storedMetrics.australianResumeComplianceCheck || { compliant: true, issues: [] },
       };
     }
   } catch {
@@ -2858,6 +2880,16 @@ export type ResumeAnalysisResult = {
   resumeUrl: string;
   fileName: string;
   uploadedAt: string;
+  roleSpecificScore?: number;
+  missingKeywords?: string[];
+  skillGapAnalysis?: string[];
+  formattingIssues?: string[];
+  grammarSuggestions?: string[];
+  achievementRewriting?: Array<{ original: string; rewritten: string }>;
+  resumeVersionComparison?: string;
+  jobDescriptionCompatibility?: number;
+  recruiterReadabilityScore?: number;
+  australianResumeComplianceCheck?: { compliant: boolean; issues: string[] };
 };
 
 export async function uploadAndAnalyzeResume(
@@ -2939,6 +2971,23 @@ export async function uploadAndAnalyzeResume(
     current.trackerSummary.atsResumeScore = payload.atsScore;
     current.trackerSummary.aiMatchScore = payload.aiMatchScore;
   }
+  current.resumeAnalysis = {
+    keywords: payload.keywords || 0,
+    formatting: payload.formatting || 0,
+    experience: payload.experience || 0,
+    impactVerbs: payload.impactVerbs || 0,
+    atsScore: payload.atsScore || 0,
+    roleSpecificScore: payload.roleSpecificScore || 0,
+    missingKeywords: payload.missingKeywords || [],
+    skillGapAnalysis: payload.skillGapAnalysis || [],
+    formattingIssues: payload.formattingIssues || [],
+    grammarSuggestions: payload.grammarSuggestions || [],
+    achievementRewriting: payload.achievementRewriting || [],
+    resumeVersionComparison: payload.resumeVersionComparison || "",
+    jobDescriptionCompatibility: payload.jobDescriptionCompatibility || 0,
+    recruiterReadabilityScore: payload.recruiterReadabilityScore || 0,
+    australianResumeComplianceCheck: payload.australianResumeComplianceCheck || { compliant: true, issues: [] },
+  };
   inMemoryStore = { ...current };
   await AsyncStorage.setItem("mobile_sync_snapshot_cache", JSON.stringify(inMemoryStore));
   return payload as ResumeAnalysisResult;
