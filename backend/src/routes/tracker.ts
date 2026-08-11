@@ -2608,6 +2608,73 @@ router.delete("/admin/tracker/contacts/:id", authMiddleware, async (req: Authent
   }
 });
 
+router.get("/admin/tracker/cover-letters", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+  try {
+    const { data, error } = await supabase
+      .from("cover_letters")
+      .select(`
+        user_id,
+        content,
+        created_at,
+        updated_at,
+        profiles:user_id (id, full_name, email)
+      `)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return res.json({ success: true, coverLetters: data || [] });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/tracker/cover-letters failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to fetch cover letters" });
+  }
+});
+
+router.post("/admin/tracker/cover-letters", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+  const { user_id, content } = req.body || {};
+  if (!user_id || !content) {
+    return res.status(400).json({ error: "Missing required cover letter details" });
+  }
+  try {
+    const { data, error } = await supabase
+      .from("cover_letters")
+      .upsert({
+        user_id,
+        content,
+        updated_at: new Date().toISOString()
+      }, { onConflict: "user_id" })
+      .select()
+      .single();
+    if (error) throw error;
+    return res.json({ success: true, coverLetter: data });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/cover-letters failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save cover letter" });
+  }
+});
+
+router.delete("/admin/tracker/cover-letters/:user_id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+  const { user_id } = req.params;
+  try {
+    const { error } = await supabase
+      .from("cover_letters")
+      .delete()
+      .eq("user_id", user_id);
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Tracker Route] DELETE /admin/tracker/cover-letters failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to delete cover letter" });
+  }
+});
+
 router.get("/admin/tracker/follow-ups", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdminRole(req, res)) {
     return;
