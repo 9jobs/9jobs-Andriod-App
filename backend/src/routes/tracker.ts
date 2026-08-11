@@ -1560,7 +1560,17 @@ router.post("/admin/tracker/interviews", authMiddleware, async (req: Authenticat
     status: String(interview.status || "scheduled"),
     interviewer_name: String(interview.interviewer_name || ""),
     interviewer_email: String(interview.interviewer_email || ""),
-    admin_notes: String(interview.admin_notes || ""),
+    meeting_link: String(interview.meeting_link || ""),
+    location: String(interview.location || ""),
+    admin_notes: typeof interview.admin_notes === "string" && interview.admin_notes.trim().startsWith("{") 
+      ? interview.admin_notes
+      : JSON.stringify({
+          notes: String(interview.admin_notes || ""),
+          about_company: String(interview.about_company || ""),
+          key_responsibilities: String(interview.key_responsibilities || ""),
+          job_link: String(interview.job_link || ""),
+          company: String(interview.company || ""),
+        }),
   };
 
   try {
