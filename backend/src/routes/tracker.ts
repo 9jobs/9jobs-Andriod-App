@@ -39,6 +39,7 @@ type ResumeAnalysis = {
   jobDescriptionCompatibility: number;
   recruiterReadabilityScore: number;
   australianResumeComplianceCheck: { compliant: boolean; issues: string[] };
+  coverLetter?: string;
 };
 
 function sanitizeAttachmentName(fileName: string) {
