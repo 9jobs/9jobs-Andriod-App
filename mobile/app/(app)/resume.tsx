@@ -1536,6 +1536,8 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.md,
     gap: spacing.md,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
     ...shadows.card,
   },
   coverLetterBody: {
@@ -1546,6 +1548,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.chipMuted,
     padding: spacing.md,
     borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    textAlignVertical: "top",
   },
   copyButton: {
     backgroundColor: colors.accent,
