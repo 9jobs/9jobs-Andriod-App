@@ -2613,18 +2613,36 @@ router.get("/admin/tracker/cover-letters", authMiddleware, async (req: Authentic
     return;
   }
   try {
-    const { data, error } = await supabase
+    const { data: coverLetters, error: clError } = await supabase
       .from("cover_letters")
-      .select(`
-        user_id,
-        content,
-        created_at,
-        updated_at,
-        profiles:user_id (id, full_name, email)
-      `)
+      .select("*")
       .order("created_at", { ascending: false });
-    if (error) throw error;
-    return res.json({ success: true, coverLetters: data || [] });
+    if (clError) throw clError;
+
+    const userIds = Array.from(new Set((coverLetters || []).map((c) => c.user_id).filter(Boolean)));
+
+    let profilesMap: Record<string, any> = {};
+    if (userIds.length > 0) {
+      const { data: profiles, error: pError } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", userIds);
+      if (pError) {
+        console.error("[Tracker Route] Failed to fetch profiles for cover letters:", pError);
+      } else if (profiles) {
+        profilesMap = profiles.reduce((acc: any, p: any) => {
+          acc[p.id] = p;
+          return acc;
+        }, {});
+      }
+    }
+
+    const joinedCoverLetters = (coverLetters || []).map((cl) => ({
+      ...cl,
+      profiles: profilesMap[cl.user_id] || null
+    }));
+
+    return res.json({ success: true, coverLetters: joinedCoverLetters });
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/tracker/cover-letters failed:", err);
     return res.status(500).json({ error: err.message || "Failed to fetch cover letters" });
