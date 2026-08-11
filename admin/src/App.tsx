@@ -6593,32 +6593,76 @@ export default function App() {
                       showSuccess("Cover letter text copied!");
                     };
 
-                    const handleDownloadWord = () => {
-                      const candidateName = cl.profiles?.full_name || "Candidate";
-                      const filename = `Cover_Letter_${candidateName.replace(/\s+/g, "_")}.doc`;
-                      const text = cl.content || "";
-                      const formattedText = text.replace(/\n/g, '<br/>');
-                      const htmlContent = `
-                        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-                        <head><title>Cover Letter</title>
-                        <style>
-                        body { font-family: 'Arial', sans-serif; font-size: 12pt; line-height: 1.5; margin: 1in; }
-                        </style>
-                        </head>
-                        <body>${formattedText}</body>
-                        </html>
-                      `;
-                      const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = filename;
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                      showSuccess("Word document download started!");
-                    };
+                     const handleDownloadWord = () => {
+                       const candidateName = cl.profiles?.full_name || "Candidate";
+                       const filename = `Cover_Letter_${candidateName.replace(/\s+/g, "_")}.doc`;
+                       const text = cl.content || "";
+                       
+                       // Split by single newline to identify lines
+                       const lines = text.split(/\n/);
+                       let formattedParagraphs = "";
+                       
+                       lines.forEach((line: string) => {
+                         const trimmed = line.trim();
+                         if (trimmed === "") {
+                           // Insert empty line spacing
+                           formattedParagraphs += `<p style="margin-top: 0in; margin-right: 0in; margin-bottom: 6pt; margin-left: 0in; font-family: 'Calibri', 'Arial', sans-serif; font-size: 11.5pt; line-height: 1.25;">&nbsp;</p>`;
+                         } else {
+                           const isGreetingOrSignature = trimmed.startsWith("Dear") || trimmed.startsWith("Sincerely") || trimmed.startsWith("Best regards") || trimmed.startsWith("Yours") || trimmed.length < 35;
+                           const alignStyle = isGreetingOrSignature ? "text-align: left;" : "text-align: justify;";
+                           const fontStyle = "font-family: 'Calibri', 'Arial', sans-serif; font-size: 11.5pt; color: #1F1F1F;";
+                           const marginStyle = "margin-top: 0in; margin-right: 0in; margin-bottom: 8pt; margin-left: 0in;";
+                           const lineSpacing = "line-height: 1.35;";
+                           
+                           formattedParagraphs += `<p style="${marginStyle} ${alignStyle} ${fontStyle} ${lineSpacing}">${trimmed}</p>`;
+                         }
+                       });
+
+                       const htmlContent = `
+                         <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                         <head>
+                         <title>Cover Letter - ${candidateName}</title>
+                         <!--[if gte mso 9]>
+                         <xml>
+                         <w:WordDocument>
+                           <w:View>Print</w:View>
+                           <w:Zoom>100</w:Zoom>
+                           <w:DoNotOptimizeForBrowser/>
+                         </w:WordDocument>
+                         </xml>
+                         <![endif]-->
+                         <style>
+                         @page {
+                           size: 8.5in 11in;
+                           margin: 1.0in 1.0in 1.0in 1.0in;
+                         }
+                         body {
+                           font-family: 'Calibri', 'Arial', sans-serif;
+                           font-size: 11.5pt;
+                           line-height: 1.35;
+                           color: #1F1F1F;
+                           margin: 1.0in;
+                         }
+                         </style>
+                         </head>
+                         <body>
+                           <div style="font-family: 'Calibri', 'Arial', sans-serif; font-size: 11.5pt;">
+                             ${formattedParagraphs}
+                           </div>
+                         </body>
+                         </html>
+                       `;
+                       const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
+                       const url = URL.createObjectURL(blob);
+                       const a = document.createElement('a');
+                       a.href = url;
+                       a.download = filename;
+                       document.body.appendChild(a);
+                       a.click();
+                       document.body.removeChild(a);
+                       URL.revokeObjectURL(url);
+                       showSuccess("Word document download started!");
+                     };
 
                     return (
                       <tr key={cl.user_id}>
