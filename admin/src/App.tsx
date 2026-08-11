@@ -761,6 +761,9 @@ export default function App() {
   const [selectedTrackerClientId, setSelectedTrackerClientId] = useState("");
   const [trackerSection, setTrackerSection] = useState<"overview" | "applications" | "interviews" | "follow_ups" | "contacts" | "cold_emails" | "scores" | "activity">("overview");
   const [isInterviewManagementOpen, setIsInterviewManagementOpen] = useState(false);
+  const [coverLetters, setCoverLetters] = useState<any[]>([]);
+  const [isResumeAiDropdownOpen, setIsResumeAiDropdownOpen] = useState(false);
+  const [resumeSection, setResumeSection] = useState<"score" | "cover_letter">("score");
   const [stats, setStats] = useState({
     usersCount: 0,
     jobsCount: 0,
@@ -771,7 +774,7 @@ export default function App() {
 
   // Modal / Form states
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalType, setModalType] = useState<"user" | "questionnaire" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session" | "cover_letter">("job");
+  const [modalType, setModalType] = useState<"user" | "questionnaire" | "job" | "plan" | "notification" | "resume" | "tracker" | "interview" | "follow_up" | "contact" | "cold_email" | "score" | "quick_update" | "success_story" | "interview_prep_response" | "interview_prep_session" | "cover_letter" | "admin_cover_letter">("job");
   const [editItem, setEditItem] = useState<any>(null);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -834,6 +837,7 @@ export default function App() {
   const [planForm, setPlanForm] = useState({ id: "", name: "", price: "", features: "" });
   const [notificationForm, setNotificationForm] = useState({ title: "", body: "", user_id: "", status: "sent" });
   const [resumeForm, setResumeForm] = useState({ user_id: "", score: 70, suggestions: "", notes: "" });
+  const [coverLetterForm, setCoverLetterForm] = useState({ user_id: "", content: "" });
   const [trackerForm, setTrackerForm] = useState({ user_id: "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
   const [interviewForm, setInterviewForm] = useState({ client_id: "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "", meeting_link: "", location: "", about_company: "", key_responsibilities: "", job_link: "", company: "" });
   const [followUpForm, setFollowUpForm] = useState({ client_id: "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "", interview_type: "video", company: "", interviewer_email: "", location: "", about_company: "", key_responsibilities: "", meeting_link: "", job_link: "" });
@@ -1025,6 +1029,9 @@ export default function App() {
   useEffect(() => {
     if (activeTab === "job_tracker") {
       setIsInterviewManagementOpen(true);
+    }
+    if (activeTab === "resume_ai") {
+      setIsResumeAiDropdownOpen(true);
     }
   }, [activeTab]);
 
@@ -1452,7 +1459,7 @@ export default function App() {
           await fetchServices();
           break;
         case "resume_ai":
-          await fetchResumeScores();
+          await Promise.all([fetchResumeScores(), fetchCoverLetters(), fetchUsers()]);
           break;
         case "subscriptions":
           await fetchPlans();
@@ -2259,6 +2266,27 @@ export default function App() {
     setResumeScores(payload.resumeScores || []);
   };
 
+  const fetchCoverLetters = async () => {
+    const token = await ensureAdminToken();
+    if (!token) {
+      throw new Error("Admin auth token missing. Please sign in again.");
+    }
+
+    const response = await fetch(`${BACKEND_URL}/api/admin/tracker/cover-letters`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => null);
+      throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+    }
+
+    const payload = await response.json();
+    setCoverLetters(payload.coverLetters || []);
+  };
+
   const fetchNotifications = async () => {
     const token = await ensureAdminToken();
     if (!token) {
@@ -2617,6 +2645,39 @@ export default function App() {
 
       showSuccess("Resume score and AI tips updated!");
       fetchResumeScores();
+    } catch (err: any) {
+      showError(err.message);
+    }
+  };
+
+  const handleSaveCoverLetter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const token = await ensureAdminToken();
+      if (!token || !BACKEND_URL) {
+        throw new Error("Backend connection unavailable");
+      }
+
+      const res = await fetch(`${BACKEND_URL}/api/admin/tracker/cover-letters`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          user_id: coverLetterForm.user_id,
+          content: coverLetterForm.content,
+        })
+      });
+
+      if (!res.ok) {
+        const errorPayload = await res.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
+      }
+
+      showSuccess("Cover letter saved successfully!");
+      setIsModalOpen(false);
+      fetchCoverLetters();
     } catch (err: any) {
       showError(err.message);
     }
@@ -3276,6 +3337,28 @@ export default function App() {
 
         showSuccess("Item deleted successfully.");
         await fetchSuccessStories();
+        return;
+      }
+
+      if (table === "cover_letters") {
+        const token = await ensureAdminToken();
+        if (!token) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/cover-letters/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
+
+        showSuccess("Cover letter deleted successfully.");
+        await fetchCoverLetters();
         return;
       }
 
@@ -3955,6 +4038,7 @@ export default function App() {
     setPlanForm({ id: "", name: "", price: "", features: "" });
     setNotificationForm({ title: "", body: "", user_id: "", status: "sent" });
     setResumeForm({ user_id: "", score: 70, suggestions: "", notes: "" });
+    setCoverLetterForm({ user_id: "", content: "" });
     setTrackerForm({ user_id: selectedTrackerClientId || "", job_id: "", status: "applied", before_screenshot_url: "", after_screenshot_url: "", description: "" });
     setInterviewForm({ client_id: selectedTrackerClientId || "", application_id: "", interview_type: "video", interview_round: "", interview_date: "", status: "scheduled", interviewer_name: "", interviewer_email: "", admin_notes: "", meeting_link: "", location: "", about_company: "", key_responsibilities: "", job_link: "", company: "" });
     setFollowUpForm({ client_id: selectedTrackerClientId || "", application_id: "", follow_up_type: "email", due_date: "", status: "pending", contact_person: "", contact_email: "", notes: "", interview_type: "video", company: "", interviewer_email: "", location: "", about_company: "", key_responsibilities: "", meeting_link: "", job_link: "" });
@@ -4026,6 +4110,8 @@ export default function App() {
         last_question: item.last_question || "",
         last_question_tags: Array.isArray(item.last_question_tags) ? item.last_question_tags.join(", ") : item.last_question_tags || "",
       });
+    } else if (type === "admin_cover_letter") {
+      setCoverLetterForm({ user_id: item.user_id || "", content: item.content || "" });
     } else if (type === "user") {
       setUserForm({
         id: item.id,
@@ -4576,10 +4662,53 @@ export default function App() {
             <Sparkles size={18} />
             <span>Services</span>
           </a>
-          <a className={`sidebar-item ${activeTab === "resume_ai" ? "active" : ""}`} onClick={() => setActiveTab("resume_ai")}>
-            <FileText size={18} />
-            <span>Resume AI</span>
-          </a>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <a
+              className={`sidebar-item ${activeTab === "resume_ai" ? "active" : ""}`}
+              onClick={() => {
+                setActiveTab("resume_ai");
+                setIsResumeAiDropdownOpen(!isResumeAiDropdownOpen);
+              }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <FileText size={18} />
+                <span>Resume AI</span>
+              </div>
+              <ChevronDown
+                size={16}
+                style={{
+                  transform: isResumeAiDropdownOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.2s ease"
+                }}
+              />
+            </a>
+
+            {isResumeAiDropdownOpen && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", margin: "4px 0" }}>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "resume_ai" && resumeSection === "score" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("resume_ai");
+                    setResumeSection("score");
+                  }}
+                >
+                  <Sparkles size={14} />
+                  <span>Resume Score</span>
+                </a>
+                <a
+                  className={`sidebar-item sidebar-subitem ${activeTab === "resume_ai" && resumeSection === "cover_letter" ? "sidebar-subitem-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("resume_ai");
+                    setResumeSection("cover_letter");
+                  }}
+                >
+                  <FileText size={14} />
+                  <span>Cover Letter</span>
+                </a>
+              </div>
+            )}
+          </div>
           <a className={`sidebar-item ${activeTab === "subscriptions" ? "active" : ""}`} onClick={() => setActiveTab("subscriptions")}>
             <DollarSign size={18} />
             <span>Subscriptions</span>
@@ -6399,7 +6528,7 @@ export default function App() {
         )}
 
         {/* Resume AI Score Tab */}
-        {activeTab === "resume_ai" && (
+        {activeTab === "resume_ai" && resumeSection === "score" && (
           <div className="card">
             <div className="table-responsive">
               <table className="table">
@@ -6430,6 +6559,109 @@ export default function App() {
                   ))}
                   {resumeScores.length === 0 && (
                     <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No candidate resume scores analyzed yet. Check users and update scores.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "resume_ai" && resumeSection === "cover_letter" && (
+          <div className="card">
+            <div className="controls-row" style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h4 style={{ margin: 0, fontWeight: 600 }}>Candidate Cover Letters</h4>
+              <button className="btn btn-primary" onClick={() => openAddModal("admin_cover_letter")}>
+                <Plus size={16} /> Add Cover Letter
+              </button>
+            </div>
+
+            <div className="table-responsive">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Email</th>
+                    <th>Cover Letter Content</th>
+                    <th>Last Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {coverLetters.map((cl) => {
+                    const handleCopyText = () => {
+                      navigator.clipboard.writeText(cl.content || "");
+                      showSuccess("Cover letter text copied!");
+                    };
+
+                    const handleDownloadWord = () => {
+                      const candidateName = cl.profiles?.full_name || "Candidate";
+                      const filename = `Cover_Letter_${candidateName.replace(/\s+/g, "_")}.doc`;
+                      const text = cl.content || "";
+                      const formattedText = text.replace(/\n/g, '<br/>');
+                      const htmlContent = `
+                        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                        <head><title>Cover Letter</title>
+                        <style>
+                        body { font-family: 'Arial', sans-serif; font-size: 12pt; line-height: 1.5; margin: 1in; }
+                        </style>
+                        </head>
+                        <body>${formattedText}</body>
+                        </html>
+                      `;
+                      const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = filename;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      showSuccess("Word document download started!");
+                    };
+
+                    return (
+                      <tr key={cl.user_id}>
+                        <td><strong>{cl.profiles?.full_name || "—"}</strong></td>
+                        <td>{cl.profiles?.email || "—"}</td>
+                        <td>
+                          <div style={{ 
+                            maxHeight: "80px", 
+                            overflow: "hidden", 
+                            textOverflow: "ellipsis", 
+                            whiteSpace: "pre-wrap",
+                            fontSize: "12px",
+                            lineHeight: "1.4"
+                          }}>
+                            {cl.content}
+                          </div>
+                        </td>
+                        <td>{new Date(cl.updated_at || cl.created_at).toLocaleDateString()}</td>
+                        <td>
+                          <div style={{ display: "flex", gap: "6px" }}>
+                            <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: "12px" }} onClick={() => handleCopyText()} title="Copy Cover Letter Text">
+                              Copy
+                            </button>
+                            <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: "12px" }} onClick={() => handleDownloadWord()} title="Download as Word file">
+                              Download (.doc)
+                            </button>
+                            <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("admin_cover_letter", cl)} title="Edit Cover Letter">
+                              <Edit size={14} />
+                            </button>
+                            <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("cover_letters", cl.user_id)} title="Delete Cover Letter">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {coverLetters.length === 0 && (
+                    <tr>
+                      <td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>
+                        No cover letters found.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -6837,6 +7069,46 @@ export default function App() {
                   <textarea rows={3} className="form-input" placeholder="Resume evaluated. Candidate has solid React foundation but needs more backend details." value={resumeForm.notes} onChange={(e) => setResumeForm({ ...resumeForm, notes: e.target.value })} />
                 </div>
                 <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>Save AI Evaluation</button>
+              </form>
+            )}
+
+            {modalType === "admin_cover_letter" && (
+              <form onSubmit={handleSaveCoverLetter}>
+                <div className="form-group">
+                  <label className="form-label">Candidate</label>
+                  {editItem ? (
+                    <input type="text" className="form-input" disabled value={`${editItem.profiles?.full_name || "Candidate"} (${editItem.profiles?.email || ""})`} />
+                  ) : (
+                    <select
+                      className="form-input"
+                      required
+                      value={coverLetterForm.user_id}
+                      onChange={(e) => setCoverLetterForm({ ...coverLetterForm, user_id: e.target.value })}
+                    >
+                      <option value="">Select candidate</option>
+                      {users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.full_name} ({u.email})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Cover Letter Content</label>
+                  <textarea
+                    rows={12}
+                    className="form-input"
+                    required
+                    placeholder="Dear Hiring Manager, ..."
+                    value={coverLetterForm.content}
+                    onChange={(e) => setCoverLetterForm({ ...coverLetterForm, content: e.target.value })}
+                    style={{ fontFamily: "monospace", fontSize: "13px", lineHeight: "1.5" }}
+                  />
+                </div>
+                <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: "10px" }}>
+                  Save Cover Letter
+                </button>
               </form>
             )}
 
