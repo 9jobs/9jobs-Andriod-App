@@ -5582,29 +5582,186 @@ export default function App() {
 
               {trackerSection === "follow_ups" && (
                 <>
-                <div className="controls-row" style={{ marginBottom: "18px", justifyContent: "flex-end" }}>
+                <div className="controls-row" style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <h4 style={{ margin: 0, fontWeight: 600 }}>Active Reminders & Follow-ups</h4>
                   <button className="btn btn-primary" onClick={() => openAddModal("follow_up")} disabled={!selectedTrackerClientId}>
                     <Plus size={16} /> Add Reminder
                   </button>
                 </div>
-                <div className="table-responsive">
-                  <table className="table">
-                    <thead><tr><th>Type</th><th>Due Date</th><th>Status</th><th>Contact</th><th>Notes</th><th>Actions</th></tr></thead>
-                    <tbody>
-                      {trackerFollowUps.map((item) => (
-                        <tr key={item.id}>
-                          <td>{item.follow_up_type}</td>
-                          <td>{new Date(item.due_date).toLocaleString()}</td>
-                          <td><span className="badge badge-warning">{item.status}</span></td>
-                          <td>{item.contact_person || item.contact_email || "—"}</td>
-                          <td>{item.notes || "—"}</td>
-                          <td><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("follow_up", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("follow_ups", String(item.id))}><Trash2 size={14} /></button></div></td>
-                        </tr>
-                      ))}
-                      {trackerFollowUps.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No follow-ups logged.</td></tr>}
-                    </tbody>
-                  </table>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px" }}>
+                  {trackerFollowUps.map((item) => {
+                    let notesText = item.notes || "";
+                    let interviewType = "";
+                    let company = "";
+                    let interviewerEmail = "";
+                    let location = "";
+                    let aboutCompany = "";
+                    let keyResponsibilities = "";
+                    let meetingLink = "";
+                    let jobLink = "";
+                    let isJson = false;
+
+                    if (typeof notesText === "string" && notesText.trim().startsWith("{")) {
+                      try {
+                        const parsed = JSON.parse(notesText);
+                        notesText = parsed.notes || "";
+                        interviewType = parsed.interview_type || "";
+                        company = parsed.company || "";
+                        interviewerEmail = parsed.interviewer_email || "";
+                        location = parsed.location || "";
+                        aboutCompany = parsed.about_company || "";
+                        keyResponsibilities = parsed.key_responsibilities || "";
+                        meetingLink = parsed.meeting_link || "";
+                        jobLink = parsed.job_link || "";
+                        isJson = true;
+                      } catch (e) {
+                        console.warn("Failed to parse serialized follow_up notes:", e);
+                      }
+                    }
+
+                    return (
+                      <div 
+                        key={item.id} 
+                        style={{ 
+                          border: "1px solid var(--border-color)", 
+                          borderRadius: "16px", 
+                          padding: "20px", 
+                          background: "var(--surface)", 
+                          boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+                          display: "flex",
+                          flexDirection: "column",
+                          justifyContent: "space-between"
+                        }}
+                      >
+                        <div>
+                          {/* Card Header */}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px", gap: "10px" }}>
+                            <div style={{ fontWeight: 600, fontSize: "16px", color: "var(--text-primary)", wordBreak: "break-all" }}>
+                              {item.follow_up_type || "Reminder"}
+                            </div>
+                            <span 
+                              className={`badge ${item.status === "completed" ? "badge-success" : "badge-warning"}`}
+                              style={{ 
+                                textTransform: "uppercase", 
+                                fontSize: "10px", 
+                                fontWeight: 700, 
+                                letterSpacing: "0.05em",
+                                padding: "4px 8px",
+                                borderRadius: "8px"
+                              }}
+                            >
+                              {item.status || "pending"}
+                            </span>
+                          </div>
+
+                          {/* Card Body */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                            <div>
+                              <strong style={{ color: "var(--text-primary)" }}>Due Date:</strong>{" "}
+                              <span>{new Date(item.due_date).toLocaleString()}</span>
+                            </div>
+
+                            {isJson ? (
+                              <>
+                                {interviewType && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Interview Type:</strong>{" "}
+                                    <span style={{ textTransform: "capitalize" }}>{interviewType}</span>
+                                  </div>
+                                )}
+                                {company && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Company:</strong>{" "}
+                                    <span>{company}</span>
+                                  </div>
+                                )}
+                                {(item.contact_person || item.contact_email || interviewerEmail) && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Contact:</strong>{" "}
+                                    <span>
+                                      {item.contact_person || "—"}{" "}
+                                      {(item.contact_email || interviewerEmail) && `(${item.contact_email || interviewerEmail})`}
+                                    </span>
+                                  </div>
+                                )}
+                                {location && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Location:</strong>{" "}
+                                    <span>{location}</span>
+                                  </div>
+                                )}
+                                {meetingLink && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Meeting Link:</strong>{" "}
+                                    <a href={meetingLink} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
+                                      Join Meeting
+                                    </a>
+                                  </div>
+                                )}
+                                {jobLink && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Job Description:</strong>{" "}
+                                    <a href={jobLink} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
+                                      View Job Description
+                                    </a>
+                                  </div>
+                                )}
+                                {aboutCompany && (
+                                  <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-color)", marginTop: "4px" }}>
+                                    <div style={{ fontWeight: 600, fontSize: "11px", textTransform: "uppercase", color: "var(--text-primary)", marginBottom: "4px" }}>About Company</div>
+                                    <div style={{ fontSize: "12px", lineHeight: "1.4" }}>{aboutCompany}</div>
+                                  </div>
+                                )}
+                                {keyResponsibilities && (
+                                  <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-color)", marginTop: "4px" }}>
+                                    <div style={{ fontWeight: 600, fontSize: "11px", textTransform: "uppercase", color: "var(--text-primary)", marginBottom: "4px" }}>Key Responsibilities</div>
+                                    <div style={{ fontSize: "12px", lineHeight: "1.4" }}>{keyResponsibilities}</div>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {(item.contact_person || item.contact_email) && (
+                                  <div>
+                                    <strong style={{ color: "var(--text-primary)" }}>Contact:</strong>{" "}
+                                    <span>
+                                      {item.contact_person || "—"}{" "}
+                                      {item.contact_email && `(${item.contact_email})`}
+                                    </span>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {notesText && (
+                              <div style={{ marginTop: "6px", fontStyle: "italic", fontSize: "12px" }}>
+                                <strong style={{ color: "var(--text-primary)", fontStyle: "normal" }}>Notes:</strong>{" "}
+                                {notesText}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Card Footer Actions */}
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "18px", borderTop: "1px solid var(--border-color)", paddingTop: "12px" }}>
+                          <button className="btn btn-secondary" style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }} onClick={() => openEditModal("follow_up", item)}>
+                            <Edit size={12} /> Edit
+                          </button>
+                          <button className="btn btn-danger" style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }} onClick={() => handleDelete("follow_ups", String(item.id))}>
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
+
+                {trackerFollowUps.length === 0 && (
+                  <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px", border: "1px dashed var(--border-color)", borderRadius: "16px", marginTop: "10px" }}>
+                    No follow-ups or reminders logged.
+                  </div>
+                )}
                 </>
               )}
 
