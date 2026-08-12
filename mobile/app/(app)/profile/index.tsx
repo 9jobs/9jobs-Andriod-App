@@ -47,12 +47,6 @@ const profileItems = [
     icon: "info" as const,
     onPress: () => "/(app)/contact",
   },
-  {
-    id: "about",
-    label: "About 9Jobs",
-    icon: "info" as const,
-    onPress: () => "/(app)/about",
-  },
 ];
 
 export default function ProfileScreen() {

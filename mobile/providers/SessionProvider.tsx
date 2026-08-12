@@ -15,7 +15,8 @@ import { connectSocket } from "@/lib/socket/socketService";
 import { supabase } from "@/lib/supabase/client";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
-import { clearInMemoryTokenCache } from "@/lib/data/mobile-sync-repository";
+import { useQueryClient } from "@tanstack/react-query";
+import { clearInMemoryTokenCache, getLocalSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -136,18 +137,33 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
   const [isBooting, setIsBooting] = useState(true);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
+  let queryClient: any = null;
+  try {
+    queryClient = useQueryClient();
+  } catch {}
 
   useEffect(() => {
     async function bootstrap() {
       const onboarding = await AsyncStorage.getItem(storageKeys.onboardingComplete);
       const savedSession = await AsyncStorage.getItem(storageKeys.mockSession);
+      const resolvedUser = savedSession ? (JSON.parse(savedSession) as SessionUser) : null;
       setHasCompletedOnboarding(savedSession ? onboarding === "true" : false);
-      setUser(savedSession ? (JSON.parse(savedSession) as SessionUser) : null);
+      setUser(resolvedUser);
+      if (resolvedUser) {
+        try {
+          const cachedData = await getLocalSyncSnapshot(resolvedUser);
+          if (cachedData) {
+            queryClient.setQueryData(["preview-sync", resolvedUser.id], cachedData);
+          }
+        } catch (e) {
+          console.warn("Failed to warm previewSync cache:", e);
+        }
+      }
       setIsBooting(false);
     }
 
     bootstrap();
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     syncBackendToken(user);
@@ -199,6 +215,10 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   const [isQuestionnaireStatusLoaded, setIsQuestionnaireStatusLoaded] = useState(false);
   const [isLocallySignedOut, setIsLocallySignedOut] = useState(false);
   const [localFallbackUser, setLocalFallbackUser] = useState<SessionUser | null>(null);
+  let queryClient: any = null;
+  try {
+    queryClient = useQueryClient();
+  } catch {}
 
   useEffect(() => {
     async function bootstrap() {
@@ -207,12 +227,23 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
         storageKeys.mockSession,
         storageKeys.mockProfile,
       ]);
-      setLocalFallbackUser(savedSession ? (JSON.parse(savedSession) as SessionUser) : null);
+      const fallbackUser = savedSession ? (JSON.parse(savedSession) as SessionUser) : null;
+      setLocalFallbackUser(fallbackUser);
+      if (fallbackUser) {
+        try {
+          const cachedData = await getLocalSyncSnapshot(fallbackUser);
+          if (cachedData) {
+            queryClient.setQueryData(["preview-sync", fallbackUser.id], cachedData);
+          }
+        } catch (e) {
+          console.warn("Failed to warm previewSync cache:", e);
+        }
+      }
       setIsOnboardingLoaded(true);
     }
 
     bootstrap();
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (isSignedIn) {
@@ -257,6 +288,18 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   }, [isLocallySignedOut, isSignedIn, localFallbackUser, user]);
 
   useEffect(() => {
+    if (sessionUser) {
+      getLocalSyncSnapshot(sessionUser).then((cachedData) => {
+        if (cachedData) {
+          queryClient.setQueryData(["preview-sync", sessionUser.id], cachedData);
+        }
+      }).catch((e) => {
+        console.warn("Failed to warm previewSync cache on user session change:", e);
+      });
+    }
+  }, [sessionUser, queryClient]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadQuestionnaireStatus() {
@@ -268,16 +311,33 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
         return;
       }
 
-      setIsQuestionnaireStatusLoaded(false);
+      // 1. Try to read from local storage first to unblock booting immediately
+      let localValue: string | null = null;
+      try {
+        localValue = await AsyncStorage.getItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`);
+        if (localValue !== null && active) {
+          setHasCompletedOnboarding(localValue === "true");
+          setIsQuestionnaireStatusLoaded(true);
+        }
+      } catch (err) {
+        console.warn("[SessionProvider] Failed to read local onboarding status:", err);
+      }
+
+      // 2. Fetch the latest status in the background
       try {
         const completed = await fetchCandidateQuestionnaireStatus(sessionUser);
-        if (active) setHasCompletedOnboarding(completed);
+        if (active) {
+          setHasCompletedOnboarding(completed);
+          setIsQuestionnaireStatusLoaded(true);
+        }
+        await AsyncStorage.setItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`, completed ? "true" : "false");
       } catch (error) {
         console.warn("[SessionProvider] Questionnaire status sync failed, using local state:", error);
-        const localValue = await AsyncStorage.getItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`);
-        if (active) setHasCompletedOnboarding(localValue === "true");
-      } finally {
-        if (active) setIsQuestionnaireStatusLoaded(true);
+        if (localValue === null && active) {
+          const fallbackValue = await AsyncStorage.getItem(storageKeys.onboardingComplete);
+          setHasCompletedOnboarding(fallbackValue === "true");
+          setIsQuestionnaireStatusLoaded(true);
+        }
       }
     }
 

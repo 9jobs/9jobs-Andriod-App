@@ -196,14 +196,7 @@ export default function TrackerScreen() {
     });
   }, []);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      const task = InteractionManager.runAfterInteractions(() => {
-        void refetch();
-      });
-      return () => task.cancel();
-    }, [refetch]),
-  );
+
 
   const toTimezoneDateKey = React.useCallback((isoString: string | null | undefined) => {
     if (!isoString) {
@@ -747,9 +740,8 @@ export default function TrackerScreen() {
               syncedAfterScreenshot || afterScreenshotMap[job.id] || screenshotMap[job.id] || null;
             const hasBeforeScreenshot = Boolean(resolvedBeforeScreenshot);
             const hasAfterScreenshot = Boolean(resolvedAfterScreenshot);
-            return (
-              <FadeInView key={job.id} type="fade-up" delay={index * 50}>
-                <SoftPanel>
+            const card = (
+              <SoftPanel>
                 <Pressable
                   onPress={() =>
                     setSelectedJob({
@@ -801,9 +793,18 @@ export default function TrackerScreen() {
                 </Pressable>
                 <Text style={styles.time}>{job.postedAt}</Text>
                 <Text style={styles.tapHint}>Tap to update stage and sync with admin</Text>
-                </SoftPanel>
-              </FadeInView>
+              </SoftPanel>
             );
+
+            if (index < 8) {
+              return (
+                <FadeInView key={job.id} type="fade-up" delay={index * 30}>
+                  {card}
+                </FadeInView>
+              );
+            }
+
+            return <View key={job.id}>{card}</View>;
           })
         ) : (
           <Text style={styles.emptyText}>No applications match this filter.</Text>
@@ -816,22 +817,22 @@ export default function TrackerScreen() {
           <View style={styles.interviewReminderStack}>
             {interviewReminderEntries.map((entry) => (
               <View key={entry.key} style={styles.interviewReminderCard}>
-                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*When:* </Text>{formatManagementDate(entry.dueDate)}</Text>
-                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Time:* </Text>{formatManagementTime(entry.dueDate)}</Text>
-                {entry.companyName ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Company:* </Text>{entry.companyName}</Text> : null}
-                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*From:* </Text>{entry.fromName}</Text>
-                {entry.email ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Email:* </Text>{entry.email}</Text> : null}
-                {entry.contact ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Contact:* </Text>{entry.contact}</Text> : null}
-                {entry.location ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>*Location:* </Text>{entry.location}</Text> : null}
+                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>When: </Text>{formatManagementDate(entry.dueDate)}</Text>
+                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>Time: </Text>{formatManagementTime(entry.dueDate)}</Text>
+                {entry.companyName ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>Company: </Text>{entry.companyName}</Text> : null}
+                <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>From: </Text>{entry.fromName}</Text>
+                {entry.email ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>Email: </Text>{entry.email}</Text> : null}
+                {entry.contact ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>Contact: </Text>{entry.contact}</Text> : null}
+                {entry.location ? <Text style={styles.interviewReminderLine}><Text style={styles.interviewReminderLabel}>Location: </Text>{entry.location}</Text> : null}
                 {entry.aboutCompany ? (
                   <View style={styles.interviewReminderBlock}>
-                    <Text style={styles.interviewReminderLabel}>*About the Company:*</Text>
+                    <Text style={styles.interviewReminderLabel}>About the Company:</Text>
                     <Text style={styles.interviewReminderBody}>{entry.aboutCompany}</Text>
                   </View>
                 ) : null}
                 {entry.responsibilities.length > 0 ? (
                   <View style={styles.interviewReminderBlock}>
-                    <Text style={styles.interviewReminderLabel}>*Key Responsibilities:*</Text>
+                    <Text style={styles.interviewReminderLabel}>Key Responsibilities:</Text>
                     {entry.responsibilities.map((item, itemIndex) => (
                       <Text key={`${entry.key}-responsibility-${itemIndex}`} style={styles.interviewReminderBullet}>- {item}</Text>
                     ))}
@@ -1399,6 +1400,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     lineHeight: 23,
+    textAlign: "justify",
   },
   interviewReminderBullet: {
     ...typography.body,
@@ -1406,6 +1408,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 23,
     paddingLeft: 4,
+    textAlign: "justify",
   },
   interviewReminderLinkBox: {
     marginTop: 10,

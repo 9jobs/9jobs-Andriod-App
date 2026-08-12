@@ -84,14 +84,7 @@ export default function TrackerDetailsScreen() {
     });
   }, []);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      const task = InteractionManager.runAfterInteractions(() => {
-        void refetch();
-      });
-      return () => task.cancel();
-    }, [refetch]),
-  );
+
 
   const toTimezoneDateKey = React.useCallback((isoString: string | null | undefined) => {
     if (!isoString) {
@@ -555,124 +548,132 @@ export default function TrackerDetailsScreen() {
                 )
               : [];
 
-            return (
-              <FadeInView key={job.id} type="fade-up" delay={idx * 50}>
-                <View style={styles.detailCard}>
-                  <View style={styles.detailHeader}>
-                    <View style={styles.detailCopy}>
-                      <Text style={styles.detailTitle}>{jobTitle}</Text>
-                      <Text style={styles.detailMeta}>{companyName} • {locationName}</Text>
-                    </View>
-                    <View
+            const card = (
+              <View style={styles.detailCard}>
+                <View style={styles.detailHeader}>
+                  <View style={styles.detailCopy}>
+                    <Text style={styles.detailTitle}>{jobTitle}</Text>
+                    <Text style={styles.detailMeta}>{companyName} • {locationName}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.stageBadge,
+                      job.status === "offer" && styles.offerBadge,
+                      job.status === "interviewing" && styles.interviewBadge,
+                      job.status === "rejected" && styles.rejectedBadge,
+                      job.status === "interview_completed" && styles.interviewCompletedBadge,
+                    ]}
+                  >
+                    <Text
                       style={[
-                        styles.stageBadge,
-                        job.status === "offer" && styles.offerBadge,
-                        job.status === "interviewing" && styles.interviewBadge,
-                        job.status === "rejected" && styles.rejectedBadge,
-                        job.status === "interview_completed" && styles.interviewCompletedBadge,
+                        styles.stageBadgeText,
+                        job.status === "offer" && styles.offerBadgeText,
+                        job.status === "interviewing" && styles.interviewBadgeText,
+                        job.status === "rejected" && styles.rejectedBadgeText,
+                        job.status === "interview_completed" && styles.interviewCompletedBadgeText,
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.stageBadgeText,
-                          job.status === "offer" && styles.offerBadgeText,
-                          job.status === "interviewing" && styles.interviewBadgeText,
-                          job.status === "rejected" && styles.rejectedBadgeText,
-                          job.status === "interview_completed" && styles.interviewCompletedBadgeText,
-                        ]}
-                      >
-                        {job.status === "interview_completed" ? "Interview Completed" : formatStatusLabel(job.status)}
-                      </Text>
-                    </View>
+                      {job.status === "interview_completed" ? "Interview Completed" : formatStatusLabel(job.status)}
+                    </Text>
                   </View>
+                </View>
 
-                  <View style={styles.factGrid}>
-                    <FactPill label="Applied" value={syncedDate ? toTimezoneDateKey(syncedDate) : "Live"} />
-                    {shouldShowScreenshots ? (
-                      <FactPill
-                        label="Screenshots"
-                        value={
-                          hasBeforeScreenshot && hasAfterScreenshot
-                            ? "Before & After"
-                            : hasBeforeScreenshot
-                            ? "Before"
-                            : hasAfterScreenshot
-                            ? "After"
-                            : "Pending"
-                        }
-                      />
+                <View style={styles.factGrid}>
+                  <FactPill label="Applied" value={syncedDate ? toTimezoneDateKey(syncedDate) : "Live"} />
+                  {shouldShowScreenshots ? (
+                    <FactPill
+                      label="Screenshots"
+                      value={
+                        hasBeforeScreenshot && hasAfterScreenshot
+                          ? "Before & After"
+                          : hasBeforeScreenshot
+                          ? "Before"
+                          : hasAfterScreenshot
+                          ? "After"
+                          : "Pending"
+                      }
+                    />
+                  ) : null}
+                </View>
+
+                <Text style={styles.description}>
+                  {job.description || "Admin-managed tracker updates for this role appear here as soon as they sync."}
+                </Text>
+
+                {shouldShowScreenshots && (hasBeforeScreenshot || hasAfterScreenshot) ? (
+                  <View style={styles.screenshotPair}>
+                    {hasBeforeScreenshot ? (
+                      <View style={styles.screenshotBlock}>
+                        <Text style={styles.screenshotLabel}>Before</Text>
+                        <Image
+                          source={{ uri: beforeScreenshotUri }}
+                          style={styles.screenshot}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    ) : null}
+                    {hasAfterScreenshot ? (
+                      <View style={styles.screenshotBlock}>
+                        <Text style={styles.screenshotLabel}>After</Text>
+                        <Image
+                          source={{ uri: afterScreenshotUri }}
+                          style={styles.screenshot}
+                          resizeMode="cover"
+                        />
+                      </View>
                     ) : null}
                   </View>
+                ) : null}
 
-                  <Text style={styles.description}>
-                    {job.description || "Admin-managed tracker updates for this role appear here as soon as they sync."}
-                  </Text>
-
-                  {shouldShowScreenshots && (hasBeforeScreenshot || hasAfterScreenshot) ? (
-                    <View style={styles.screenshotPair}>
-                      {hasBeforeScreenshot ? (
-                        <View style={styles.screenshotBlock}>
-                          <Text style={styles.screenshotLabel}>Before</Text>
-                          <Image
-                            source={{ uri: beforeScreenshotUri }}
-                            style={styles.screenshot}
-                            resizeMode="cover"
-                          />
-                        </View>
-                      ) : null}
-                      {hasAfterScreenshot ? (
-                        <View style={styles.screenshotBlock}>
-                          <Text style={styles.screenshotLabel}>After</Text>
-                          <Image
-                            source={{ uri: afterScreenshotUri }}
-                            style={styles.screenshot}
-                            resizeMode="cover"
-                          />
-                        </View>
-                      ) : null}
-                    </View>
-                  ) : null}
-
-                  {activeFilter === "Interview Completed" && completedInterviews.length > 0 ? (
-                    <View style={styles.completedInterviewsSection}>
-                      <Text style={styles.sectionTitle}>Completed Interviews</Text>
-                      {completedInterviews.map((interview) => (
-                        <View key={interview.id} style={styles.interviewDetailRow}>
-                          <View style={styles.interviewDot} />
-                          <View style={styles.interviewInfo}>
-                            <Text style={styles.interviewRoundText}>
-                              {interview.interview_round || "Completed Round"} ({interview.interview_type || "video"})
+                {activeFilter === "Interview Completed" && completedInterviews.length > 0 ? (
+                  <View style={styles.completedInterviewsSection}>
+                    <Text style={styles.sectionTitle}>Completed Interviews</Text>
+                    {completedInterviews.map((interview) => (
+                      <View key={interview.id} style={styles.interviewDetailRow}>
+                        <View style={styles.interviewDot} />
+                        <View style={styles.interviewInfo}>
+                          <Text style={styles.interviewRoundText}>
+                            {interview.interview_round || "Completed Round"} ({interview.interview_type || "video"})
+                          </Text>
+                          <Text style={styles.interviewDateText}>
+                            Date: {interview.interview_date ? toTimezoneDateKey(interview.interview_date) : "N/A"}
+                          </Text>
+                          {interview.interviewer_name || interview.interviewer_email ? (
+                            <Text style={styles.interviewerText}>
+                              Interviewer: {interview.interviewer_name || "N/A"}{" "}
+                              {interview.interviewer_email ? `(${interview.interviewer_email})` : ""}
                             </Text>
-                            <Text style={styles.interviewDateText}>
-                              Date: {interview.interview_date ? toTimezoneDateKey(interview.interview_date) : "N/A"}
+                          ) : null}
+                          {interview.admin_notes ? (
+                            <Text style={styles.interviewNotesText}>
+                              Notes: {interview.admin_notes}
                             </Text>
-                            {interview.interviewer_name || interview.interviewer_email ? (
-                              <Text style={styles.interviewerText}>
-                                Interviewer: {interview.interviewer_name || "N/A"}{" "}
-                                {interview.interviewer_email ? `(${interview.interviewer_email})` : ""}
-                              </Text>
-                            ) : null}
-                            {interview.admin_notes ? (
-                              <Text style={styles.interviewNotesText}>
-                                Notes: {interview.admin_notes}
-                              </Text>
-                            ) : null}
-                          </View>
+                          ) : null}
                         </View>
-                      ))}
-                    </View>
-                  ) : null}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
 
-                  <AnimatedPressable
-                    style={styles.actionButton}
-                    onPress={() => router.push(`/(app)/jobs/${job.id}`)}
-                    scaleTo={0.98}
-                  >
-                    <Text style={styles.actionButtonText}>Open Full Role View</Text>
-                  </AnimatedPressable>
-                </View>
-              </FadeInView>
+                <AnimatedPressable
+                  style={styles.actionButton}
+                  onPress={() => router.push(`/(app)/jobs/${job.id}`)}
+                  scaleTo={0.98}
+                >
+                  <Text style={styles.actionButtonText}>Open Full Role View</Text>
+                </AnimatedPressable>
+              </View>
             );
+
+            if (idx < 8) {
+              return (
+                <FadeInView key={job.id} type="fade-up" delay={idx * 30}>
+                  {card}
+                </FadeInView>
+              );
+            }
+
+            return <View key={job.id}>{card}</View>;
           })}
         </View>
       ) : (
@@ -987,6 +988,7 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontSize: 13,
     lineHeight: 20,
+    textAlign: "justify",
   },
   syncedHint: {
     ...typography.body,

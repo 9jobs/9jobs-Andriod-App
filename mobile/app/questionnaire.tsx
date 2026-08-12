@@ -14,6 +14,7 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import { Redirect, router } from "expo-router";
 import Animated, {
+  cancelAnimation,
   Easing,
   FadeInDown,
   FadeInUp,
@@ -378,6 +379,10 @@ const QuestionnaireAmbientAnimation = memo(function QuestionnaireAmbientAnimatio
   useEffect(() => {
     flow.value = withRepeat(withTiming(1, { duration: 4200, easing: Easing.inOut(Easing.sin) }), -1, true);
     shimmer.value = withRepeat(withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.quad) }), -1, true);
+    return () => {
+      cancelAnimation(flow);
+      cancelAnimation(shimmer);
+    };
   }, [flow, shimmer]);
 
   const waveStyle = useAnimatedStyle(() => ({
@@ -479,6 +484,7 @@ const CareerPassportVisual = memo(function CareerPassportVisual({ name }: { name
 
   useEffect(() => {
     motion.value = withRepeat(withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.quad) }), -1, true);
+    return () => cancelAnimation(motion);
   }, [motion]);
 
   const orbitStyle = useAnimatedStyle(() => ({

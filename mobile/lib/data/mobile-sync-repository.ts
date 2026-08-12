@@ -1226,7 +1226,7 @@ async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiv
   }
 }
 
-async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
+export async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
   const activeUser = resolveActiveUser(sessionUser);
 
   if (inMemoryStore?.profile?.id === activeUser.id) {

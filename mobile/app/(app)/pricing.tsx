@@ -8,14 +8,14 @@ const weeklySupportPlans = [
   {
     title: "Trial",
     description:
-      "Try the full 9Jobs experience for a day — perfect for a quick, focused job search sprint.",
-    price: "$25",
-    cadence: "/ 1 day",
+      "Try 9Jobs for 2 days. Day 1 includes LinkedIn and resume optimization, and Day 2 shows you our job application support services.",
+    price: "$50",
+    cadence: "/ 2 days",
     features: [
-      "Full platform access",
-      "Resume review",
-      "Application support",
-      "1-day support window",
+      "Day 1 LinkedIn optimization",
+      "Day 1 resume optimization",
+      "Day 2 job apply services overview",
+      "2-day support window",
     ],
     accent: "light" as const,
     badge: null,
@@ -24,15 +24,15 @@ const weeklySupportPlans = [
   {
     title: "Non-IT",
     description:
-      "Hands-on weekly support tailored for non-tech professionals ready to land their next role.",
+      "After the trial, continue with weekly support for non-IT candidates who want structured job application help and accountability.",
     price: "$200",
     cadence: "/ week",
     features: [
-      "Resume & LinkedIn review",
+      "Weekly plan for non-IT roles",
       "Application tracking",
-      "Job search strategy",
+      "Job application support",
       "Follow-up support",
-      "Weekly check-in",
+      "Weekly accountability",
     ],
     accent: "light" as const,
     badge: "Popular",
@@ -41,15 +41,15 @@ const weeklySupportPlans = [
   {
     title: "IT",
     description:
-      "Premium weekly support for tech professionals — from ATS-ready resumes to interview prep.",
+      "After the trial, continue with weekly support for IT candidates who want premium tech-focused job application help.",
     price: "$250",
     cadence: "/ week",
     features: [
-      "Tech resume optimization",
-      "LinkedIn & GitHub review",
+      "Weekly plan for IT roles",
+      "Tech-focused application support",
       "ATS keyword targeting",
       "Interview prep support",
-      "Weekly check-in",
+      "Weekly accountability",
     ],
     accent: "dark" as const,
     badge: null,

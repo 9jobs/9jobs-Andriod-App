@@ -13,14 +13,7 @@ export default function StoriesScreen() {
     refetchIntervalInBackground: true,
   });
 
-  useFocusEffect(
-    useCallback(() => {
-      const task = InteractionManager.runAfterInteractions(() => {
-        void refetch();
-      });
-      return () => task.cancel();
-    }, [refetch]),
-  );
+
 
   return (
     <Screen contentStyle={styles.screenContent}>
@@ -234,6 +227,7 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     lineHeight: 20,
     marginTop: 2,
+    textAlign: "justify",
   },
   stars: {
     color: colors.accentDark,

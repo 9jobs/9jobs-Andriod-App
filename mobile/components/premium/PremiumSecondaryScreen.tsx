@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useState } from "react";
 import { FloatingHeroCard } from "@/components/motion/FloatingHeroCard";
 import {
   DarkHeroCard,
@@ -20,6 +21,104 @@ import {
   nonItRolesItems,
   type PremiumScreenContent,
 } from "@/lib/data/premium-content";
+
+const FAQ_ITEMS = [
+  {
+    question: "What is 9Jobs?",
+    answer:
+      "9Jobs is a job support service that helps improve your resume, prepare application documents, and apply for relevant jobs on your behalf.",
+  },
+  {
+    question: "What happens after I join?",
+    answer:
+      "Once you sign the agreement and finalise the payment, we create a dedicated WhatsApp or Messenger group with you and our team.",
+  },
+  {
+    question: "What happens in the group?",
+    answer:
+      "You share your resume with us, we update it, take your feedback, finalise the documents, and keep all communication and job updates in one place.",
+  },
+  {
+    question: "What is an ATS-friendly resume?",
+    answer:
+      "ATS stands for Applicant Tracking System. Many employers use software to screen and organise applications before recruiters review them. An ATS-friendly resume is structured and formatted in a way that makes it easier for these systems to read relevant information such as your skills, experience, qualifications, and keywords.",
+  },
+  {
+    question: "Do you make my resume ATS-friendly?",
+    answer:
+      "Yes. Our team reviews and updates your resume to make it professional, keyword-focused, and ATS-friendly.",
+  },
+  {
+    question: "Do you provide a cover letter?",
+    answer:
+      "Yes. We prepare a cover letter when required based on the roles you are targeting.",
+  },
+  {
+    question: "How many jobs do you apply for?",
+    answer:
+      "We aim for around 20+ relevant applications per working day, depending on suitable job availability and this sum up to 120+ job applications considering we work 6 days a week.",
+  },
+  {
+    question: "Where do you apply for jobs?",
+    answer:
+      "We mainly apply through platforms such as LinkedIn, SEEK, Indeed, and other relevant job platforms. We also have recruiter outreach so if required we contact them directly as well.",
+  },
+  {
+    question: "Will you apply for jobs on my behalf?",
+    answer:
+      "Yes, where included in your selected plan, our team can search for relevant positions and submit applications on your behalf.",
+  },
+  {
+    question: "How can I track my applications?",
+    answer:
+      "We send you daily updates in your group with details of the applications submitted on your behalf.",
+  },
+  {
+    question: "How long does it take to get a job?",
+    answer:
+      "It varies for every candidate. It depends on your profile, experience, targeted role, location, and current job market.",
+  },
+  {
+    question: "Do you guarantee a job?",
+    answer:
+      "No. Final hiring decisions are made by employers. Our role is to improve your profile, apply consistently, and increase your chances of getting interviews and job opportunities.",
+  },
+  {
+    question: "What exactly does 9Jobs do for me?",
+    answer:
+      "Depending on the plan you choose, our support can include ATS-optimised resume, cover letter support where required, LinkedIn profile optimisation, job searching and identification of relevant roles, job applications submitted on your behalf, recruiter outreach, ongoing job-search support, regular updates regarding your applications, and interview reminders and support throughout the process.",
+  },
+  {
+    question: "What information do you need from me?",
+    answer:
+      "Typically, we may need your current resume, contact details, target job or position, preferred location, work experience, qualifications, skills, LinkedIn profile if available, work rights or visa information where relevant, salary expectations where applicable, and any specific career preferences. The more accurately we understand your goals, the better we can target the job search.",
+  },
+  {
+    question: "How much does the service cost?",
+    answer:
+      "The cost depends on the plan selected by the candidate. We currently discuss different payment structures with candidates based on their requirements and circumstances.",
+  },
+  {
+    question: "What if I don't have a resume?",
+    answer:
+      "Let the team know. We can discuss what information you have about your education, experience, skills, achievements, and career goals and determine how we can assist with your resume.",
+  },
+  {
+    question: "What if I don't have LinkedIn?",
+    answer:
+      "That's okay. Our team can discuss whether creating and optimising a LinkedIn profile would be beneficial for your target roles.",
+  },
+  {
+    question: "Can you help me find a high-paying job?",
+    answer:
+      "We can help you target roles that align with your experience, qualifications, skills, and salary expectations.",
+  },
+  {
+    question: "Do you guarantee interviews?",
+    answer:
+      "No. We can improve your application strategy and consistently target suitable opportunities, but interviews depend on employers and their recruitment processes.",
+  },
+] as const;
 
 export function PremiumSecondaryScreen({
   content,
@@ -106,6 +205,7 @@ export function AboutPremiumScreen({
 }: {
   content: PremiumScreenContent;
 }) {
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(0);
   const proofMetrics = [
     { value: "100+", label: "Happy Clients" },
     { value: "20+", label: "Cities Covered" },
@@ -363,6 +463,28 @@ export function AboutPremiumScreen({
             <AppIcon name="spark" color={colors.accentDark} size={16} strokeWidth={2} />
             <Text style={styles.contactText}>Email: 9jobsapplicationservice@gmail.com</Text>
           </View>
+        </View>
+      </View>
+
+      <View style={styles.aboutPanel}>
+        <SectionHeading title="Frequently Asked Questions" />
+        <View style={styles.faqList}>
+          {FAQ_ITEMS.map((item, index) => {
+            const isExpanded = expandedFaq === index;
+            return (
+              <Pressable
+                key={item.question}
+                style={[styles.faqItem, isExpanded && styles.faqItemExpanded]}
+                onPress={() => setExpandedFaq((current) => (current === index ? null : index))}
+              >
+                <View style={styles.faqHeader}>
+                  <Text style={styles.faqQuestion}>{item.question}</Text>
+                  <Text style={styles.faqToggle}>{isExpanded ? "−" : "+"}</Text>
+                </View>
+                {isExpanded ? <Text style={styles.faqAnswer}>{item.answer}</Text> : null}
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
@@ -943,5 +1065,47 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "600",
     flex: 1,
+  },
+  faqList: {
+    gap: 10,
+  },
+  faqItem: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+    ...shadows.card,
+  },
+  faqItemExpanded: {
+    borderColor: colors.accent,
+  },
+  faqHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  faqQuestion: {
+    flex: 1,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  faqToggle: {
+    width: 24,
+    textAlign: "center",
+    fontSize: 20,
+    lineHeight: 20,
+    fontWeight: "700",
+    color: colors.accentDark,
+  },
+  faqAnswer: {
+    fontSize: 11,
+    lineHeight: 17,
+    color: colors.mutedText,
+    textAlign: "justify",
   },
 });

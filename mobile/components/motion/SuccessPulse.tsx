@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -25,6 +26,7 @@ export function SuccessPulse() {
       -1,
       false,
     );
+    return () => cancelAnimation(scale);
   }, [reducedMotion, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({

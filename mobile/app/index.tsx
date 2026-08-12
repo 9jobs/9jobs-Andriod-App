@@ -28,7 +28,7 @@ export default function IndexScreen() {
 
     const timeout = setTimeout(() => {
       setIsReadyToRoute(true);
-    }, 3000);
+    }, 50);
 
     return () => clearTimeout(timeout);
   }, [hasCompletedOnboarding, isBooting, user]);

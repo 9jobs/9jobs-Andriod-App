@@ -9,27 +9,7 @@ try {
 
 const SCENE_URL = "https://my.spline.design/datatransfer-K41ecQGTxUpbI2c26wcF6NFX/";
 export function ResumeDataTransferSpline() {
-  if (!WebView) {
-    return <View style={styles.container} />;
-  }
-
-  return (
-    <View style={styles.container} pointerEvents="none">
-      <WebView
-        source={{ uri: SCENE_URL }}
-        style={styles.webView}
-        originWhitelist={["https://*"]}
-        javaScriptEnabled
-        domStorageEnabled
-        scrollEnabled={false}
-        bounces={false}
-        overScrollMode="never"
-        allowsInlineMediaPlayback
-        mediaPlaybackRequiresUserAction={false}
-        androidLayerType="hardware"
-      />
-    </View>
-  );
+  return <View style={styles.container} />;
 }
 
 const styles = StyleSheet.create({

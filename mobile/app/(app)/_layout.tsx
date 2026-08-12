@@ -93,6 +93,15 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="about"
+        options={{
+          title: "About",
+          tabBarIcon: ({ color, focused }) => (
+            <TabGlyph name="info" color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="services"
         options={{
           title: "Services",
@@ -141,7 +150,6 @@ export default function AppLayout() {
       <Tabs.Screen name="notifications" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="settings" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="personal-information" options={{ href: null, tabBarStyle: { display: "none" } }} />
-      <Tabs.Screen name="about" options={{ href: null }} />
       <Tabs.Screen name="about-detail" options={{ href: null, tabBarStyle: { display: "none" } }} />
       <Tabs.Screen name="contact" options={{ href: null }} />
       <Tabs.Screen name="security" options={{ href: null, tabBarStyle: { display: "none" } }} />
@@ -159,7 +167,7 @@ function TabGlyph({
 }: {
   color: ColorValue;
   focused: boolean;
-  name: "home" | "grid" | "tracker" | "mail" | "profile";
+  name: "home" | "grid" | "tracker" | "mail" | "profile" | "info";
 }) {
   const animatedStyle = useAnimatedStyle(() => {
     return {

@@ -44,12 +44,22 @@ export function normalizeDocumentMimeType(fileName: string, reportedMimeType?: s
     || (reportedMimeType && reportedMimeType !== "application/octet-stream" ? reportedMimeType : "application/octet-stream");
 }
 
+let cachedToken: string | null = null;
+let cachedTokenUserId: string | null = null;
+
 async function getBackendToken(user: SessionUser) {
+  if (cachedToken && cachedTokenUserId === user.id) {
+    return cachedToken;
+  }
   const [[, storedToken], [, storedUserId]] = await AsyncStorage.multiGet([
     storageKeys.authToken,
     storageKeys.authTokenUserId,
   ]);
-  if (storedToken && storedUserId === user.id) return storedToken;
+  if (storedToken && storedUserId === user.id) {
+    cachedToken = storedToken;
+    cachedTokenUserId = storedUserId;
+    return storedToken;
+  }
 
   const response = await fetch(`${BACKEND_URL}/api/auth/token`, {
     method: "POST",
@@ -70,6 +80,8 @@ async function getBackendToken(user: SessionUser) {
     [storageKeys.authToken, payload.token],
     [storageKeys.authTokenUserId, user.id],
   ]);
+  cachedToken = String(payload.token);
+  cachedTokenUserId = user.id;
   return String(payload.token);
 }
 
