@@ -6,6 +6,7 @@ import interviewPrepRoutes from "./routes/interviewPrep";
 import trackerRoutes from "./routes/tracker";
 import contactRoutes from "./routes/contact";
 import questionnaireRoutes from "./routes/questionnaire";
+import paymentRoutes from "./routes/payments";
 
 export function createApp() {
   const app = express();
@@ -26,6 +27,7 @@ export function createApp() {
   app.use("/api", trackerRoutes);
   app.use("/api", contactRoutes);
   app.use("/api", questionnaireRoutes);
+  app.use("/api", paymentRoutes);
 
   app.get("/health", (req, res) => {
     res.json({ status: "healthy", time: new Date().toISOString() });

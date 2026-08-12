@@ -1,11 +1,15 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { useEffect, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
 const weeklySupportPlans = [
   {
+    id: "trial",
     title: "Trial",
     description:
       "Try 9Jobs for 2 days. Day 1 includes LinkedIn and resume optimization, and Day 2 shows you our job application support services.",
@@ -22,6 +26,7 @@ const weeklySupportPlans = [
     secondaryCta: "Get a schedule",
   },
   {
+    id: "non-it",
     title: "Non-IT",
     description:
       "After the trial, continue with weekly support for non-IT candidates who want structured job application help and accountability.",
@@ -39,6 +44,7 @@ const weeklySupportPlans = [
     secondaryCta: "Get a schedule",
   },
   {
+    id: "it",
     title: "IT",
     description:
       "After the trial, continue with weekly support for IT candidates who want premium tech-focused job application help.",
@@ -59,6 +65,7 @@ const weeklySupportPlans = [
 
 const optimizationPlans = [
   {
+    id: "resume-makeover",
     title: "Resume Makeover",
     description:
       "Professional resume redesign tailored for ATS systems to get you noticed.",
@@ -77,6 +84,7 @@ const optimizationPlans = [
     secondaryCta: "Get started",
   },
   {
+    id: "resume-linkedin-seek",
     title: "Resume + LinkedIn + SEEK Optimisation",
     description:
       "Complete professional branding to boost your Resume, LinkedIn and SEEK profile visibility.",
@@ -99,6 +107,119 @@ const optimizationPlans = [
 ];
 
 export default function PricingScreen() {
+  const params = useLocalSearchParams<{ payment_status?: string; session_id?: string }>();
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
+  const [verifiedSessionId, setVerifiedSessionId] = useState<string | null>(null);
+  const [amounts, setAmounts] = useState<Record<string, string>>(() => {
+    const allPlans = [...weeklySupportPlans, ...optimizationPlans];
+    return Object.fromEntries(
+      allPlans.map((plan) => [plan.id, plan.price.replace(/[^\d.]/g, "")]),
+    );
+  });
+
+  useEffect(() => {
+    if (params.payment_status !== "success" || !params.session_id || verifiedSessionId === params.session_id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function verifySession() {
+      try {
+        const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+        const response = await fetch(`${backendUrl}/api/payments/checkout-session/${params.session_id}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(typeof payload.error === "string" ? payload.error : "Could not verify payment.");
+        }
+
+        if (cancelled) return;
+
+        setVerifiedSessionId(String(params.session_id));
+        if (payload.session?.payment_status === "paid") {
+          Alert.alert("Payment successful", "Stripe test payment was completed successfully for this plan.");
+        } else {
+          Alert.alert("Payment pending", "The checkout returned, but Stripe has not marked the payment as paid yet.");
+        }
+      } catch (error) {
+        if (!cancelled) {
+          Alert.alert("Verification failed", error instanceof Error ? error.message : "Could not verify payment.");
+        }
+      }
+    }
+
+    void verifySession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.payment_status, params.session_id, verifiedSessionId]);
+
+  function updateAmount(planId: string, value: string) {
+    setAmounts((current) => ({
+      ...current,
+      [planId]: value.replace(/[^\d.]/g, ""),
+    }));
+  }
+
+  async function handlePayNow(plan: {
+    id: string;
+  }) {
+    if (pendingPlanId) {
+      return;
+    }
+
+    try {
+      setPendingPlanId(plan.id);
+      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+      const amount = amounts[plan.id] || "";
+      const response = await fetch(`${backendUrl}/api/payments/checkout-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planId: plan.id,
+          amount,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.checkoutUrl) {
+        throw new Error(typeof payload.error === "string" ? payload.error : "Could not start Stripe checkout.");
+      }
+
+      const returnUrl = Linking.createURL("/pricing");
+      const result = await WebBrowser.openAuthSessionAsync(payload.checkoutUrl, returnUrl);
+
+      if (result.type === "success" && result.url) {
+        const parsed = Linking.parse(result.url);
+        const nextStatus = typeof parsed.queryParams?.payment_status === "string"
+          ? parsed.queryParams.payment_status
+          : "";
+        const nextSessionId = typeof parsed.queryParams?.session_id === "string"
+          ? parsed.queryParams.session_id
+          : "";
+
+        if (nextStatus === "success" && nextSessionId) {
+          router.replace({
+            pathname: "/(app)/pricing",
+            params: {
+              payment_status: nextStatus,
+              session_id: nextSessionId,
+            },
+          });
+          return;
+        }
+
+        if (nextStatus === "cancelled") {
+          Alert.alert("Payment cancelled", "Stripe checkout was cancelled before payment completed.");
+        }
+      }
+    } catch (error) {
+      Alert.alert("Payment failed", error instanceof Error ? error.message : "Could not launch Stripe checkout.");
+    } finally {
+      setPendingPlanId(null);
+    }
+  }
+
   return (
     <Screen contentStyle={styles.screenContent}>
       <View style={styles.sectionHeader}>
@@ -111,7 +232,7 @@ export default function PricingScreen() {
 
       <View style={styles.cardStack}>
         {weeklySupportPlans.map((plan) => (
-          <PricingCard key={plan.title} plan={plan} />
+          <PricingCard key={plan.title} plan={plan} amountValue={amounts[plan.id] ?? ""} onAmountChange={updateAmount} onPayNow={handlePayNow} isPaying={pendingPlanId === plan.id} />
         ))}
       </View>
 
@@ -125,7 +246,7 @@ export default function PricingScreen() {
 
       <View style={styles.cardStack}>
         {optimizationPlans.map((plan) => (
-          <PricingCard key={plan.title} plan={plan} />
+          <PricingCard key={plan.title} plan={plan} amountValue={amounts[plan.id] ?? ""} onAmountChange={updateAmount} onPayNow={handlePayNow} isPaying={pendingPlanId === plan.id} />
         ))}
       </View>
     </Screen>
@@ -136,6 +257,7 @@ function PricingCard({
   plan,
 }: {
   plan: {
+    id: string;
     title: string;
     description: string;
     price: string;
@@ -145,6 +267,10 @@ function PricingCard({
     badge: string | null;
     secondaryCta: string;
   };
+  amountValue: string;
+  onAmountChange: (planId: string, value: string) => void;
+  onPayNow: (plan: { id: string }) => Promise<void>;
+  isPaying: boolean;
 }) {
   const isDark = plan.accent === "dark";
 
@@ -171,6 +297,18 @@ function PricingCard({
         <Text style={[styles.cadence, isDark && styles.cadenceDark]}>{plan.cadence}</Text>
       </View>
 
+      <View style={styles.amountEditor}>
+        <Text style={[styles.amountLabel, isDark && styles.amountLabelDark]}>Editable payment amount (USD)</Text>
+        <TextInput
+          value={amountValue}
+          onChangeText={(value) => onAmountChange(plan.id, value)}
+          keyboardType="decimal-pad"
+          placeholder="Enter amount"
+          placeholderTextColor={isDark ? colors.darkMuted : colors.subtleText}
+          style={[styles.amountInput, isDark && styles.amountInputDark]}
+        />
+      </View>
+
       <View style={styles.featureList}>
         {plan.features.map((feature) => (
           <View key={feature} style={styles.featureRow}>
@@ -183,10 +321,10 @@ function PricingCard({
       <View style={styles.buttonStack}>
         <Pressable
           style={[styles.primaryButton, isDark && styles.primaryButtonAccent]}
-          onPress={() => router.push("/(app)/contact")}
+          onPress={() => void onPayNow({ id: plan.id })}
         >
           <Text style={[styles.primaryButtonText, isDark && styles.primaryButtonTextDark]}>
-            Pay Now
+            {isPaying ? "Processing..." : "Pay Now"}
           </Text>
           <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
             <Path
@@ -317,6 +455,33 @@ const styles = StyleSheet.create({
   },
   featureList: {
     gap: spacing.sm,
+  },
+  amountEditor: {
+    gap: 8,
+  },
+  amountLabel: {
+    ...typography.label,
+    color: colors.mutedText,
+    fontWeight: "700",
+  },
+  amountLabelDark: {
+    color: colors.darkMuted,
+  },
+  amountInput: {
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    backgroundColor: colors.background,
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  amountInputDark: {
+    backgroundColor: "#12130F",
+    borderColor: "#343A2C",
+    color: colors.surface,
   },
   featureRow: {
     flexDirection: "row",
