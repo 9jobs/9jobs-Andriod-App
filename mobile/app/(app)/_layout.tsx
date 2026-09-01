@@ -1,75 +1,163 @@
-import { StyleSheet, View } from "react-native";
+import { ActivityIndicator, InteractionManager, StyleSheet, View } from "react-native";
 import type { ColorValue } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { colors, radii, setTheme, spacing, typography, useThemeVersion } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
-import React, { useEffect, useMemo } from "react";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
+import React, { useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { initializeSocket, disconnectSocket } from "@/lib/socket/socketService";
 import Animated, { FadeIn, useAnimatedStyle, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { markNavigationDispatch, markNavigationTap } from "@/lib/perf/livePerf";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
   (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
 
 export default function AppLayout() {
-  const { user, hasCompletedOnboarding } = useSession();
-  const { data: snapshot } = usePreviewSyncQuery(true);
+  const { isBooting, user, hasCompletedOnboarding } = useSession();
+  const shouldWarmMainApp = Boolean(user && hasCompletedOnboarding);
+  const { data: profileDarkMode } = usePreviewSyncSelector(
+    (snapshot) => snapshot.profile.darkMode ?? false,
+    shouldWarmMainApp,
+    { enabled: shouldWarmMainApp },
+  );
+  const { data: darkModeOverride } = usePreviewSyncSelector(
+    (snapshot) => snapshot.systemSettings.darkModeOverride ?? false,
+    shouldWarmMainApp,
+    { enabled: shouldWarmMainApp },
+  );
   const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const prewarmedUserIdRef = useRef<string | null>(null);
+  const warmupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deepWarmupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (user && shouldEnableLiveTransport) {
+    if (shouldWarmMainApp && user && shouldEnableLiveTransport) {
       initializeSocket(user.id, queryClient);
     } else {
       disconnectSocket();
     }
-  }, [queryClient, user]);
+  }, [queryClient, shouldWarmMainApp, user]);
 
-  const isDarkMode = (snapshot?.profile.darkMode ?? false) && !(snapshot?.systemSettings.darkModeOverride ?? false);
+  const isDarkMode = Boolean(profileDarkMode) && !Boolean(darkModeOverride);
 
   useEffect(() => {
     setTheme(isDarkMode);
   }, [isDarkMode]);
 
+  useEffect(() => {
+    if (!shouldWarmMainApp || !user || prewarmedUserIdRef.current === user.id) {
+      return;
+    }
+
+    let cancelled = false;
+    const interactionTask = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) {
+        return;
+      }
+
+      prewarmedUserIdRef.current = user.id;
+      warmupTimeoutRef.current = setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+
+        void Promise.allSettled([
+          import("./services"),
+          import("./tracker"),
+          import("./profile/index"),
+        ]);
+
+        deepWarmupTimeoutRef.current = setTimeout(() => {
+          if (cancelled) {
+            return;
+          }
+
+          void Promise.allSettled([
+            import("./messages"),
+            import("./resume"),
+            import("./outreach"),
+            import("./interview"),
+          ]);
+        }, 5500);
+      }, 3500);
+    });
+
+    return () => {
+      cancelled = true;
+      if (warmupTimeoutRef.current) {
+        clearTimeout(warmupTimeoutRef.current);
+        warmupTimeoutRef.current = null;
+      }
+      if (deepWarmupTimeoutRef.current) {
+        clearTimeout(deepWarmupTimeoutRef.current);
+        deepWarmupTimeoutRef.current = null;
+      }
+      interactionTask.cancel?.();
+    };
+  }, [queryClient, shouldWarmMainApp, user]);
+
   const themeVersion = useThemeVersion();
 
-  const screenOptions = useMemo(() => ({
-    headerShown: false,
-    sceneStyle: {
-      backgroundColor: colors.background,
-    },
-    tabBarHideOnKeyboard: true,
-    tabBarActiveTintColor: colors.text,
-    tabBarInactiveTintColor: colors.mutedText,
-    tabBarStyle: {
-      position: "absolute" as const,
-      left: 14,
-      right: 14,
-      bottom: insets.bottom > 0 ? insets.bottom + 4 : 10,
-      backgroundColor: colors.tabBackground,
-      borderTopWidth: 0,
-      borderRadius: radii.xl,
-      height: 72,
-      paddingTop: 6,
-      paddingBottom: 8,
-      paddingHorizontal: 8,
-    },
-    tabBarItemStyle: {
-      height: 56,
-      alignItems: "center" as const,
-      justifyContent: "center" as const,
-    },
-    tabBarLabelStyle: {
-      ...typography.label,
-      fontSize: 9,
-      marginTop: 0,
-      lineHeight: 12,
-    },
-  }), [themeVersion, insets.bottom]);
+  const screenOptions = useMemo(
+    () => ({
+      headerShown: false,
+      lazy: true,
+      freezeOnBlur: true,
+      sceneStyle: {
+        backgroundColor: colors.background,
+      },
+      tabBarHideOnKeyboard: true,
+      tabBarActiveTintColor: colors.text,
+      tabBarInactiveTintColor: colors.mutedText,
+      tabBarStyle: {
+        position: "absolute" as const,
+        left: 14,
+        right: 14,
+        bottom: insets.bottom > 0 ? insets.bottom + 4 : 10,
+        backgroundColor: "transparent",
+        borderTopWidth: 0,
+        borderRadius: 0,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        overflow: "hidden" as const,
+        elevation: 0,
+        shadowOpacity: 0,
+        shadowColor: "transparent",
+        height: 72,
+        paddingTop: 6,
+        paddingBottom: 8,
+        paddingHorizontal: 8,
+      },
+      tabBarItemStyle: {
+        height: 56,
+        alignItems: "center" as const,
+        justifyContent: "center" as const,
+      },
+      tabBarLabelStyle: {
+        ...typography.label,
+        fontSize: 9,
+        marginTop: 0,
+        lineHeight: 12,
+      },
+      tabBarBackground: () => <View style={styles.tabBarBackground} />,
+    }),
+    [themeVersion, insets.bottom],
+  );
+
+  if (isBooting) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.accentDark} />
+      </View>
+    );
+  }
 
   if (!hasCompletedOnboarding) {
     return <Redirect href="/questionnaire" />;
@@ -91,6 +179,12 @@ export default function AppLayout() {
             <TabGlyph name="home" color={color} focused={focused} />
           ),
         }}
+        listeners={{
+          tabPress: () => {
+            markNavigationTap("/(app)", "tab.home");
+            markNavigationDispatch("/(app)", { navigation_type: "tab" });
+          },
+        }}
       />
       <Tabs.Screen
         name="about"
@@ -109,6 +203,12 @@ export default function AppLayout() {
             <TabGlyph name="grid" color={color} focused={focused} />
           ),
         }}
+        listeners={{
+          tabPress: () => {
+            markNavigationTap("/(app)/services", "tab.services");
+            markNavigationDispatch("/(app)/services", { navigation_type: "tab" });
+          },
+        }}
       />
       <Tabs.Screen
         name="tracker"
@@ -117,6 +217,12 @@ export default function AppLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabGlyph name="tracker" color={color} focused={focused} />
           ),
+        }}
+        listeners={{
+          tabPress: () => {
+            markNavigationTap("/(app)/tracker", "tab.tracker");
+            markNavigationDispatch("/(app)/tracker", { navigation_type: "tab" });
+          },
         }}
       />
       <Tabs.Screen
@@ -127,6 +233,12 @@ export default function AppLayout() {
             <TabGlyph name="mail" color={color} focused={focused} />
           ),
         }}
+        listeners={{
+          tabPress: () => {
+            markNavigationTap("/(app)/messages", "tab.chat");
+            markNavigationDispatch("/(app)/messages", { navigation_type: "tab" });
+          },
+        }}
       />
       <Tabs.Screen
         name="profile/index"
@@ -135,6 +247,12 @@ export default function AppLayout() {
           tabBarIcon: ({ color, focused }) => (
             <TabGlyph name="profile" color={color} focused={focused} />
           ),
+        }}
+        listeners={{
+          tabPress: () => {
+            markNavigationTap("/(app)/profile", "tab.profile");
+            markNavigationDispatch("/(app)/profile", { navigation_type: "tab" });
+          },
         }}
       />
       <Tabs.Screen name="jobs/search" options={{ href: null }} />
@@ -209,5 +327,15 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 999,
     backgroundColor: colors.accentDark,
+  },
+  tabBarBackground: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.tabBackground,
+    borderRadius: 0,
+    overflow: "hidden",
   },
 });

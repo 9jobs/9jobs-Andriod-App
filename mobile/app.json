@@ -5,7 +5,7 @@
     "slug": "9jobs-premium-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/branding/9jobs-logo.png",
+    "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/branding/9jobs-splash.png",
       "resizeMode": "contain",
@@ -22,7 +22,7 @@
     "android": {
       "package": "com.ninejobs.mobile",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"

@@ -12,12 +12,16 @@ import Animated, {
 } from "react-native-reanimated";
 import { Screen } from "@/components/ui/Screen";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { useScreenPerf } from "@/lib/perf/livePerf";
 
 export default function OutreachScreen() {
-  const { data: snapshot } = usePreviewSyncQuery();
-  const contacts = snapshot?.outreachContacts ?? [];
+  const { data: contacts = [] } = usePreviewSyncSelector((snapshot) => snapshot.outreachContacts);
+  useScreenPerf("/(app)/outreach", true, {
+    screen: "outreach",
+    contacts: contacts.length,
+  });
 
   return (
     <Screen>

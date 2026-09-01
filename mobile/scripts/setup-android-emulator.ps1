@@ -73,4 +73,6 @@ Write-Host "`"$EmulatorExe`" -avd $AvdName"
 Write-Host ""
 Write-Host "Run the app:" -ForegroundColor Cyan
 Write-Host "cd D:\9jobs-App\mobile"
-Write-Host "npx expo start --android"
+Write-Host "npm run android"
+Write-Host ""
+Write-Host "Avoid 'npx expo start --android' for this repo. The custom android script starts Metro, sets adb reverse, and opens the dev build with the correct local URL." -ForegroundColor Yellow

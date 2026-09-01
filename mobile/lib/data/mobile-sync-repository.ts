@@ -8,6 +8,8 @@ import type { Job } from "@/types/jobs";
 import type { CandidateProfile } from "@/types/profile";
 import type { SessionUser } from "@/types/auth";
 import { storageKeys } from "@/lib/utils/storage";
+import { clearBackendAuthTokenCache, getBackendAuthToken, resolveBackendUrl } from "@/lib/data/backend-auth-token";
+import { startTrackedRequest } from "@/lib/perf/livePerf";
 import {
   latestApplicationsByJob,
   mergeApplicationScreenshotsFromActivity,
@@ -50,6 +52,7 @@ type ApplicationRow = {
   job_id: string;
   status: string;
   current_stage?: string | null;
+  updated_at?: string | null;
   application_date?: string | null;
   applied_at?: string | null;
   is_saved?: boolean | null;
@@ -309,6 +312,7 @@ const supportWelcomeMessage = "Welcome to the live 9Jobs preview. This thread is
 const fallbackSupportReply =
   "Thanks for contacting 9Jobs. Your message has been received and shared with our support team. An admin will respond shortly.";
 const SNAPSHOT_CACHE_SCHEMA_VERSION = "2026-07-30-screenshots-2";
+const SNAPSHOT_REQUEST_TIMEOUT_MS = 3500;
 
 export type LiveServiceCard = {
   id: string;
@@ -1014,13 +1018,6 @@ function buildSnapshotFromSource({
     categoriesRows.map((category) => [category.id, category.name]),
   );
 
-  const jobs = mapJobsWithUserState(
-    jobsRows,
-    applicationsRows,
-    savedJobsRows,
-    categoriesById,
-  );
-
   const rawApplications = mergeApplicationScreenshotsFromActivity(
     latestApplicationsByJob(
       applicationsRows.map((application) => ({
@@ -1029,6 +1026,13 @@ function buildSnapshotFromSource({
       })),
     ),
     activityLogRows,
+  );
+
+  const jobs = mapJobsWithUserState(
+    jobsRows,
+    rawApplications,
+    savedJobsRows,
+    categoriesById,
   );
 
   const activePlanId = subscriptionRow?.plan_id ?? null;
@@ -1105,6 +1109,7 @@ function buildSnapshotFromSource({
         recruiterContacts: recruiterContactsRows,
         coldEmails: coldEmailsRows,
         scores: clientScoresRows,
+        activityLogs: activityLogRows,
       },
     ),
     resumeAnalysis,
@@ -1128,7 +1133,7 @@ function buildSnapshotFromSource({
 }
 
 async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveUser>) {
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+  const backendUrl = resolveBackendUrl();
   if (!backendUrl) {
     return null;
   }
@@ -1139,28 +1144,59 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
     return null;
   }
 
-  const res = await fetch(
-    `${backendUrl}/api/mobile/snapshot?userId=${encodeURIComponent(activeUser.id)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SNAPSHOT_REQUEST_TIMEOUT_MS);
+  const tracker = startTrackedRequest("mobile.snapshot", {
+    user_id: activeUser.id,
+    url: `${backendUrl}/api/mobile/snapshot`,
+  });
+  let res: Response;
+  try {
+    res = await fetch(
+      `${backendUrl}/api/mobile/snapshot?userId=${encodeURIComponent(activeUser.id)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        signal: controller.signal,
       },
-    },
-  );
+    );
+  } catch (error) {
+    tracker.fail(error, {
+      user_id: activeUser.id,
+    });
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!res.ok) {
+    tracker.finish({
+      status: res.status,
+      user_id: activeUser.id,
+    });
     throw new Error(`Backend mobile snapshot failed with HTTP ${res.status}`);
   }
 
-  return await res.json();
+  const payload = await res.json();
+  tracker.finish({
+    status: res.status,
+    user_id: activeUser.id,
+    payload_bytes: Number(
+      res.headers.get("x-9jobs-snapshot-bytes")
+      || res.headers.get("content-length")
+      || 0,
+    ),
+    server_ms: Number(res.headers.get("x-9jobs-snapshot-ms") || 0),
+  });
+  return payload;
 }
 
-let cachedToken: string | null = null;
-let cachedTokenUserId: string | null = null;
+let inFlightSnapshotPromise: Promise<MobileSyncSnapshot> | null = null;
+let inFlightSnapshotUserId: string | null = null;
 
 export function clearInMemoryTokenCache() {
-  cachedToken = null;
-  cachedTokenUserId = null;
+  clearBackendAuthTokenCache();
 }
 
 async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiveUser>, backendUrl?: string) {
@@ -1168,62 +1204,10 @@ async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiv
   if (!resolvedBackendUrl) {
     return null;
   }
-
-  if (cachedToken && cachedTokenUserId === activeUser.id) {
-    return cachedToken;
-  }
-
-  const [[, storedToken], [, storedTokenUserId]] = await AsyncStorage.multiGet([
-    storageKeys.authToken,
-    storageKeys.authTokenUserId,
-  ]);
-
-  let token = storedToken;
-  if (token && storedTokenUserId === activeUser.id) {
-    cachedToken = token;
-    cachedTokenUserId = storedTokenUserId;
-    return token;
-  }
-
-  await AsyncStorage.multiRemove([storageKeys.authToken, storageKeys.authTokenUserId]);
-  cachedToken = null;
-  cachedTokenUserId = null;
-
-  try {
-    const tokenRes = await fetch(`${resolvedBackendUrl}/api/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: activeUser.id,
-        email: activeUser.email,
-        fullName: activeUser.fullName,
-        role: "client",
-      }),
-    });
-
-    if (!tokenRes.ok) {
-      cachedToken = null;
-      cachedTokenUserId = null;
-      throw new Error(`Backend token bootstrap failed with HTTP ${tokenRes.status}`);
-    }
-
-    const tokenData = await tokenRes.json();
-    token = tokenData?.token ?? null;
-    if (token) {
-      cachedToken = token;
-      cachedTokenUserId = activeUser.id;
-      await AsyncStorage.multiSet([
-        [storageKeys.authToken, token],
-        [storageKeys.authTokenUserId, activeUser.id],
-      ]);
-    }
-
-    return token;
-  } catch (err) {
-    cachedToken = null;
-    cachedTokenUserId = null;
-    throw err;
-  }
+  return await getBackendAuthToken(activeUser, {
+    backendUrl: resolvedBackendUrl,
+    label: "mobile.auth.token",
+  });
 }
 
 export async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
@@ -1452,6 +1436,7 @@ export async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Pr
       followUps: [],
       recruiterContacts: [],
       scores: [{ application_id: null, ats_score: resumeScore, ai_match_score: 84, calculated_at: new Date().toISOString() }],
+      activityLogs: [],
     }),
     notifications: mapNotifications(notifications),
     messages: mapMessages(messages, activeUser.id),
@@ -1490,9 +1475,13 @@ async function applySeenStatusToMessages(messages: LiveMessage[]): Promise<LiveM
 }
 
 export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
-  try {
-    const activeUser = resolveActiveUser(sessionUser);
+  const activeUser = resolveActiveUser(sessionUser);
+  if (inFlightSnapshotPromise && inFlightSnapshotUserId === activeUser.id) {
+    return await inFlightSnapshotPromise;
+  }
 
+  const requestPromise = (async () => {
+  try {
     try {
       const backendSnapshot = await fetchBackendSnapshot(activeUser);
       if (backendSnapshot) {
@@ -1521,7 +1510,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
         });
 
         snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
-        snapshot.messageThread = buildMessageThread(snapshot.messages, snapshot.profile.fullName);
+        ensureSupportThreadHasMessages(snapshot, activeUser.id);
 
         const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
         if (localDarkModeOverride !== null) {
@@ -1544,13 +1533,13 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
 
     const client = requireSupabase();
 
-    const messagesPromise = (async () => {
-      try {
-        const token = await AsyncStorage.getItem("auth_token");
-        const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
-        const res = await fetch(`${backendUrl}/api/chat/messages`, {
-          headers: {
-            "Authorization": `Bearer ${token}`
+      const messagesPromise = (async () => {
+        try {
+          const backendUrl = resolveBackendUrl();
+          const token = await ensureBackendAuthToken(activeUser, backendUrl);
+          const res = await fetch(`${backendUrl}/api/chat/messages`, {
+            headers: {
+              "Authorization": `Bearer ${token}`
           }
         });
         if (!res.ok) throw new Error(`HTTP error ${res.status}`);
@@ -1659,7 +1648,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
     });
 
     snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
-    snapshot.messageThread = buildMessageThread(snapshot.messages, snapshot.profile.fullName);
+    ensureSupportThreadHasMessages(snapshot, activeUser.id);
 
     const localDarkModeOverride = await AsyncStorage.getItem("user_dark_mode_override");
     if (localDarkModeOverride !== null) {
@@ -1684,6 +1673,14 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
     setTheme(isDarkMode);
     return local;
   }
+  })().finally(() => {
+    inFlightSnapshotPromise = null;
+    inFlightSnapshotUserId = null;
+  });
+
+  inFlightSnapshotPromise = requestPromise;
+  inFlightSnapshotUserId = activeUser.id;
+  return await requestPromise;
 }
 
 export async function toggleSavedJob(jobId: string, sessionUser?: SessionUser | null) {
@@ -1946,7 +1943,14 @@ export async function updateApplicationStatus(jobId: string, status: Application
     savedCount,
     resumeScore,
     new Date().toISOString(),
-    { timezone: current.profile.timezone },
+    {
+      timezone: current.profile.timezone,
+      interviews: current.trackerInterviews,
+      followUps: current.trackerFollowUps,
+      recruiterContacts: current.trackerRecruiterContacts,
+      coldEmails: current.trackerColdEmails,
+      activityLogs: current.trackerActivityLogs,
+    },
   );
 
   inMemoryStore = { ...current };
@@ -2301,6 +2305,32 @@ function buildLocalChatMessage(
   };
 }
 
+function ensureSupportThreadHasMessages(
+  snapshot: MobileSyncSnapshot,
+  activeUserId: string,
+): MobileSyncSnapshot {
+  if (snapshot.messages.length > 0) {
+    snapshot.messageThread = buildMessageThread(snapshot.messages, snapshot.profile.fullName);
+    return snapshot;
+  }
+
+  snapshot.messages = [
+    buildLocalChatMessage({
+      conversation_id: activeUserId,
+      sender_id: "admin",
+      sender_role: "admin",
+      recipient_id: activeUserId,
+      content: supportWelcomeMessage,
+      direction: "incoming",
+      status: "delivered",
+      is_automated: true,
+      sender_type: "bot",
+    }) as any,
+  ];
+  snapshot.messageThread = buildMessageThread(snapshot.messages, snapshot.profile.fullName);
+  return snapshot;
+}
+
 async function resolveFallbackBotReply(userMessage: string, activeUserId: string) {
   try {
     return await getChatbotResponse(userMessage, activeUserId);
@@ -2315,8 +2345,8 @@ export async function clearAdminConversation(sessionUser?: SessionUser | null) {
   let backendSucceeded = false;
 
   try {
-    const token = await AsyncStorage.getItem("auth_token");
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const backendUrl = resolveBackendUrl();
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
     const res = await fetch(`${backendUrl}/api/chat/messages/clear`, {
       method: "POST",
       headers: {
@@ -2356,8 +2386,8 @@ export async function startNewAdminConversation(sessionUser?: SessionUser | null
   let backendSucceeded = false;
 
   try {
-    const token = await AsyncStorage.getItem("auth_token");
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const backendUrl = resolveBackendUrl();
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
     const res = await fetch(`${backendUrl}/api/chat/messages/new`, {
       method: "POST",
       headers: {
@@ -2496,8 +2526,8 @@ async function sendChatPayloadToAdmin(
   } | null = null;
   
   try {
-    const token = await AsyncStorage.getItem("auth_token");
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const backendUrl = resolveBackendUrl();
+    const token = await ensureBackendAuthToken(activeUser, backendUrl);
     const res = await fetch(`${backendUrl}/api/chat/messages`, {
       method: "POST",
       headers: {
@@ -2707,6 +2737,11 @@ async function sendChatPayloadToAdmin(
 
   current.messageThread = buildMessageThread(current.messages, current.profile.fullName);
   await persistLocalSnapshot(current);
+
+  return {
+    backendSucceeded,
+    snapshot: current,
+  };
 }
 
 

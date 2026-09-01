@@ -19,6 +19,7 @@ import { colors, spacing } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
 import { joinSocketConversation, leaveSocketConversation } from "@/lib/socket/socketService";
 import { clearAdminConversation, startNewAdminConversation } from "@/lib/data/mobile-sync-repository";
+import { resolveBackendUrl } from "@/lib/data/backend-auth-token";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/queries";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -70,7 +71,11 @@ import { FadeInView } from "@/components/motion/FadeInView";
 
 export default function AdminThreadScreen() {
   const { user } = useSession();
-  const { data: snapshot } = usePreviewSyncQuery(false);
+  const { data: snapshot } = usePreviewSyncQuery(false, {
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+    refetchOnMount: "always",
+  });
   const sendMessage = useSendMessageToAdminMutation();
   const markSeen = useMarkMessagesAsSeenMutation();
   const markDelivered = useMarkMessagesAsDeliveredMutation();
@@ -170,7 +175,7 @@ export default function AdminThreadScreen() {
   const deleteMessage = async (messageId: number) => {
     try {
       const token = await AsyncStorage.getItem("auth_token");
-      const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+      const backendUrl = resolveBackendUrl();
       const res = await fetch(`${backendUrl}/api/chat/messages/${messageId}`, {
         method: "DELETE",
         headers: {
@@ -242,7 +247,7 @@ export default function AdminThreadScreen() {
     const buffer = await response.arrayBuffer();
 
     const token = await AsyncStorage.getItem("auth_token");
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+    const backendUrl = resolveBackendUrl();
     const res = await fetch(`${backendUrl}/api/chat/attachments`, {
       method: "POST",
       headers: {

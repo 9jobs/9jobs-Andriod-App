@@ -17,6 +17,7 @@ const activeChannels = new Map<
     refCount: number;
   }
 >();
+const pendingInvalidationTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function useRealtimeInvalidation(channelName: string, tables: TableConfig[]) {
   const queryClient = useQueryClient();
@@ -37,9 +38,20 @@ export function useRealtimeInvalidation(channelName: string, tables: TableConfig
           "postgres_changes",
           { event: "*", schema: "public", table: config.table },
           () => {
-            for (const queryKey of config.queryKeys) {
-              void queryClient.invalidateQueries({ queryKey });
+            const timerKey = `${channelName}:${config.table}`;
+            const existingTimer = pendingInvalidationTimers.get(timerKey);
+            if (existingTimer) {
+              clearTimeout(existingTimer);
             }
+
+            const nextTimer = setTimeout(() => {
+              pendingInvalidationTimers.delete(timerKey);
+              for (const queryKey of config.queryKeys) {
+                void queryClient.invalidateQueries({ queryKey });
+              }
+            }, 120);
+
+            pendingInvalidationTimers.set(timerKey, nextTimer);
           },
         );
       }
@@ -57,6 +69,12 @@ export function useRealtimeInvalidation(channelName: string, tables: TableConfig
         if (info.refCount <= 0) {
           void client.removeChannel(info.channel);
           activeChannels.delete(channelName);
+          for (const timerKey of [...pendingInvalidationTimers.keys()]) {
+            if (timerKey.startsWith(`${channelName}:`)) {
+              clearTimeout(pendingInvalidationTimers.get(timerKey));
+              pendingInvalidationTimers.delete(timerKey);
+            }
+          }
         }
       }
     };

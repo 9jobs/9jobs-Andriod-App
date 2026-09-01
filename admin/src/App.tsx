@@ -7,6 +7,8 @@ import { io } from "socket.io-client";
 
 let adminSocket: any = null;
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.trim() || (import.meta.env.DEV ? "http://localhost:3000" : "https://backend-theta-ten-27.vercel.app");
+let adminSocketSupportPromise: Promise<boolean> | null = null;
+let adminSocketSupportLogged = false;
 const previewTrackerClient = {
   id: "preview-user-9jobs",
   full_name: "Test User",
@@ -90,6 +92,39 @@ function readLocalSuccessStories() {
 
 function writeLocalSuccessStories(stories: any[]) {
   localStorage.setItem(SUCCESS_STORIES_LOCAL_KEY, JSON.stringify(stories));
+}
+
+function normalizeTrackerMilestoneStatus(status: string | null | undefined) {
+  switch (String(status || "").trim().toLowerCase()) {
+    case "offer":
+      return "offer_received";
+    case "contacted":
+      return "recruiter_contacted";
+    case "interviewing":
+      return "interview_scheduled";
+    default:
+      return String(status || "").trim().toLowerCase();
+  }
+}
+
+function extractTrackerMilestoneStatuses(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const statuses = new Set<string>();
+  const status = normalizeTrackerMilestoneStatus(typeof record.status === "string" ? record.status : null);
+  const stage = normalizeTrackerMilestoneStatus(typeof record.current_stage === "string" ? record.current_stage : null);
+
+  if (status) {
+    statuses.add(status);
+  }
+  if (stage) {
+    statuses.add(stage);
+  }
+
+  return Array.from(statuses);
 }
 
 async function createCompressedImageDataUrl(file: File) {
@@ -218,9 +253,45 @@ async function syncLocalSuccessStoriesToBackend(
   return syncedStories;
 }
 
-function connectAdminSocket(token: string, activeChatUserId: string | undefined, onEvent: (event: string, payload: any) => void) {
+async function canUseAdminSocket() {
+  if (import.meta.env.DEV) {
+    return true;
+  }
+
+  if (!adminSocketSupportPromise) {
+    adminSocketSupportPromise = (async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/socket.io/?EIO=4&transport=polling`, {
+          method: "GET",
+        });
+
+        if (!response.ok) {
+          return false;
+        }
+
+        const handshakeText = await response.text();
+        return handshakeText.includes("\"sid\"") || handshakeText.startsWith("0{");
+      } catch {
+        return false;
+      }
+    })();
+  }
+
+  return adminSocketSupportPromise;
+}
+
+async function connectAdminSocket(token: string, activeChatUserId: string | undefined, onEvent: (event: string, payload: any) => void) {
   if (adminSocket) {
     adminSocket.disconnect();
+  }
+
+  const socketSupported = await canUseAdminSocket();
+  if (!socketSupported) {
+    if (!adminSocketSupportLogged) {
+      console.info("[Admin Socket] Socket.IO unavailable for this deployment. Using existing realtime and polling fallbacks.");
+      adminSocketSupportLogged = true;
+    }
+    return;
   }
 
   console.log("[Admin Socket] Connecting to Socket.IO server at:", BACKEND_URL);
@@ -432,9 +503,13 @@ function dedupeAdminApplications(applications: any[]) {
   const map = new Map<string, any>();
 
   for (const application of applications) {
+    const ownerKey = normalizeAdminRolePart(application?.user_id || application?.client_id);
+    const jobIdKey = normalizeAdminRolePart(application?.job_id);
     const roleKey = buildAdminApplicationRoleKey(application);
-    const fallbackKey = `${normalizeAdminRolePart(application?.user_id || application?.client_id)}|job:${normalizeAdminRolePart(application?.job_id)}`;
-    const key = roleKey.replace(/\|/g, "") ? roleKey : fallbackKey;
+    const key =
+      ownerKey && jobIdKey
+        ? `${ownerKey}|job:${jobIdKey}`
+        : roleKey.replace(/\|/g, "") ? roleKey : `${ownerKey}|job:${jobIdKey}`;
     const existing = map.get(key);
 
     if (!existing) {
@@ -459,16 +534,10 @@ function buildAdminJobRoleKey(job: any) {
 
 function buildCanonicalAdminJobs(jobs: any[], applications: any[]) {
   const canonicalApplications = dedupeAdminApplications(applications);
-  const preferredApplicationByRole = new Map(
-    canonicalApplications.map((application) => [
-      buildAdminJobRoleKey({
-        title: application?.job_title,
-        company: application?.company_name,
-        location: application?.job_location,
-        job_type: application?.employment_type || application?.work_type,
-      }),
-      application,
-    ]),
+  const preferredApplicationByJobId = new Map(
+    canonicalApplications
+      .filter((application) => normalizeAdminRolePart(application?.job_id))
+      .map((application) => [normalizeAdminRolePart(application?.job_id), application]),
   );
 
   const jobsByRole = new Map<string, any>();
@@ -483,8 +552,9 @@ function buildCanonicalAdminJobs(jobs: any[], applications: any[]) {
       job_type: String(rawJob?.job_type || "").trim(),
       description: String(rawJob?.description || "").trim(),
     };
-    const roleKey = buildAdminJobRoleKey(job) || `job:${String(job?.id || "")}`;
-    const linkedApplication = preferredApplicationByRole.get(roleKey) || null;
+    const normalizedJobId = normalizeAdminRolePart(job?.id);
+    const roleKey = normalizedJobId ? `job:${normalizedJobId}` : buildAdminJobRoleKey(job) || `job:${String(job?.id || "")}`;
+    const linkedApplication = normalizedJobId ? preferredApplicationByJobId.get(normalizedJobId) || null : null;
     const existing = jobsByRole.get(roleKey);
       const enrichedJob = {
         ...job,
@@ -535,13 +605,16 @@ function buildCanonicalAdminJobs(jobs: any[], applications: any[]) {
       continue;
     }
 
+    const normalizedJobId = normalizeAdminRolePart(application?.job_id);
     const roleKey =
-      buildAdminJobRoleKey({
-        title: application?.job_title,
-        company: application?.company_name,
-        location: application?.job_location,
-        job_type: application?.employment_type || application?.work_type,
-      }) || `application:${String(application?.id || "")}`;
+      normalizedJobId
+        ? `job:${normalizedJobId}`
+        : buildAdminJobRoleKey({
+            title: application?.job_title,
+            company: application?.company_name,
+            location: application?.job_location,
+            job_type: application?.employment_type || application?.work_type,
+          }) || `application:${String(application?.id || "")}`;
 
     if (jobsByRole.has(roleKey)) {
       continue;
@@ -879,7 +952,48 @@ export default function App() {
   const ensureAdminToken = async () => {
     const existingToken = localStorage.getItem("admin_auth_token");
     if (existingToken) {
-      return existingToken;
+      try {
+        const [, payload] = existingToken.split(".");
+        if (!payload) {
+          return existingToken;
+        }
+
+        const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
+        const decoded = JSON.parse(atob(normalizedPayload));
+        const expiresAtMs = Number(decoded?.exp || 0) * 1000;
+        if (expiresAtMs > Date.now() + 30_000) {
+          return existingToken;
+        }
+      } catch (error) {
+        console.warn("[Admin Auth] Stored admin token decode failed. Requesting a fresh one.", error);
+      }
+
+      localStorage.removeItem("admin_auth_token");
+    }
+
+    const clerkAdminEmail = user?.primaryEmailAddress?.emailAddress?.trim();
+    if (isSignedIn && user && clerkAdminEmail) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: clerkAdminEmail,
+            userId: user.id,
+            role: "admin",
+          }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.token) {
+            localStorage.setItem("admin_auth_token", data.token);
+            return data.token as string;
+          }
+        }
+      } catch (error) {
+        console.warn("[Admin Auth] Clerk admin token refresh failed:", error);
+      }
     }
 
     const savedPreviewAuth = localStorage.getItem("admin_preview_authenticated") === "true";
@@ -901,6 +1015,7 @@ export default function App() {
       });
 
       if (!res.ok) {
+        localStorage.removeItem("admin_auth_token");
         return null;
       }
 
@@ -971,11 +1086,11 @@ export default function App() {
 
   // Connect to Socket.IO and listen to live events
   useEffect(() => {
-    if (isAdmin) {
+    if (isAdmin && activeTab === "messages") {
       void (async () => {
         const token = await ensureAdminToken();
         if (token) {
-          connectAdminSocket(token, activeChatUser?.id, (event, payload) => {
+          await connectAdminSocket(token, activeChatUser?.id, (event, payload) => {
             console.log(`[Admin Socket Event] ${event}:`, payload);
             if (event === "conversation_created" || event === "conversation_updated") {
               void fetchChatUsers();
@@ -1017,7 +1132,7 @@ export default function App() {
     return () => {
       disconnectAdminSocket();
     };
-  }, [isAdmin, activeChatUser?.id]);
+  }, [isAdmin, activeTab, activeChatUser?.id]);
 
 
   // Fetch data on active tab change or admin verification
@@ -1415,6 +1530,8 @@ export default function App() {
 
   // Centralized data fetch controller
   const fetchData = async () => {
+    setSchemaWarning("");
+
     try {
       switch (activeTab) {
         case "dashboard":
@@ -1470,7 +1587,6 @@ export default function App() {
         default:
           break;
       }
-      setSchemaWarning("");
     } catch (err: any) {
       console.error(`Fetch failed for tab ${activeTab}:`, err.message);
       setSchemaWarning(toAdminErrorMessage(err));
@@ -1479,6 +1595,30 @@ export default function App() {
 
   const fetchSystemSettings = async () => {
     try {
+      const token = await ensureAdminToken();
+      if (token && BACKEND_URL) {
+        const response = await fetch(`${BACKEND_URL}/api/admin/system-settings`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const data = payload?.settings;
+        if (data) {
+          setAppSettings({
+            maintenanceMode: data.maintenance_mode,
+            pushNotificationsEnabled: data.push_notifications_enabled,
+            darkMode: data.dark_mode_override,
+          });
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from("system_settings")
         .select("*")
@@ -1495,12 +1635,35 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Failed to fetch system settings:", err.message);
-      throw err;
+      setAppSettings({
+        maintenanceMode: false,
+        pushNotificationsEnabled: true,
+        darkMode: false
+      });
     }
   };
 
   const fetchDashboardStats = async () => {
     try {
+      const token = await ensureAdminToken();
+      if (token && BACKEND_URL) {
+        const response = await fetch(`${BACKEND_URL}/api/admin/dashboard`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        if (payload?.stats) {
+          setStats(payload.stats);
+          return;
+        }
+      }
+
       const [usersResult, jobsResult, applicationsResult, messagesResult, subscriptionsResult] = await Promise.all([
         supabase.from("profiles").select("*", { count: "exact", head: true }),
         supabase.from("jobs").select("*", { count: "exact", head: true }),
@@ -1530,7 +1693,13 @@ export default function App() {
       });
     } catch (err: any) {
       console.error("Dashboard stats failed:", err.message);
-      throw err;
+      setStats({
+        usersCount: 0,
+        jobsCount: 0,
+        applicationsCount: 0,
+        messagesCount: 0,
+        activeSubscriptionsCount: 0
+      });
     }
   };
 
@@ -1658,6 +1827,7 @@ export default function App() {
       const metrics = calculateTrackerMetrics({
         applications: clientApplications,
         interviews: clientInterviews,
+        activityLogs: activityData.filter((activity) => activity.client_id === profile.id),
         timezone: profile.timezone || "Australia/Melbourne",
       });
 
@@ -2017,7 +2187,10 @@ export default function App() {
 
   const fetchChatUsers = async () => {
     try {
-      const token = localStorage.getItem("admin_auth_token");
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing.");
+      }
       const res = await fetch(`${BACKEND_URL}/api/admin/conversations`, {
         headers: {
           "Authorization": `Bearer ${token}`
@@ -2122,7 +2295,8 @@ export default function App() {
             fetchChatMessages(activeUsers[0].id);
           }
         } catch (fallbackErr: any) {
-          showError(fallbackErr.message);
+          console.warn("All conversation sources failed; leaving the message list empty instead of blocking the page:", fallbackErr);
+          setUsers([]);
         }
       }
     }
@@ -2156,7 +2330,10 @@ export default function App() {
 
   const fetchChatMessages = async (userId: string) => {
     try {
-      const token = localStorage.getItem("admin_auth_token");
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing.");
+      }
       
       // 1. Mark messages seen on backend
       await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(userId)}/seen`, {
@@ -2218,15 +2395,16 @@ export default function App() {
             .order("created_at", { ascending: true });
           if (fallbackError) throw fallbackError;
 
-          const mapped = (data || []).map((m: any) => ({
-            ...m,
-            sender_role: m.sender_role || (m.sender_id === "admin" ? "admin" : "client"),
-            content: m.content || m.text || "",
-            status: m.status || "seen",
-          }));
-          setMessages(mapped);
-        } catch (fallbackErr: any) {
-          showError(fallbackErr.message);
+        const mapped = (data || []).map((m: any) => ({
+          ...m,
+          sender_role: m.sender_role || (m.sender_id === "admin" ? "admin" : "client"),
+          content: m.content || m.text || "",
+          status: m.status || "seen",
+        }));
+        setMessages(mapped);
+      } catch (fallbackErr: any) {
+          console.warn("All message history sources failed; leaving the active thread empty instead of blocking the page:", fallbackErr);
+          setMessages([]);
         }
       }
     }
@@ -2234,12 +2412,54 @@ export default function App() {
 
 
   const fetchServices = async () => {
+    try {
+      const token = await ensureAdminToken();
+      if (token && BACKEND_URL) {
+        const response = await fetch(`${BACKEND_URL}/api/admin/services`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        setServices(payload?.services || []);
+        return;
+      }
+    } catch (backendError) {
+      console.warn("fetchServices backend load failed, falling back to direct Supabase query:", backendError);
+    }
+
     const { data, error } = await supabase.from("services").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     setServices(data || []);
   };
 
   const fetchPlans = async () => {
+    try {
+      const token = await ensureAdminToken();
+      if (token && BACKEND_URL) {
+        const response = await fetch(`${BACKEND_URL}/api/admin/pricing-plans`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error || `HTTP error ${response.status}`);
+        }
+
+        const payload = await response.json();
+        setPlans(payload?.plans || []);
+        return;
+      }
+    } catch (backendError) {
+      console.warn("fetchPlans backend load failed, falling back to direct Supabase query:", backendError);
+    }
+
     const { data, error } = await supabase.from("pricing_plans").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     setPlans(data || []);
@@ -2383,6 +2603,7 @@ export default function App() {
         tags: jobForm.tags.split(",").map((t) => t.trim()).filter(Boolean)
       };
       const jobRecord = { id: jobId, ...payload, posted_at: "Just now" };
+      const token = await ensureAdminToken();
 
       if (jobForm.user_id) {
         const existingSavedJob = savedJobEntries.find((entry) => {
@@ -2430,7 +2651,6 @@ export default function App() {
           created_by_admin_id: user?.id || "admin",
         };
         try {
-          const token = await ensureAdminToken();
           if (!token || !BACKEND_URL) {
             throw new Error("Backend tracker route unavailable.");
           }
@@ -2455,10 +2675,26 @@ export default function App() {
           console.warn("handleSaveJob backend tracker save failed, falling back to direct Supabase upsert:", backendError);
           await saveTrackerApplicationDirectly(trackerPayload, jobRecord);
         }
-      } else if (editItem) {
-        await upsertJobRecord({ id: editItem.id, ...payload, posted_at: editItem.posted_at || "Just now" });
       } else {
-        await upsertJobRecord(jobRecord);
+        if (!token || !BACKEND_URL) {
+          throw new Error("Admin auth token missing. Please sign in again.");
+        }
+
+        const response = await fetch(`${BACKEND_URL}/api/admin/tracker/jobs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            job: editItem ? { id: editItem.id, ...payload, posted_at: editItem.posted_at || "Just now" } : jobRecord,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => null);
+          throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
+        }
       }
 
       showSuccess(jobForm.user_id ? "Saved role synced to the app successfully!" : "Job saved successfully!");
@@ -2714,7 +2950,7 @@ export default function App() {
         created_by_admin_id: user?.id || "admin",
       };
       let savedApplicationId = editItem?.id ? Number(editItem.id) : null;
-
+      let previousApplicationForActivity = editItem ?? null;
       try {
         const token = await ensureAdminToken();
         if (!token || !BACKEND_URL) {
@@ -2737,9 +2973,9 @@ export default function App() {
           const errorPayload = await res.json().catch(() => null);
           throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
         }
-
         const responsePayload = await res.json().catch(() => null);
         savedApplicationId = Number(responsePayload?.application?.id ?? savedApplicationId ?? 0) || savedApplicationId;
+        previousApplicationForActivity = responsePayload?.previousApplication ?? previousApplicationForActivity;
       } catch (backendError) {
         console.warn("handleSaveTracker backend tracker save failed, falling back to direct Supabase upsert:", backendError);
         const savedApplication = await saveTrackerApplicationDirectly(payload, selectedJob, { skipJobUpsert: true });
@@ -2752,7 +2988,7 @@ export default function App() {
         "application_saved",
         "Application saved",
         "Application tracker entry created or updated from admin panel.",
-        editItem ?? null,
+        previousApplicationForActivity,
         payload,
       );
       showSuccess("Job tracker updated successfully!");
@@ -2925,7 +3161,6 @@ export default function App() {
         const errorPayload = await res.json().catch(() => null);
         throw new Error(errorPayload?.error || `HTTP error ${res.status}`);
       }
-
       await logActivity(payload.client_id, payload.application_id, "recruiter_contact_saved", "Hiring manager saved", "Hiring manager details updated from admin panel.", editItem ?? null, payload);
       showSuccess("Hiring manager saved successfully!");
       await fetchTrackerClientData(payload.client_id);
@@ -3106,6 +3341,7 @@ export default function App() {
     e.preventDefault();
     try {
       const payload = {
+        ...(editItem?.id ? { id: Number(editItem.id) } : {}),
         client_id: scoreForm.client_id,
         application_id: scoreForm.application_id ? Number(scoreForm.application_id) : null,
         ats_score: Number(scoreForm.ats_score),
@@ -3120,12 +3356,23 @@ export default function App() {
         throw new Error("Scores must be between 0 and 100.");
       }
 
-      if (editItem) {
-        const { error } = await supabase.from("client_scores").update(payload).eq("id", editItem.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("client_scores").insert([payload]);
-        if (error) throw error;
+      const token = await ensureAdminToken();
+      if (!token) {
+        throw new Error("Admin auth token missing. Please sign in again.");
+      }
+
+      const response = await fetch(`${BACKEND_URL}/api/admin/tracker/scores`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ score: payload }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || `HTTP error ${response.status}`);
       }
 
       await logActivity(payload.client_id, payload.application_id, "score_saved", "Scores updated", "ATS and AI match scores updated from admin panel.", editItem ?? null, payload);
@@ -3643,7 +3890,8 @@ export default function App() {
     const trimmedText = chatInput.trim();
     if (editingMessage) {
       try {
-        const token = localStorage.getItem("admin_auth_token");
+        const token = await ensureAdminToken();
+        if (!token) throw new Error("Admin auth token missing. Please sign in again.");
         const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/messages/${editingMessage.id}`, {
           method: "PATCH",
           headers: {
@@ -3690,7 +3938,8 @@ export default function App() {
     const clientMessageId = "msg_admin_" + Math.random().toString(36).substring(2) + "_" + Date.now();
 
     try {
-      const token = localStorage.getItem("admin_auth_token");
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
       const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/messages`, {
         method: "POST",
         headers: {
@@ -3779,7 +4028,8 @@ export default function App() {
     if (!confirm("Are you sure you want to delete this message?")) return;
 
     try {
-      const token = localStorage.getItem("admin_auth_token");
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
       const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/messages/${messageId}`, {
         method: "DELETE",
         headers: {
@@ -3828,7 +4078,8 @@ export default function App() {
     if (!confirm("Are you sure you want to clear all messages in this conversation?")) return;
 
     try {
-      const token = localStorage.getItem("admin_auth_token");
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
       await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/seen`, {
         method: "POST",
         headers: {
@@ -3877,7 +4128,8 @@ export default function App() {
     if (!confirm("Are you sure you want to delete this conversation entirely? This will delete all messages and remove the client conversation.")) return;
 
     try {
-      const token = localStorage.getItem("admin_auth_token");
+      const token = await ensureAdminToken();
+      if (!token) throw new Error("Admin auth token missing. Please sign in again.");
       const res = await fetch(`${BACKEND_URL}/api/admin/conversations/${encodeURIComponent(activeChatUser.id)}/delete`, {
         method: "DELETE",
         headers: {
@@ -4298,6 +4550,53 @@ export default function App() {
   });
 
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
+  const existingTrackerApplicationIds = new Set(
+    applications
+      .map((application) => (typeof application?.id === "number" ? application.id : null))
+      .filter((applicationId): applicationId is number => applicationId !== null),
+  );
+  const trackerMilestoneApplicationIds = trackerActivities.reduce((acc, activity) => {
+    if (typeof activity?.application_id !== "number" || !existingTrackerApplicationIds.has(activity.application_id)) {
+      return acc;
+    }
+
+    const statuses = new Set<string>([
+      ...extractTrackerMilestoneStatuses(activity.old_value),
+      ...extractTrackerMilestoneStatuses(activity.new_value),
+    ]);
+
+    if (statuses.has("recruiter_contacted")) {
+      acc.recruiterContacted.add(activity.application_id);
+    }
+    if (statuses.has("under_review")) {
+      acc.underReview.add(activity.application_id);
+    }
+    if (statuses.has("shortlisted")) {
+      acc.shortlisted.add(activity.application_id);
+    }
+    if (statuses.has("interview_completed")) {
+      acc.interviewCompleted.add(activity.application_id);
+    }
+    if (statuses.has("offer_received")) {
+      acc.offerReceived.add(activity.application_id);
+    }
+    if (statuses.has("hired")) {
+      acc.hired.add(activity.application_id);
+    }
+    if (statuses.has("rejected")) {
+      acc.rejected.add(activity.application_id);
+    }
+
+    return acc;
+  }, {
+    underReview: new Set<number>(),
+    recruiterContacted: new Set<number>(),
+    shortlisted: new Set<number>(),
+    interviewCompleted: new Set<number>(),
+    offerReceived: new Set<number>(),
+    hired: new Set<number>(),
+    rejected: new Set<number>(),
+  });
 
   const filteredApplications = applications.filter((a) => {
     const query = searchQuery.toLowerCase();
@@ -4340,7 +4639,38 @@ export default function App() {
     if (trackerMetricFilter === "interview_completed") {
       return normalizedStatus === "interview_completed" ||
         normalizedStage === "interview_completed" ||
-        trackerInterviews.some((interview) => interview.application_id === a.id && interview.status === "completed");
+        trackerInterviews.some((interview) => interview.application_id === a.id && interview.status === "completed") ||
+        trackerMilestoneApplicationIds.interviewCompleted.has(a.id);
+    }
+    if (trackerMetricFilter === "under_review") {
+      return normalizedStatus === "under_review" ||
+        normalizedStage === "under_review" ||
+        trackerMilestoneApplicationIds.underReview.has(a.id);
+    }
+    if (trackerMetricFilter === "recruiter_contacted") {
+      return normalizedStatus === "recruiter_contacted" ||
+        normalizedStage === "recruiter_contacted" ||
+        trackerMilestoneApplicationIds.recruiterContacted.has(a.id);
+    }
+    if (trackerMetricFilter === "shortlisted") {
+      return normalizedStatus === "shortlisted" ||
+        normalizedStage === "shortlisted" ||
+        trackerMilestoneApplicationIds.shortlisted.has(a.id);
+    }
+    if (trackerMetricFilter === "offer_received") {
+      return normalizedStatus === "offer_received" ||
+        normalizedStage === "offer_received" ||
+        trackerMilestoneApplicationIds.offerReceived.has(a.id);
+    }
+    if (trackerMetricFilter === "hired") {
+      return normalizedStatus === "hired" ||
+        normalizedStage === "hired" ||
+        trackerMilestoneApplicationIds.hired.has(a.id);
+    }
+    if (trackerMetricFilter === "rejected") {
+      return normalizedStatus === "rejected" ||
+        normalizedStage === "rejected" ||
+        trackerMilestoneApplicationIds.rejected.has(a.id);
     }
     return normalizedStatus === trackerMetricFilter || normalizedStage === trackerMetricFilter;
   });
@@ -4399,6 +4729,7 @@ export default function App() {
     recruiterContacts: trackerContacts,
     coldEmails: trackerColdEmails,
     scores: trackerScores,
+    activityLogs: trackerActivities,
     timezone: selectedTrackerClient?.timezone || "Australia/Melbourne",
   });
   const openTrackerMetric = (metric: string) => {

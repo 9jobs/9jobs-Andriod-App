@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { supabase } from "../lib/supabase";
+import { canReachSupabaseUpstream, supabase } from "../lib/supabase";
 
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-9jobs-chat-key-2026";
@@ -48,6 +48,8 @@ async function persistAuthenticatedProfile(payload: {
 
 router.post("/token", async (req: Request, res: Response) => {
   const { email, password, fullName, role, userId, phoneNumber } = req.body;
+  const requestStartedAt = Date.now();
+  const supabaseReachable = await canReachSupabaseUpstream();
 
   console.log(`[Auth Route] /token request: email=${email}, role=${role}`);
 
@@ -57,18 +59,25 @@ router.post("/token", async (req: Request, res: Response) => {
       const isKnownAdmin = normalizedEmail === ADMIN_EMAIL.toLowerCase();
 
       if (isKnownAdmin) {
-        try {
-          await persistAuthenticatedProfile({
-            userId: String(userId),
-            email: normalizedEmail,
-            fullName: "9Jobs Administrator",
-            phoneNumber,
-            role: "admin",
-          });
-        } catch (persistError) {
-          console.warn("[Auth Route] Warning: failed to persist Clerk admin profile:", persistError);
+        const persistStartedAt = Date.now();
+        if (supabaseReachable) {
+          try {
+            await persistAuthenticatedProfile({
+              userId: String(userId),
+              email: normalizedEmail,
+              fullName: "9Jobs Administrator",
+              phoneNumber,
+              role: "admin",
+            });
+          } catch (persistError) {
+            console.warn("[Auth Route] Warning: failed to persist Clerk admin profile:", persistError);
+          }
+        } else {
+          console.warn("[Auth Route] Skipping Clerk admin profile persistence because Supabase is unreachable.");
         }
+        const persistMs = Date.now() - persistStartedAt;
 
+        const signStartedAt = Date.now();
         const token = jwt.sign(
           {
             userId: String(userId),
@@ -78,8 +87,12 @@ router.post("/token", async (req: Request, res: Response) => {
           JWT_SECRET,
           { expiresIn: "30d" }
         );
+        const signMs = Date.now() - signStartedAt;
 
         console.log(`[Auth Route] Success: Clerk-backed admin token generated for ${normalizedEmail}`);
+        res.setHeader("x-9jobs-auth-persist-ms", String(persistMs));
+        res.setHeader("x-9jobs-auth-sign-ms", String(signMs));
+        res.setHeader("x-9jobs-auth-total-ms", String(Date.now() - requestStartedAt));
         return res.json({
           token,
           user: {
@@ -96,18 +109,25 @@ router.post("/token", async (req: Request, res: Response) => {
       email?.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase() &&
       password === ADMIN_PASSWORD
     ) {
-      try {
-        await persistAuthenticatedProfile({
-          userId: "admin",
-          email: ADMIN_EMAIL,
-          fullName: "9Jobs Administrator",
-          phoneNumber,
-          role: "admin",
-        });
-      } catch (persistError) {
-        console.warn("[Auth Route] Warning: failed to persist password admin profile:", persistError);
+      const persistStartedAt = Date.now();
+      if (supabaseReachable) {
+        try {
+          await persistAuthenticatedProfile({
+            userId: "admin",
+            email: ADMIN_EMAIL,
+            fullName: "9Jobs Administrator",
+            phoneNumber,
+            role: "admin",
+          });
+        } catch (persistError) {
+          console.warn("[Auth Route] Warning: failed to persist password admin profile:", persistError);
+        }
+      } else {
+        console.warn("[Auth Route] Skipping password admin profile persistence because Supabase is unreachable.");
       }
+      const persistMs = Date.now() - persistStartedAt;
 
+      const signStartedAt = Date.now();
       const token = jwt.sign(
         {
           userId: "admin",
@@ -117,7 +137,11 @@ router.post("/token", async (req: Request, res: Response) => {
         JWT_SECRET,
         { expiresIn: "30d" }
       );
+      const signMs = Date.now() - signStartedAt;
       console.log(`[Auth Route] Success: Admin token generated`);
+      res.setHeader("x-9jobs-auth-persist-ms", String(persistMs));
+      res.setHeader("x-9jobs-auth-sign-ms", String(signMs));
+      res.setHeader("x-9jobs-auth-total-ms", String(Date.now() - requestStartedAt));
       return res.json({ token, user: { userId: "admin", role: "admin", email: ADMIN_EMAIL } });
     }
 
@@ -130,18 +154,25 @@ router.post("/token", async (req: Request, res: Response) => {
       email || (clientUserId === "preview-user-9jobs" ? "preview-user-9jobs@9jobs.app" : "candidate@9jobs.app");
     const clientFullName = fullName || "9Jobs Candidate";
 
-    try {
-      await persistAuthenticatedProfile({
-        userId: clientUserId,
-        email: clientEmail,
-        fullName: clientFullName,
-        phoneNumber,
-        role: "client",
-      });
-    } catch (persistError) {
-      console.warn(`[Auth Route] Warning: failed to persist client profile for ${clientUserId}:`, persistError);
+    const persistStartedAt = Date.now();
+    if (supabaseReachable) {
+      try {
+        await persistAuthenticatedProfile({
+          userId: clientUserId,
+          email: clientEmail,
+          fullName: clientFullName,
+          phoneNumber,
+          role: "client",
+        });
+      } catch (persistError) {
+        console.warn(`[Auth Route] Warning: failed to persist client profile for ${clientUserId}:`, persistError);
+      }
+    } else {
+      console.warn(`[Auth Route] Skipping client profile persistence for ${clientUserId} because Supabase is unreachable.`);
     }
+    const persistMs = Date.now() - persistStartedAt;
 
+    const signStartedAt = Date.now();
     const token = jwt.sign(
       {
         userId: clientUserId,
@@ -152,8 +183,12 @@ router.post("/token", async (req: Request, res: Response) => {
       JWT_SECRET,
       { expiresIn: "30d" }
     );
+    const signMs = Date.now() - signStartedAt;
 
     console.log(`[Auth Route] Success: Client token generated for ${clientUserId}`);
+    res.setHeader("x-9jobs-auth-persist-ms", String(persistMs));
+    res.setHeader("x-9jobs-auth-sign-ms", String(signMs));
+    res.setHeader("x-9jobs-auth-total-ms", String(Date.now() - requestStartedAt));
     return res.json({
       token,
       user: {

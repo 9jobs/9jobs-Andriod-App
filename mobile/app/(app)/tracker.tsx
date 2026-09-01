@@ -11,6 +11,7 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { FadeInView } from "@/components/motion/FadeInView";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSession } from "@/providers/SessionProvider";
+import { useScreenPerf } from "@/lib/perf/livePerf";
 // fetchCandidateQuestionnaire removed in favor of React Query
 
 const submittedTrackerStatuses = new Set([
@@ -44,6 +45,39 @@ const stageOptions = [
   { label: "Hired", value: "hired" },
   { label: "Rejected", value: "rejected" },
 ] as const;
+
+function normalizeTrackerStatus(status: string | null | undefined) {
+  switch (String(status || "").trim().toLowerCase()) {
+    case "offer":
+      return "offer_received";
+    case "contacted":
+      return "recruiter_contacted";
+    case "interviewing":
+      return "interview_scheduled";
+    default:
+      return String(status || "").trim().toLowerCase();
+  }
+}
+
+function extractTrackerMilestoneStatuses(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const statuses = new Set<string>();
+  const status = normalizeTrackerStatus(typeof record.status === "string" ? record.status : null);
+  const stage = normalizeTrackerStatus(typeof record.current_stage === "string" ? record.current_stage : null);
+
+  if (status) {
+    statuses.add(status);
+  }
+  if (stage) {
+    statuses.add(stage);
+  }
+
+  return Array.from(statuses);
+}
 
 function formatInterviewDate(dateString: string) {
   try {
@@ -167,6 +201,17 @@ export default function TrackerScreen() {
   const [screenshotMap, setScreenshotMap] = useState<Record<string, string>>({});
   const [beforeScreenshotMap, setBeforeScreenshotMap] = useState<Record<string, string>>({});
   const [afterScreenshotMap, setAfterScreenshotMap] = useState<Record<string, string>>({});
+  useScreenPerf("/(app)/tracker", Boolean(snapshot && questionnaire), {
+    screen: "tracker",
+    jobs: jobs.length,
+    applications: snapshot?.rawApplications?.length ?? 0,
+  });
+
+  useFocusEffect(
+    React.useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
 
   const updatedResume = useMemo(() => {
     const url = String(questionnaire?.enhanced_resume_url || "");
@@ -238,7 +283,7 @@ export default function TrackerScreen() {
     return new Set(
       (snapshot?.rawApplications ?? [])
         .filter((application) => {
-          const submitted = submittedTrackerStatuses.has(application.status?.trim().toLowerCase() ?? "draft");
+          const submitted = submittedTrackerStatuses.has(normalizeTrackerStatus(application.status) || "draft");
           if (!submitted) {
             return false;
           }
@@ -253,6 +298,95 @@ export default function TrackerScreen() {
         .map((application) => application.job_id),
     );
   }, [snapshot?.rawApplications, toTimezoneDateKey]);
+
+  const milestoneApplicationIds = useMemo(() => {
+    const existingApplicationIds = new Set(
+      (snapshot?.rawApplications ?? [])
+        .map((application) => (typeof application?.id === "number" ? application.id : null))
+        .filter((applicationId): applicationId is number => applicationId !== null),
+    );
+    const underReview = new Set<number>();
+    const recruiterContacted = new Set<number>();
+    const shortlisted = new Set<number>();
+    const interviewCompleted = new Set<number>();
+    const offerReceived = new Set<number>();
+    const hired = new Set<number>();
+    const rejected = new Set<number>();
+
+    (snapshot?.rawApplications ?? []).forEach((application) => {
+      const normalizedStatus = normalizeTrackerStatus(application.status);
+      const normalizedStage = normalizeTrackerStatus(application.current_stage);
+
+      if (normalizedStatus === "under_review" || normalizedStage === "under_review") {
+        underReview.add(application.id);
+      }
+      if (normalizedStatus === "recruiter_contacted" || normalizedStage === "recruiter_contacted") {
+        recruiterContacted.add(application.id);
+      }
+      if (normalizedStatus === "shortlisted" || normalizedStage === "shortlisted") {
+        shortlisted.add(application.id);
+      }
+      if (normalizedStatus === "interview_completed" || normalizedStage === "interview_completed") {
+        interviewCompleted.add(application.id);
+      }
+      if (normalizedStatus === "offer_received" || Boolean(application.offer_received_at)) {
+        offerReceived.add(application.id);
+      }
+      if (normalizedStatus === "hired" || Boolean(application.hired_at)) {
+        hired.add(application.id);
+      }
+      if (normalizedStatus === "rejected") {
+        rejected.add(application.id);
+      }
+    });
+
+    (snapshot?.trackerInterviews ?? []).forEach((interview) => {
+      if (typeof interview.application_id === "number" && interview.status === "completed") {
+        interviewCompleted.add(interview.application_id);
+      }
+    });
+
+    (snapshot?.trackerRecruiterContacts ?? []).forEach((contact) => {
+      if (typeof contact.application_id === "number") {
+        recruiterContacted.add(contact.application_id);
+      }
+    });
+
+    (snapshot?.trackerActivityLogs ?? []).forEach((activity) => {
+      if (typeof activity.application_id !== "number" || !existingApplicationIds.has(activity.application_id)) {
+        return;
+      }
+
+      const historicalStatuses = new Set<string>([
+        ...extractTrackerMilestoneStatuses(activity.old_value),
+        ...extractTrackerMilestoneStatuses(activity.new_value),
+      ]);
+
+      if (historicalStatuses.has("recruiter_contacted")) {
+        recruiterContacted.add(activity.application_id);
+      }
+      if (historicalStatuses.has("under_review")) {
+        underReview.add(activity.application_id);
+      }
+      if (historicalStatuses.has("shortlisted")) {
+        shortlisted.add(activity.application_id);
+      }
+      if (historicalStatuses.has("interview_completed")) {
+        interviewCompleted.add(activity.application_id);
+      }
+      if (historicalStatuses.has("offer_received")) {
+        offerReceived.add(activity.application_id);
+      }
+      if (historicalStatuses.has("hired")) {
+        hired.add(activity.application_id);
+      }
+      if (historicalStatuses.has("rejected")) {
+        rejected.add(activity.application_id);
+      }
+    });
+
+    return { underReview, recruiterContacted, shortlisted, interviewCompleted, offerReceived, hired, rejected };
+  }, [snapshot?.rawApplications, snapshot?.trackerActivityLogs, snapshot?.trackerInterviews, snapshot?.trackerRecruiterContacts]);
 
   const handleUploadScreenshot = async (jobId: string, kind: "before" | "after") => {
     if (isPickingRef.current) return;
@@ -321,7 +455,7 @@ export default function TrackerScreen() {
   const filteredJobs = useMemo(() => {
     const matchingJobs = jobs.filter((job) => {
       const rawApplication = applicationsByJobId.get(job.id);
-      const normalizedStatus = rawApplication?.status?.trim().toLowerCase() ?? "";
+      const normalizedStatus = normalizeTrackerStatus(rawApplication?.status);
 
       switch (activeFilter) {
         case "Applied":
@@ -331,23 +465,23 @@ export default function TrackerScreen() {
         case "Applications Today":
           return job.isApplied && todayApplicationJobIds.has(job.id);
         case "Under Review":
-          return job.isApplied && normalizedStatus === "under_review";
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.underReview.has(rawApplication.id);
         case "Recruiter Contacted":
-          return job.isApplied && normalizedStatus === "recruiter_contacted";
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.recruiterContacted.has(rawApplication.id);
         case "Shortlisted":
-          return job.isApplied && normalizedStatus === "shortlisted";
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.shortlisted.has(rawApplication.id);
         case "Upcoming Interviews":
         case "Interviewing":
           return job.isApplied && ["phone_interview", "video_interview", "face_to_face_interview", "interview_scheduled", "second_interview", "reference_check"].includes(normalizedStatus);
         case "Interview Completed":
-          return job.isApplied && normalizedStatus === "interview_completed";
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.interviewCompleted.has(rawApplication.id);
         case "Offers Received":
         case "Offers":
-          return job.isApplied && (normalizedStatus === "offer_received" || Boolean(rawApplication?.offer_received_at));
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.offerReceived.has(rawApplication.id);
         case "Hired":
-          return job.isApplied && (normalizedStatus === "hired" || Boolean(rawApplication?.hired_at));
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.hired.has(rawApplication.id);
         case "Rejected":
-          return job.isApplied && normalizedStatus === "rejected";
+          return job.isApplied && typeof rawApplication?.id === "number" && milestoneApplicationIds.rejected.has(rawApplication.id);
         case "Saved":
           return job.isSaved;
         default:
@@ -362,7 +496,7 @@ export default function TrackerScreen() {
       const rightDate = new Date(rightApplication?.application_date ?? rightApplication?.applied_at ?? rightApplication?.created_at ?? 0).getTime();
       return rightDate - leftDate;
     });
-  }, [jobs, activeFilter, applicationsByJobId, todayApplicationJobIds]);
+  }, [jobs, activeFilter, applicationsByJobId, todayApplicationJobIds, milestoneApplicationIds]);
 
   const jobInterviews = useMemo(() => {
     if (!selectedJob || !snapshot?.trackerInterviews) return [];

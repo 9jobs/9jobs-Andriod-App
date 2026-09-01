@@ -47,6 +47,12 @@ type ClientScoreRow = {
   calculated_at?: string | null;
 };
 
+type ActivityLogRow = {
+  application_id?: number | null;
+  old_value?: unknown;
+  new_value?: unknown;
+};
+
 const submittedStatuses = new Set([
   "applied",
   "under_review",
@@ -174,6 +180,26 @@ function buildContactKey(contact: RecruiterContactRow) {
   return name ? `name:${name}` : `contact:${contact.id ?? Math.random()}`;
 }
 
+function extractNormalizedStatusesFromActivityValue(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const statuses = new Set<string>();
+  const status = normalizeStatus(typeof record.status === "string" ? record.status : null);
+  const stage = normalizeStatus(typeof record.current_stage === "string" ? record.current_stage : null);
+
+  if (status && status !== "draft") {
+    statuses.add(status);
+  }
+  if (stage && stage !== "draft") {
+    statuses.add(stage);
+  }
+
+  return Array.from(statuses);
+}
+
 export function calculateTrackerMetrics(input: {
   applications: ApplicationRow[];
   interviews?: InterviewRow[];
@@ -181,6 +207,7 @@ export function calculateTrackerMetrics(input: {
   recruiterContacts?: RecruiterContactRow[];
   coldEmails?: ColdEmailRow[];
   scores?: ClientScoreRow[];
+  activityLogs?: ActivityLogRow[];
   savedCount?: number;
   timezone?: string;
 }) {
@@ -191,21 +218,49 @@ export function calculateTrackerMetrics(input: {
   const recruiterContacts = input.recruiterContacts ?? [];
   const coldEmails = input.coldEmails ?? [];
   const scores = input.scores ?? [];
+  const activityLogs = input.activityLogs ?? [];
   const savedCount = input.savedCount ?? 0;
   const todayKey = toTimezoneDateKey(new Date().toISOString(), timezone);
 
   const submittedApplications = applications.filter(isSubmittedApplication);
   const activeApplications = applications.filter(isActiveApplication);
+  const existingApplicationIds = new Set(applications.map((application) => application.id));
 
   const recruiterContactedIds = new Set<number>();
+  const underReviewIds = new Set<number>();
+  const offerReceivedIds = new Set<number>();
+  const hiredIds = new Set<number>();
+  const rejectedIds = new Set<number>();
   applications.forEach((application) => {
+    if (normalizeStatus(application.status) === "under_review") {
+      underReviewIds.add(application.id);
+    }
     if (normalizeStatus(application.status) === "recruiter_contacted") {
       recruiterContactedIds.add(application.id);
+    }
+    if (normalizeStatus(application.status) === "offer_received" || Boolean(application.offer_received_at)) {
+      offerReceivedIds.add(application.id);
+    }
+    if (normalizeStatus(application.status) === "hired" || Boolean(application.hired_at)) {
+      hiredIds.add(application.id);
+    }
+    if (normalizeStatus(application.status) === "rejected") {
+      rejectedIds.add(application.id);
     }
   });
   recruiterContacts.forEach((contact) => {
     if (typeof contact.application_id === "number") {
       recruiterContactedIds.add(contact.application_id);
+    }
+  });
+
+  const shortlistedIds = new Set<number>();
+  applications.forEach((application) => {
+    if (
+      normalizeStatus(application.status) === "shortlisted" ||
+      normalizeStatus(application.current_stage) === "shortlisted"
+    ) {
+      shortlistedIds.add(application.id);
     }
   });
 
@@ -225,6 +280,46 @@ export function calculateTrackerMetrics(input: {
   interviews.forEach((interview) => {
     if (interview.status === "completed") {
       interviewCompletedIds.add(interview.application_id);
+    }
+  });
+  applications.forEach((application) => {
+    const normalizedStatus = normalizeStatus(application.status);
+    const normalizedStage = normalizeStatus(application.current_stage);
+    if (normalizedStatus === "interview_completed" || normalizedStage === "interview_completed") {
+      interviewCompletedIds.add(application.id);
+    }
+  });
+
+  activityLogs.forEach((activity) => {
+    if (typeof activity.application_id !== "number" || !existingApplicationIds.has(activity.application_id)) {
+      return;
+    }
+
+    const historicalStatuses = new Set<string>([
+      ...extractNormalizedStatusesFromActivityValue(activity.old_value),
+      ...extractNormalizedStatusesFromActivityValue(activity.new_value),
+    ]);
+
+    if (historicalStatuses.has("recruiter_contacted")) {
+      recruiterContactedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("under_review")) {
+      underReviewIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("shortlisted")) {
+      shortlistedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("interview_completed")) {
+      interviewCompletedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("offer_received")) {
+      offerReceivedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("hired")) {
+      hiredIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("rejected")) {
+      rejectedIds.add(activity.application_id);
     }
   });
 
@@ -284,18 +379,18 @@ export function calculateTrackerMetrics(input: {
     },
     applied: submittedApplications.length,
     interviewing: interviewingIds.size,
-    offers: applications.filter((application) => normalizeStatus(application.status) === "offer_received" || Boolean(application.offer_received_at)).length,
+    offers: offerReceivedIds.size,
     saved: Math.max(savedCount, applications.filter((application) => Boolean(application.is_saved) || normalizeStatus(application.status) === "saved").length),
     totalApplications: submittedApplications.length,
     applicationsToday: submittedApplications.filter((application) =>
       toTimezoneDateKey(application.application_date ?? application.applied_at ?? application.created_at, timezone) === todayKey,
     ).length,
-    underReview: applications.filter((application) => normalizeStatus(application.status) === "under_review").length,
+    underReview: underReviewIds.size,
     recruiterContacted: recruiterContactedIds.size,
-    shortlisted: applications.filter((application) => normalizeStatus(application.status) === "shortlisted" || normalizeStatus(application.current_stage) === "shortlisted").length,
+    shortlisted: shortlistedIds.size,
     interviewCompleted: interviewCompletedIds.size,
-    hired: applications.filter((application) => normalizeStatus(application.status) === "hired" || Boolean(application.hired_at)).length,
-    rejected: applications.filter((application) => normalizeStatus(application.status) === "rejected").length,
+    hired: hiredIds.size,
+    rejected: rejectedIds.size,
     successRate: roundPercentage(
       submittedApplications.length > 0
         ? (applications.filter((application) => successfulStatuses.has(normalizeStatus(application.status))).length / submittedApplications.length) * 100

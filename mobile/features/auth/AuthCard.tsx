@@ -26,6 +26,7 @@ function ClerkAuthCard() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationMode, setVerificationMode] = useState<"signup" | "signin" | null>(
     null,
@@ -50,15 +51,20 @@ function ClerkAuthCard() {
       return;
     }
 
-    setPending(true);
     setError(null);
 
     const validation = validateSignInPayload({ email, password });
     if (validation.email || validation.password) {
       setError(validation.email ?? validation.password ?? null);
-      setPending(false);
       return;
     }
+
+    if (mode === "signup" && !acceptedPrivacyPolicy) {
+      setError("Please accept the Privacy Policy before creating your account.");
+      return;
+    }
+
+    setPending(true);
 
     try {
       if (mode === "signin") {
@@ -249,6 +255,30 @@ function ClerkAuthCard() {
         placeholder="........"
         secureTextEntry
       />
+      {mode === "signup" && !verificationMode ? (
+        <View style={styles.policyBlock}>
+          <View style={styles.checkboxRow}>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: acceptedPrivacyPolicy }}
+              onPress={() => setAcceptedPrivacyPolicy((value) => !value)}
+              style={[styles.checkbox, acceptedPrivacyPolicy && styles.checkboxChecked]}
+            >
+              {acceptedPrivacyPolicy ? <View style={styles.checkboxInner} /> : null}
+            </Pressable>
+            <Text style={styles.checkboxText}>
+              I agree to the{" "}
+              <Text
+                style={styles.policyLink}
+                onPress={() => router.push("/(public)/privacy-policy")}
+              >
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+          </View>
+        </View>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <PrimaryButton
         label={
@@ -386,6 +416,45 @@ const styles = StyleSheet.create({
   error: {
     ...typography.label,
     color: "#DC2626",
+  },
+  policyBlock: {
+    marginTop: spacing.xs,
+  },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    marginTop: 1,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  checkboxInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: colors.text,
+  },
+  checkboxText: {
+    ...typography.body,
+    color: colors.mutedText,
+    flex: 1,
+  },
+  policyLink: {
+    color: colors.text,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   missingCard: {
     gap: spacing.md,

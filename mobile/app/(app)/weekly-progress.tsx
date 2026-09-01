@@ -5,15 +5,15 @@ import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { colors, radii, spacing } from "@/theme";
 
 export default function WeeklyProgressScreen() {
-  const { data: snapshot } = usePreviewSyncQuery(true);
-  const profile = snapshot?.profile;
+  const { data: profile } = usePreviewSyncSelector((snapshot) => snapshot.profile, true);
+  const { data: rawApplications } = usePreviewSyncSelector((snapshot) => snapshot.rawApplications, true);
 
   const weeklyProgress = useMemo(() => {
-    const apps = snapshot?.rawApplications ?? [];
+    const apps = rawApplications ?? [];
     const goalText = profile?.weeklyGoal || "10";
     const goal = parseInt(goalText, 10) || 10;
 
@@ -36,7 +36,7 @@ export default function WeeklyProgressScreen() {
       goal,
       percentage,
     };
-  }, [snapshot?.rawApplications, profile?.weeklyGoal]);
+  }, [profile?.weeklyGoal, rawApplications]);
 
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>
@@ -69,24 +69,31 @@ export default function WeeklyProgressScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {weeklyProgress.appliedList.map((app, idx) => (
-            <View key={app.id || idx} style={styles.appItem}>
-              <View style={styles.appIconWrap}>
-                <AppIcon name="briefcase" size={16} color={colors.accentDark} />
+          {weeklyProgress.appliedList.map((app, idx) => {
+            const appMeta = app as typeof app & {
+              job_title?: string | null;
+              company_name?: string | null;
+            };
+
+            return (
+              <View key={app.id || idx} style={styles.appItem}>
+                <View style={styles.appIconWrap}>
+                  <AppIcon name="briefcase" size={16} color={colors.accentDark} />
+                </View>
+                <View style={styles.appCopy}>
+                  <Text numberOfLines={1} style={styles.appTitle}>
+                    {appMeta.job_title || "Job Application"}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.appCompany}>
+                    {appMeta.company_name || "Company"}
+                  </Text>
+                </View>
+                <View style={styles.appStatusBadge}>
+                  <Text style={styles.appStatusText}>{app.status || "applied"}</Text>
+                </View>
               </View>
-              <View style={styles.appCopy}>
-                <Text numberOfLines={1} style={styles.appTitle}>
-                  {app.job_title || "Job Application"}
-                </Text>
-                <Text numberOfLines={1} style={styles.appCompany}>
-                  {app.company_name || "Company"}
-                </Text>
-              </View>
-              <View style={styles.appStatusBadge}>
-                <Text style={styles.appStatusText}>{app.status || "applied"}</Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       ) : (
         <View style={styles.emptyState}>

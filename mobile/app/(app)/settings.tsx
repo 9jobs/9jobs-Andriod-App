@@ -4,14 +4,13 @@ import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { colors, radii, setTheme, shadows, spacing, typography, useThemeVersion } from "@/theme";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { useUpdateProfileMutation } from "@/features/jobs/hooks";
 
 export default function SettingsScreen() {
   useThemeVersion();
-  const { data: snapshot } = usePreviewSyncQuery();
-  const profile = snapshot?.profile;
-  const systemSettings = snapshot?.systemSettings;
+  const { data: profile } = usePreviewSyncSelector((snapshot) => snapshot.profile);
+  const { data: systemSettings } = usePreviewSyncSelector((snapshot) => snapshot.systemSettings);
   const { mutate: updateProfile } = useUpdateProfileMutation();
   const [darkModeEnabled, setDarkModeEnabled] = useState(profile?.darkMode ?? false);
 

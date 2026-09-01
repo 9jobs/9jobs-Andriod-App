@@ -20,6 +20,7 @@ type ApplicationRow = {
   job_id?: string;
   status: string | null;
   current_stage?: string | null;
+  updated_at?: string | null;
   created_at: string;
   application_date?: string | null;
   applied_at?: string | null;
@@ -85,6 +86,12 @@ type ClientScoreRow = {
   calculated_at?: string | null;
 };
 
+type ActivityLogRow = {
+  application_id?: number | null;
+  old_value?: unknown;
+  new_value?: unknown;
+};
+
 type PricingPlanRow = {
   id: string;
   name: string;
@@ -109,6 +116,7 @@ type MessageRow = {
 
 const categoryFallback: JobCategory = "Career Growth";
 const defaultTimezone = "Australia/Melbourne";
+const dateFormatterCache = new Map<string, Intl.DateTimeFormat>();
 
 const submittedStatuses = new Set([
   "applied",
@@ -230,12 +238,17 @@ function toTimezoneDateKey(isoString: string | null | undefined, timezone = defa
   }
 
   try {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(isoString));
+    let formatter = dateFormatterCache.get(timezone);
+    if (!formatter) {
+      formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      dateFormatterCache.set(timezone, formatter);
+    }
+    return formatter.format(new Date(isoString));
   } catch {
     return isoString.slice(0, 10);
   }
@@ -247,6 +260,16 @@ function roundPercentage(value: number) {
   }
 
   return Math.round(value * 10) / 10;
+}
+
+function getApplicationOrderingTime(application: ApplicationRow) {
+  return new Date(
+    application.updated_at ??
+      application.application_date ??
+      application.applied_at ??
+      application.created_at ??
+      0,
+  ).getTime();
 }
 
 function isSubmittedApplication(application: ApplicationRow) {
@@ -277,6 +300,26 @@ function buildUniqueContactKey(contact: RecruiterContactRow) {
   return name ? `name:${name}` : `contact:${contact.id ?? Math.random()}`;
 }
 
+function extractNormalizedStatusesFromActivityValue(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const statuses = new Set<string>();
+  const status = normalizeStatus(typeof record.status === "string" ? record.status : null);
+  const stage = normalizeStatus(typeof record.current_stage === "string" ? record.current_stage : null);
+
+  if (status && status !== "draft") {
+    statuses.add(status);
+  }
+  if (stage && stage !== "draft") {
+    statuses.add(stage);
+  }
+
+  return Array.from(statuses);
+}
+
 export function mapJobsWithUserState(
   jobs: JobRow[],
   applications: Array<ApplicationRow & { job_id: string }>,
@@ -284,7 +327,14 @@ export function mapJobsWithUserState(
   categoriesById: Record<number, string>,
 ): Job[] {
   const savedJobIds = new Set(savedJobs.map((job) => job.job_id));
-  const applicationsByJobId = new Map(applications.map((application) => [application.job_id, application]));
+  const applicationsByJobId = new Map<string, ApplicationRow & { job_id: string }>();
+
+  for (const application of applications) {
+    const existing = applicationsByJobId.get(application.job_id);
+    if (!existing || getApplicationOrderingTime(application) >= getApplicationOrderingTime(existing)) {
+      applicationsByJobId.set(application.job_id, application);
+    }
+  }
 
   return jobs.map((job) => {
     const application = applicationsByJobId.get(job.id);
@@ -316,23 +366,41 @@ export function buildUserHomeMetrics(
   timezone = defaultTimezone,
 ) {
   const today = toTimezoneDateKey(nowIsoString, timezone);
-  const submittedApplications = applications.filter(isSubmittedApplication);
+  let totalApplications = 0;
+  let todayApplied = 0;
+  let interviewing = 0;
+  let offers = 0;
+
+  for (const application of applications) {
+    const normalizedStatus = normalizeStatus(application.status);
+    const isSubmitted = submittedStatuses.has(normalizedStatus);
+
+    if (isSubmitted) {
+      totalApplications += 1;
+      if (
+        toTimezoneDateKey(
+          application.application_date ?? application.applied_at ?? application.created_at,
+          timezone,
+        ) === today
+      ) {
+        todayApplied += 1;
+      }
+    }
+
+    if (interviewStatuses.has(normalizedStatus)) {
+      interviewing += 1;
+    }
+
+    if (normalizedStatus === "offer_received" || Boolean(application.offer_received_at)) {
+      offers += 1;
+    }
+  }
 
   return {
-    totalApplications: submittedApplications.length,
-    todayApplied: submittedApplications.filter((application) =>
-      toTimezoneDateKey(
-        application.application_date ?? application.applied_at ?? application.created_at,
-        timezone,
-      ) === today,
-    ).length,
-    interviewing: applications.filter((application) =>
-      interviewStatuses.has(normalizeStatus(application.status)),
-    ).length,
-    offers: applications.filter((application) => {
-      const normalized = normalizeStatus(application.status);
-      return normalized === "offer_received" || Boolean(application.offer_received_at);
-    }).length,
+    totalApplications,
+    todayApplied,
+    interviewing,
+    offers,
     resumeScore: safeNumber(resumeScore, 0),
   };
 }
@@ -349,6 +417,7 @@ export function buildTrackerSummaryFromApplications(
     recruiterContacts?: RecruiterContactRow[];
     coldEmails?: ColdEmailRow[];
     scores?: ClientScoreRow[];
+    activityLogs?: ActivityLogRow[];
   },
 ) {
   const timezone = options?.timezone ?? defaultTimezone;
@@ -357,92 +426,177 @@ export function buildTrackerSummaryFromApplications(
   const recruiterContacts = options?.recruiterContacts ?? [];
   const coldEmails = options?.coldEmails ?? [];
   const scores = options?.scores ?? [];
+  const activityLogs = options?.activityLogs ?? [];
 
   const todayKey = toTimezoneDateKey(nowIsoString, timezone);
-  const submittedApplications = applications.filter(isSubmittedApplication);
-  const activeApplications = applications.filter(isActiveApplication);
-
-  const applicationsToday = submittedApplications.filter((application) =>
-    toTimezoneDateKey(
-      application.application_date ?? application.applied_at ?? application.created_at,
-      timezone,
-    ) === todayKey,
-  ).length;
-
-  const underReview = applications.filter(
-    (application) => normalizeStatus(application.status) === "under_review",
-  ).length;
-
+  const existingApplicationIds = new Set(applications.map((application) => application.id));
+  const activeApplicationIds = new Set<number>();
+  const underReviewIds = new Set<number>();
   const recruiterContactedIds = new Set<number>();
+  const interviewingIds = new Set<number>();
+  const shortlistedIds = new Set<number>();
+  const offerReceivedIds = new Set<number>();
+  const hiredIds = new Set<number>();
+  const rejectedIds = new Set<number>();
+  const responseApplicationIds = new Set<number>();
+  const contactKeys = new Set<string>();
+  const activeApplicationScoreIds = new Set<number>();
+
+  let applied = 0;
+  let applicationsToday = 0;
+  let underReview = 0;
+  let shortlisted = 0;
+  let offers = 0;
+  let hired = 0;
+  let rejected = 0;
+  let successfulApplications = 0;
+  let saved = 0;
+  let totalActiveRoles = 0;
+
   for (const application of applications) {
-    if (normalizeStatus(application.status) === "recruiter_contacted") {
+    const normalizedStatus = normalizeStatus(application.status);
+    const normalizedStage = normalizeStatus(application.current_stage);
+    const submitted = submittedStatuses.has(normalizedStatus);
+    const active = isActiveApplication(application);
+
+    if (submitted) {
+      applied += 1;
+      if (
+        toTimezoneDateKey(
+          application.application_date ?? application.applied_at ?? application.created_at,
+          timezone,
+        ) === todayKey
+      ) {
+        applicationsToday += 1;
+      }
+    }
+
+    if (active) {
+      activeApplicationIds.add(application.id);
+      totalActiveRoles += 1;
+      activeApplicationScoreIds.add(application.id);
+      if (interviewStatuses.has(normalizedStatus)) {
+        interviewingIds.add(application.id);
+      }
+    }
+
+    if (normalizedStatus === "under_review") {
+      underReviewIds.add(application.id);
+    }
+
+    if (normalizedStatus === "recruiter_contacted") {
       recruiterContactedIds.add(application.id);
     }
+
+    if (normalizedStatus === "shortlisted" || normalizedStage === "shortlisted") {
+      shortlistedIds.add(application.id);
+    }
+
+    if (normalizedStatus === "offer_received" || Boolean(application.offer_received_at)) {
+      offerReceivedIds.add(application.id);
+    }
+
+    if (normalizedStatus === "hired" || Boolean(application.hired_at)) {
+      hiredIds.add(application.id);
+    }
+
+    if (normalizedStatus === "rejected") {
+      rejectedIds.add(application.id);
+    }
+
+    if (successfulStatuses.has(normalizedStatus)) {
+      successfulApplications += 1;
+    }
+
+    if (responseStatuses.has(normalizedStatus)) {
+      responseApplicationIds.add(application.id);
+    }
+
+    if (Boolean(application.is_saved) || normalizedStatus === "saved") {
+      saved += 1;
+    }
+
+    const recruiterEmail = application.recruiter_email?.trim().toLowerCase();
+    const recruiterPhone = application.recruiter_phone?.replace(/\D/g, "");
+    const managerEmail = application.hiring_manager_email?.trim().toLowerCase();
+    if (recruiterEmail) {
+      contactKeys.add(`email:${recruiterEmail}`);
+    } else if (recruiterPhone) {
+      contactKeys.add(`phone:${recruiterPhone}`);
+    } else if (managerEmail) {
+      contactKeys.add(`email:${managerEmail}`);
+    }
   }
+
   for (const contact of recruiterContacts) {
     if (typeof contact.application_id === "number") {
       recruiterContactedIds.add(contact.application_id);
+      if (contact.response_status && contact.response_status !== "no_response") {
+        responseApplicationIds.add(contact.application_id);
+      }
     }
-  }
 
-  const shortlisted = applications.filter((application) => {
-    const normalized = normalizeStatus(application.status);
-    const stage = normalizeStatus(application.current_stage);
-    return normalized === "shortlisted" || stage === "shortlisted";
-  }).length;
-
-  const interviewingIds = new Set<number>();
-  for (const application of activeApplications) {
-    if (interviewStatuses.has(normalizeStatus(application.status))) {
-      interviewingIds.add(application.id);
-    }
-  }
-  for (const interview of interviews) {
-    if (typeof interview.application_id === "number" && interview.status === "scheduled") {
-      interviewingIds.add(interview.application_id);
+    if (contact.contact_date || (contact.response_status && contact.response_status !== "no_response")) {
+      contactKeys.add(buildUniqueContactKey(contact));
     }
   }
 
   const interviewCompletedIds = new Set<number>();
   for (const interview of interviews) {
+    if (typeof interview.application_id === "number" && interview.status === "scheduled") {
+      interviewingIds.add(interview.application_id);
+    }
     if (typeof interview.application_id === "number" && interview.status === "completed") {
       interviewCompletedIds.add(interview.application_id);
     }
   }
 
-  const offers = applications.filter((application) => {
-    const normalized = normalizeStatus(application.status);
-    return normalized === "offer_received" || Boolean(application.offer_received_at);
-  }).length;
-
-  const hired = applications.filter((application) => {
-    const normalized = normalizeStatus(application.status);
-    return normalized === "hired" || Boolean(application.hired_at);
-  }).length;
-
-  const rejected = applications.filter(
-    (application) => normalizeStatus(application.status) === "rejected",
-  ).length;
-
-  const successfulApplications = applications.filter((application) =>
-    successfulStatuses.has(normalizeStatus(application.status)),
-  ).length;
-
-  const responseApplicationIds = new Set<number>();
   for (const application of applications) {
-    if (responseStatuses.has(normalizeStatus(application.status))) {
-      responseApplicationIds.add(application.id);
+    const normalizedStatus = normalizeStatus(application.status);
+    const normalizedStage = normalizeStatus(application.current_stage);
+    if (normalizedStatus === "interview_completed" || normalizedStage === "interview_completed") {
+      interviewCompletedIds.add(application.id);
     }
   }
-  for (const contact of recruiterContacts) {
-    if (
-      typeof contact.application_id === "number" &&
-      contact.response_status &&
-      contact.response_status !== "no_response"
-    ) {
-      responseApplicationIds.add(contact.application_id);
+
+  for (const activity of activityLogs) {
+    if (typeof activity.application_id !== "number" || !existingApplicationIds.has(activity.application_id)) {
+      continue;
+    }
+
+    const historicalStatuses = new Set<string>([
+      ...extractNormalizedStatusesFromActivityValue(activity.old_value),
+      ...extractNormalizedStatusesFromActivityValue(activity.new_value),
+    ]);
+
+    if (historicalStatuses.has("recruiter_contacted")) {
+      recruiterContactedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("under_review")) {
+      underReviewIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("shortlisted")) {
+      shortlistedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("interview_completed")) {
+      interviewCompletedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("offer_received")) {
+      offerReceivedIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("hired")) {
+      hiredIds.add(activity.application_id);
+    }
+    if (historicalStatuses.has("rejected")) {
+      rejectedIds.add(activity.application_id);
     }
   }
+
+  shortlisted = shortlistedIds.size;
+  underReview = underReviewIds.size;
+  offers = offerReceivedIds.size;
+  hired = hiredIds.size;
+  rejected = rejectedIds.size;
 
   const followUpsDue = followUps.filter((followUp) => {
     const status = followUp.status?.toLowerCase() ?? "pending";
@@ -454,10 +608,8 @@ export function buildTrackerSummaryFromApplications(
     );
   }).length;
 
-  const activeScoreRows = scores.filter(
-    (score) =>
-      typeof score.application_id === "number" &&
-      activeApplications.some((application) => application.id === score.application_id),
+  const activeScoreRows = scores.filter((score) =>
+    typeof score.application_id === "number" && activeApplicationScoreIds.has(score.application_id),
   );
   const aiScoreSource = activeScoreRows.filter((score) => Number.isFinite(score.ai_match_score));
   const aiMatchScore = aiScoreSource.length > 0
@@ -490,46 +642,16 @@ export function buildTrackerSummaryFromApplications(
     return Boolean(email.sent_at) && !["draft", "failed"].includes(deliveryStatus);
   }).length;
 
-  const contactKeys = new Set<string>();
-  for (const contact of recruiterContacts) {
-    if (contact.contact_date || (contact.response_status && contact.response_status !== "no_response")) {
-      contactKeys.add(buildUniqueContactKey(contact));
-    }
-  }
-  for (const application of applications) {
-    const recruiterEmail = application.recruiter_email?.trim().toLowerCase();
-    const recruiterPhone = application.recruiter_phone?.replace(/\D/g, "");
-    const managerEmail = application.hiring_manager_email?.trim().toLowerCase();
-    if (recruiterEmail) {
-      contactKeys.add(`email:${recruiterEmail}`);
-    } else if (recruiterPhone) {
-      contactKeys.add(`phone:${recruiterPhone}`);
-    } else if (managerEmail) {
-      contactKeys.add(`email:${managerEmail}`);
-    }
-  }
-
-  const totalActiveRoles = activeApplications.filter((application) => {
-    const normalized = normalizeStatus(application.status);
-    return !["hired", "rejected", "withdrawn", "closed"].includes(normalized);
-  }).length;
-
   return {
     currentFocus: {
       totalActiveRoles,
       message: `${totalActiveRoles} total roles currently in active track`,
     },
-    applied: submittedApplications.length,
-    saved: Math.max(
-      savedCount,
-      applications.filter(
-        (application) =>
-          Boolean(application.is_saved) || normalizeStatus(application.status) === "saved",
-      ).length,
-    ),
+    applied,
+    saved: Math.max(savedCount, saved),
     interviewing: interviewingIds.size,
     offers,
-    totalApplications: submittedApplications.length,
+    totalApplications: applied,
     applicationsToday,
     underReview,
     recruiterContacted: recruiterContactedIds.size,
@@ -540,13 +662,13 @@ export function buildTrackerSummaryFromApplications(
     hired,
     rejected,
     successRate: roundPercentage(
-      submittedApplications.length > 0
-        ? (successfulApplications / submittedApplications.length) * 100
+      applied > 0
+        ? (successfulApplications / applied) * 100
         : 0,
     ),
     responseRate: roundPercentage(
-      submittedApplications.length > 0
-        ? (responseApplicationIds.size / submittedApplications.length) * 100
+      applied > 0
+        ? (responseApplicationIds.size / applied) * 100
         : 0,
     ),
     followupsDue: followUpsDue,
@@ -585,19 +707,32 @@ export function buildPricingScreenContent(
 }
 
 export function buildMessageThread(messages: MessageRow[], previewUserName: string) {
-  const sorted = [...messages].sort((a, b) => {
-    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return timeB - timeA;
-  });
-  const lastMessage = sorted[0];
+  let latestMessage: MessageRow | null = null;
+  let unreadCount = 0;
+
+  for (const message of messages) {
+    if ((message.sender_role === "admin" || message.sender_id === "admin") && message.status !== "seen") {
+      unreadCount += 1;
+    }
+
+    if (!latestMessage) {
+      latestMessage = message;
+      continue;
+    }
+
+    const currentTime = message.created_at ? new Date(message.created_at).getTime() : 0;
+    const latestTime = latestMessage.created_at ? new Date(latestMessage.created_at).getTime() : 0;
+    if (currentTime > latestTime) {
+      latestMessage = message;
+    }
+  }
 
   return {
     id: "admin-thread",
     name: "9Jobs Admin",
     role: "Support",
-    snippet: lastMessage?.content || lastMessage?.text || "Welcome! How can we help you today?",
-    time: lastMessage ? lastMessage.created_at : "",
-    unreadCount: messages.filter((message) => (message.sender_role === "admin" || message.sender_id === "admin") && message.status !== "seen").length,
+    snippet: latestMessage?.content || latestMessage?.text || "Welcome! How can we help you today?",
+    time: latestMessage ? latestMessage.created_at : "",
+    unreadCount,
   };
 }

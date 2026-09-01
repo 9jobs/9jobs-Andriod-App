@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import Svg, { Path, Circle } from "react-native-svg";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { Screen } from "@/components/ui/Screen";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing } from "@/theme";
 
 // Services list data matching mockup exactly
@@ -67,11 +67,16 @@ const SERVICES_DATA = [
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { FadeInView } from "@/components/motion/FadeInView";
 import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
+import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
 
 export default function ServicesScreen() {
-  const { data: snapshot } = usePreviewSyncQuery();
+  const { data: liveServices } = usePreviewSyncSelector((snapshot) => snapshot.services);
+  useScreenPerf("/(app)/services", Boolean(liveServices), {
+    screen: "services",
+    service_count: liveServices?.length ?? 0,
+  });
   const serviceOrder = ["job-tracker", "tracker", "resume-intelligence", "resume", "hiring-manager-outreach", "outreach", "interview-prep", "interview", "success-stories", "stories", "pricing"];
-  const services = [...(snapshot?.services && snapshot.services.length > 0 ? snapshot.services : SERVICES_DATA)]
+  const services = [...(liveServices && liveServices.length > 0 ? liveServices : SERVICES_DATA)]
     .map((service) => {
       if (service.id === "job-tracker" || service.id === "tracker" || service.title === "Job Tracker") {
         return {
@@ -179,7 +184,7 @@ export default function ServicesScreen() {
               <FadeInView key={service.id} type="fade-up" delay={120 + index * 40}>
                 <AnimatedPressable
                   style={styles.serviceCard}
-                  onPress={() => router.push(service.route as never)}
+                  onPress={() => traceNavigation(String(service.route), `services.${service.id}`, () => router.push(service.route as never))}
                   scaleTo={0.97}
                 >
                   {/* Left: Custom Alternating Icon wrapper */}

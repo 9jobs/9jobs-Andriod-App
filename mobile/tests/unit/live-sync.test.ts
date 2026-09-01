@@ -61,6 +61,55 @@ describe("live sync helpers", () => {
     );
   });
 
+  test("maps jobs from the latest updated application when duplicate rows exist for one job", () => {
+    const jobs = mapJobsWithUserState(
+      [
+        {
+          id: "job-1",
+          title: "Frontend Engineer",
+          company: "Stripe",
+          location: "Remote",
+          salary: "$165k",
+          posted_at: "Just now",
+          match_score: 98,
+          tags: ["React", "Remote"],
+          description: "Build premium UI",
+          category_id: 1,
+        },
+      ],
+      [
+        {
+          id: 7,
+          job_id: "job-1",
+          status: "applied",
+          created_at: "2026-07-10T10:00:00.000Z",
+          updated_at: "2026-07-10T10:00:00.000Z",
+        },
+        {
+          id: 8,
+          job_id: "job-1",
+          status: "hired",
+          created_at: "2026-07-09T10:00:00.000Z",
+          updated_at: "2026-07-11T10:00:00.000Z",
+          hired_at: "2026-07-11T10:00:00.000Z",
+          is_active: false,
+        },
+      ],
+      [],
+      {
+        1: "Career Growth",
+      },
+    );
+
+    expect(jobs[0]).toEqual(
+      expect.objectContaining({
+        id: "job-1",
+        isApplied: true,
+        status: "hired",
+      }),
+    );
+  });
+
   test("builds home metrics with australian timezone-safe today count", () => {
     const metrics = buildUserHomeMetrics(
       [
@@ -135,6 +184,67 @@ describe("live sync helpers", () => {
     expect(summary.hiringManagersContacted).toBe(1);
     expect(summary.aiMatchScore).toBe(85);
     expect(summary.atsResumeScore).toBe(90);
+  });
+
+  test("counts interview completed when admin updates the application status directly", () => {
+    const summary = buildTrackerSummaryFromApplications(
+      [
+        {
+          id: 1,
+          status: "interview_completed",
+          current_stage: "interview_completed",
+          application_date: "2026-07-10T09:30:00.000Z",
+          created_at: "2026-07-10T09:30:00.000Z",
+        },
+      ],
+      0,
+      0,
+      "2026-07-10T12:00:00.000Z",
+      {
+        timezone: "Australia/Melbourne",
+        interviews: [],
+      },
+    );
+
+    expect(summary.interviewCompleted).toBe(1);
+  });
+
+  test("keeps recruiter contacted and shortlisted counts from activity history after later stages", () => {
+    const summary = buildTrackerSummaryFromApplications(
+      [
+        {
+          id: 21,
+          job_id: "job-21",
+          status: "shortlisted",
+          current_stage: "shortlisted",
+          application_date: "2026-08-31T09:30:00.000Z",
+          created_at: "2026-08-31T09:30:00.000Z",
+          is_active: true,
+        },
+      ],
+      0,
+      0,
+      "2026-08-31T12:00:00.000Z",
+      {
+        timezone: "Australia/Melbourne",
+        activityLogs: [
+          {
+            application_id: 21,
+            old_value: { status: "rejected" },
+            new_value: { status: "recruiter_contacted" },
+          },
+          {
+            application_id: 21,
+            old_value: { status: "recruiter_contacted" },
+            new_value: { status: "shortlisted" },
+          },
+        ],
+      },
+    );
+
+    expect(summary.recruiterContacted).toBe(1);
+    expect(summary.shortlisted).toBe(1);
+    expect(summary.rejected).toBe(1);
   });
 
   test("returns zero-safe rates when there are no submitted applications", () => {

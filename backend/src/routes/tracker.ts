@@ -13,12 +13,79 @@ import {
   upsertLocalProfile,
   upsertLocalSuccessStory,
 } from "../lib/localDb";
-import { supabase } from "../lib/supabase";
+import { canReachDatabaseUpstream, canReachSupabaseUpstream, supabase } from "../lib/supabase";
 import { getMessagesHistory } from "../services/messageService";
 
 const router = Router();
 const SUCCESS_STORY_BUCKET = "assets";
 const RESUME_BUCKET = "assets";
+const GEMINI_RESUME_TIMEOUT_MS = 20_000;
+const GEMINI_RESUME_TEXT_LIMIT = 18_000;
+const snapshotResourceCache = new Map<string, { expiresAt: number; value: unknown; inFlight?: Promise<unknown> }>();
+const LOCAL_SNAPSHOT_CATEGORY_ROWS = [
+  { id: 1, name: "Career Growth" },
+  { id: 2, name: "AI Resume" },
+  { id: 3, name: "Outreach" },
+  { id: 4, name: "Interview" },
+  { id: 5, name: "Remote" },
+];
+const LOCAL_SNAPSHOT_SERVICE_ROWS = [
+  {
+    id: "job-tracker",
+    title: "Job Application Service",
+    description: "Apply, track applications, deadlines, and offer-stage updates in one synced workflow.",
+    status: "active",
+    visibility: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "resume-intelligence",
+    title: "Resume Intelligence",
+    description: "AI scoring, ATS optimization, keyword guidance, and recruiter-ready upgrades.",
+    status: "active",
+    visibility: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "hiring-manager-outreach",
+    title: "Hiring Manager Outreach",
+    description: "Find contacts, craft messages, and track response momentum from one place.",
+    status: "active",
+    visibility: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "interview-prep",
+    title: "Interview Prep",
+    description: "Mock interviews, AI feedback, and role-specific preparation loops.",
+    status: "active",
+    visibility: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+];
+const LOCAL_SNAPSHOT_PRICING_PLAN_ROWS = [
+  {
+    id: "free",
+    name: "Free Starter",
+    price: "₹0/month",
+    features: ["Basic job search", "1 Resume score scan", "Saved jobs"],
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "pro",
+    name: "Pro Candidate",
+    price: "₹999/month",
+    features: ["Unlimited jobs", "AI resume intelligence", "Hiring manager outreach", "Priority support"],
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "elite",
+    name: "Elite Premium",
+    price: "₹2999/month",
+    features: ["Everything in Pro", "Mock interviews", "Dedicated career coach", "Resume writing service"],
+    created_at: "2026-01-01T00:00:00.000Z",
+  },
+];
 
 type ResumeAnalysis = {
   atsScore: number;
@@ -199,6 +266,22 @@ function buildApplicationRoleKey(application: any) {
   ].join("|");
 }
 
+function buildApplicationCanonicalKey(application: any) {
+  const ownerKey = normalizeRolePart(application?.user_id || application?.client_id);
+  const jobIdKey = normalizeRolePart(application?.job_id);
+  if (ownerKey && jobIdKey) {
+    return `${ownerKey}|job:${jobIdKey}`;
+  }
+
+  const applicationIdKey = normalizeRolePart(application?.id);
+  if (applicationIdKey) {
+    return `application:${applicationIdKey}`;
+  }
+
+  const roleKey = buildApplicationRoleKey(application);
+  return roleKey.replace(/\|/g, "") ? roleKey : "";
+}
+
 function buildJobRoleKey(job: any) {
   return [
     normalizeRolePart(job?.title),
@@ -250,9 +333,9 @@ function dedupeApplicationsByRole(applications: any[]) {
   const applicationsByKey = new Map<string, any>();
 
   for (const application of applications) {
-    const roleKey = buildApplicationRoleKey(application);
-    const fallbackKey = `${normalizeRolePart(application?.user_id || application?.client_id)}|job:${normalizeRolePart(application?.job_id)}`;
-    const key = roleKey.replace(/\|/g, "") ? roleKey : fallbackKey;
+    const key =
+      buildApplicationCanonicalKey(application) ||
+      `${normalizeRolePart(application?.user_id || application?.client_id)}|job:${normalizeRolePart(application?.job_id)}`;
     const existing = applicationsByKey.get(key);
 
     if (!existing) {
@@ -397,11 +480,153 @@ function isMissingRelationError(error: unknown) {
   );
 }
 
+async function getCachedSnapshotResource<T>(
+  cacheKey: string,
+  ttlMs: number,
+  loader: () => Promise<T>,
+): Promise<T> {
+  const now = Date.now();
+  const cached = snapshotResourceCache.get(cacheKey);
+  if (cached && cached.expiresAt > now && cached.value !== undefined) {
+    return cached.value as T;
+  }
+
+  if (cached?.inFlight) {
+    return cached.inFlight as Promise<T>;
+  }
+
+  const inFlight = loader()
+    .then((value) => {
+      snapshotResourceCache.set(cacheKey, {
+        value,
+        expiresAt: Date.now() + ttlMs,
+      });
+      return value;
+    })
+    .catch((error) => {
+      snapshotResourceCache.delete(cacheKey);
+      throw error;
+    });
+
+  snapshotResourceCache.set(cacheKey, {
+    value: cached?.value,
+    expiresAt: cached?.expiresAt ?? 0,
+    inFlight,
+  });
+
+  return inFlight;
+}
+
+async function runOptionalSnapshotListQuery<T>(
+  label: string,
+  loader: () => Promise<{ data: T[] | null; error: any }>,
+): Promise<{ data: T[]; error: null }> {
+  const result = await loader();
+  if (!result.error) {
+    return { data: result.data ?? [], error: null };
+  }
+
+  if (isMissingRelationError(result.error)) {
+    console.warn(`[Tracker Route] Optional snapshot table '${label}' missing, using empty fallback.`);
+    return { data: [], error: null };
+  }
+
+  throw result.error;
+}
+
+async function runOptionalSnapshotSingleQuery<T>(
+  label: string,
+  loader: () => Promise<{ data: T | null; error: any }>,
+): Promise<{ data: T | null; error: null }> {
+  const result = await loader();
+  if (!result.error) {
+    return { data: result.data ?? null, error: null };
+  }
+
+  if (isMissingRelationError(result.error)) {
+    console.warn(`[Tracker Route] Optional snapshot table '${label}' missing, using null fallback.`);
+    return { data: null, error: null };
+  }
+
+  throw result.error;
+}
+
 function createPool() {
   return new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
   });
+}
+
+async function insertTrackerActivityLog(input: {
+  clientId: string;
+  applicationId?: number | null;
+  performedBy?: string | null;
+  activityType: string;
+  title: string;
+  description: string;
+  oldValue?: Record<string, unknown> | null;
+  newValue?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+}) {
+  const row = {
+    client_id: input.clientId,
+    application_id: typeof input.applicationId === "number" ? input.applicationId : null,
+    performed_by: String(input.performedBy || "admin"),
+    activity_type: input.activityType,
+    title: input.title,
+    description: input.description,
+    old_value: input.oldValue ?? null,
+    new_value: input.newValue ?? null,
+    metadata: input.metadata ?? {},
+  };
+
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const { error } = await supabase.from("activity_logs").insert([row]);
+    if (error) {
+      throw error;
+    }
+    return;
+  }
+
+  if (!hasUsableDatabaseUrl()) {
+    return;
+  }
+
+  const pool = createPool();
+  const client = await pool.connect();
+  try {
+    await client.query(
+      `
+        insert into activity_logs (
+          client_id,
+          application_id,
+          performed_by,
+          activity_type,
+          title,
+          description,
+          old_value,
+          new_value,
+          metadata
+        )
+        values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)
+      `,
+      [
+        row.client_id,
+        row.application_id,
+        row.performed_by,
+        row.activity_type,
+        row.title,
+        row.description,
+        JSON.stringify(row.old_value),
+        JSON.stringify(row.new_value),
+        JSON.stringify(row.metadata),
+      ],
+    );
+  } finally {
+    client.release();
+    await pool.end();
+  }
 }
 
 async function listProfilesByIds(profileIds: string[]) {
@@ -612,6 +837,215 @@ function clampScore(value: unknown) {
   return Number.isFinite(numberValue) ? Math.max(0, Math.min(100, Math.round(numberValue))) : 0;
 }
 
+function normalizeResumeText(text: string) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function extractLoosePdfText(fileBytes: Buffer) {
+  const rawText = fileBytes.toString("latin1");
+  const chunks = Array.from(rawText.matchAll(/\(([^()]*)\)/g))
+    .map((match) => match[1]
+      ?.replace(/\\[()\\]/g, "")
+      .replace(/\\r/g, " ")
+      .replace(/\\n/g, " ")
+      .replace(/\\t/g, " ")
+      .trim())
+    .filter((chunk) => chunk && /[a-zA-Z]{2,}/.test(chunk))
+    .sort((left, right) => right.length - left.length)
+    .slice(0, 40)
+    .filter(Boolean);
+
+  return normalizeResumeText(chunks.join(" "));
+}
+
+function getResumeTokens(resumeText: string) {
+  return new Set(
+    normalizeResumeText(resumeText)
+      .toLowerCase()
+      .split(/[^a-z0-9+#./-]+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2),
+  );
+}
+
+function inferResumeRoleProfile(tokens: Set<string>) {
+  const roleProfiles = [
+    {
+      name: "software engineer",
+      requiredKeywords: ["react", "typescript", "javascript", "node", "graphql", "aws", "docker", "testing", "jest", "ci/cd", "git"],
+      defaultMissing: ["testing", "ci/cd", "aws", "docker"],
+    },
+    {
+      name: "sales",
+      requiredKeywords: ["sales", "retail", "crm", "upselling", "customer", "targets", "inventory", "billing", "merchandising", "negotiation"],
+      defaultMissing: ["crm", "targets", "negotiation", "merchandising"],
+    },
+    {
+      name: "data analyst",
+      requiredKeywords: ["sql", "python", "excel", "power", "bi", "tableau", "dashboard", "analytics", "etl", "reporting"],
+      defaultMissing: ["sql", "python", "tableau", "etl"],
+    },
+    {
+      name: "product or project",
+      requiredKeywords: ["agile", "stakeholder", "roadmap", "jira", "sprint", "delivery", "planning", "coordination", "research", "workflow"],
+      defaultMissing: ["agile", "stakeholder", "roadmap", "jira"],
+    },
+  ];
+
+  let bestProfile = roleProfiles[0];
+  let bestScore = -1;
+  for (const profile of roleProfiles) {
+    const score = profile.requiredKeywords.reduce((total, keyword) => {
+      const keywordParts = keyword.split(/[\/\s]+/).filter(Boolean);
+      const matched = keywordParts.every((part) => tokens.has(part));
+      return total + (matched ? 1 : 0);
+    }, 0);
+
+    if (score > bestScore) {
+      bestProfile = profile;
+      bestScore = score;
+    }
+  }
+
+  return bestProfile;
+}
+
+function getHeuristicResumeAnalysis(resumeText?: string): ResumeAnalysis {
+  const normalizedText = normalizeResumeText(String(resumeText || ""));
+  if (!normalizedText) {
+    return {
+      atsScore: 82,
+      aiMatchScore: 79,
+      keywords: 85,
+      formatting: 80,
+      experience: 84,
+      impactVerbs: 81,
+      summary: "The resume was uploaded successfully, but readable content could not be extracted for a resume-specific ATS review.",
+      suggestions: [
+        "Upload a text-based PDF or DOCX so the ATS review can inspect the actual resume content.",
+        "Avoid scanned-image resumes when possible.",
+        "Ensure the file contains selectable text and standard headings.",
+      ],
+      roleSpecificScore: 81,
+      missingKeywords: ["Target role keywords", "Quantified achievements", "ATS-friendly section headings"],
+      skillGapAnalysis: ["Readable resume content was unavailable, so role-specific skill gaps could not be verified."],
+      formattingIssues: ["The uploaded file did not expose enough readable text for formatting validation."],
+      grammarSuggestions: ["Re-upload the resume in an editable text-based format for sentence-level review."],
+      achievementRewriting: [],
+      resumeVersionComparison: "Comparison could not be completed because the uploaded file did not expose enough readable text.",
+      jobDescriptionCompatibility: 78,
+      recruiterReadabilityScore: 75,
+      australianResumeComplianceCheck: {
+        compliant: true,
+        issues: ["Readable content could not be fully verified."],
+      },
+      coverLetter: "Dear Hiring Manager,\n\nI am excited to apply for this opportunity. My resume has been uploaded for review, and I would welcome the chance to discuss how my background aligns with your team's needs.\n\nThank you for your time and consideration.\n\nSincerely,\nCandidate",
+    };
+  }
+
+  const tokens = getResumeTokens(normalizedText);
+  const roleProfile = inferResumeRoleProfile(tokens);
+  const lowerText = normalizedText.toLowerCase();
+  const hasEmail = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i.test(normalizedText);
+  const hasPhone = /(\+\d{1,3}[\s-]?)?(\d[\s-]?){8,}/.test(normalizedText);
+  const hasLinkedIn = /linkedin/i.test(lowerText);
+  const hasSummary = /\b(summary|profile|objective)\b/i.test(normalizedText);
+  const hasExperienceSection = /\b(experience|employment|work history)\b/i.test(normalizedText);
+  const hasEducation = /\b(education|qualification|university|college)\b/i.test(normalizedText);
+  const hasSkills = /\b(skills|technical skills|core competencies)\b/i.test(normalizedText);
+  const hasMetrics = /(\d+%|\$\d+|\b\d+\+?\b)/.test(normalizedText);
+  const actionVerbMatches = normalizedText.match(/\b(led|built|developed|designed|implemented|managed|delivered|improved|increased|reduced|created|optimized|launched|supported|coordinated|negotiated|sold)\b/gi) ?? [];
+
+  const presentRoleKeywords = roleProfile.requiredKeywords.filter((keyword) => {
+    const parts = keyword.split(/[\/\s]+/).filter(Boolean);
+    return parts.every((part) => tokens.has(part));
+  });
+  const missingKeywords = roleProfile.defaultMissing
+    .filter((keyword) => {
+      const parts = keyword.split(/[\/\s]+/).filter(Boolean);
+      return !parts.every((part) => tokens.has(part));
+    })
+    .slice(0, 6);
+
+  const sectionCount = [hasSummary, hasExperienceSection, hasEducation, hasSkills, hasEmail, hasPhone].filter(Boolean).length;
+  const keywordsScore = Math.max(35, Math.min(96, 45 + presentRoleKeywords.length * 9 - missingKeywords.length * 2));
+  const formattingScore = Math.max(35, Math.min(96, 42 + sectionCount * 8 + (hasLinkedIn ? 4 : 0) - (hasSummary ? 0 : 6)));
+  const experienceScore = Math.max(35, Math.min(96, 40 + (hasExperienceSection ? 18 : 0) + (hasMetrics ? 12 : 0) + Math.min(12, actionVerbMatches.length * 2)));
+  const impactVerbsScore = Math.max(30, Math.min(96, 35 + Math.min(45, actionVerbMatches.length * 5)));
+  const atsScore = Math.max(40, Math.min(97, Math.round((keywordsScore + formattingScore + experienceScore + impactVerbsScore) / 4)));
+  const aiMatchScore = Math.max(35, Math.min(96, Math.round((keywordsScore * 0.55) + (experienceScore * 0.45) - missingKeywords.length)));
+  const roleSpecificScore = Math.max(35, Math.min(96, Math.round((presentRoleKeywords.length / Math.max(roleProfile.requiredKeywords.length, 1)) * 100)));
+  const jobDescriptionCompatibility = Math.max(35, Math.min(96, Math.round((keywordsScore * 0.65) + (roleSpecificScore * 0.35))));
+  const recruiterReadabilityScore = Math.max(35, Math.min(96, Math.round((formattingScore * 0.6) + (impactVerbsScore * 0.4))));
+
+  const formattingIssues: string[] = [];
+  if (!hasSummary) formattingIssues.push("Add a short professional summary or objective near the top of the resume.");
+  if (!hasSkills) formattingIssues.push("Add a dedicated skills section so ATS systems can parse core competencies more reliably.");
+  if (!hasEmail || !hasPhone) formattingIssues.push("Keep complete contact details visible with email and phone number.");
+  if (!hasExperienceSection) formattingIssues.push("Use a clearly labeled experience section so work history is easy to parse.");
+
+  const skillGapAnalysis: string[] = [];
+  if (missingKeywords.length > 0) {
+    skillGapAnalysis.push(`The resume is missing role-relevant terms for a ${roleProfile.name} profile: ${missingKeywords.join(", ")}.`);
+  }
+  if (!hasMetrics) {
+    skillGapAnalysis.push("Add quantified outcomes such as percentages, revenue impact, hiring volume, response rates, or delivery improvements.");
+  }
+  if (actionVerbMatches.length < 3) {
+    skillGapAnalysis.push("Strengthen bullet points with clearer action verbs that show ownership and measurable execution.");
+  }
+
+  const grammarSuggestions: string[] = [];
+  if (!hasMetrics) grammarSuggestions.push("Rewrite experience bullets to include measurable outcomes instead of only responsibilities.");
+  if (actionVerbMatches.length < 3) grammarSuggestions.push("Start more bullets with action verbs such as led, built, improved, delivered, or negotiated.");
+
+  const achievementRewriting = hasMetrics
+    ? []
+    : [
+        {
+          original: "Worked on daily responsibilities across the role.",
+          rewritten: "Delivered role-specific work with measurable results, stronger ownership, and clearer business impact.",
+        },
+      ];
+
+  const summary = `This resume reads like a ${roleProfile.name} profile with ${presentRoleKeywords.length} strong role signals. The main ATS gaps are ${missingKeywords.slice(0, 3).join(", ") || "clearer role keywords"}, along with ${hasMetrics ? "deeper role alignment" : "more quantified achievements"} to strengthen recruiter confidence.`;
+
+  return {
+    atsScore,
+    aiMatchScore,
+    keywords: keywordsScore,
+    formatting: formattingScore,
+    experience: experienceScore,
+    impactVerbs: impactVerbsScore,
+    summary: summary.slice(0, 600),
+    suggestions: [
+      missingKeywords.length > 0
+        ? `Add missing role keywords: ${missingKeywords.slice(0, 4).join(", ")}.`
+        : `Keep reinforcing ${roleProfile.name} keywords consistently across the summary, skills, and experience sections.`,
+      hasMetrics
+        ? "Make sure each major role has at least one quantified achievement that is easy for recruiters to scan."
+        : "Add measurable outcomes to recent experience so ATS and recruiters can see impact quickly.",
+      hasSummary
+        ? "Tighten the summary to align directly with the target role and strongest proof points."
+        : "Add a short top summary that states target role, experience focus, and strongest skills.",
+    ].filter(Boolean),
+    roleSpecificScore,
+    missingKeywords,
+    skillGapAnalysis,
+    formattingIssues,
+    grammarSuggestions,
+    achievementRewriting,
+    resumeVersionComparison: `The resume shows a ${roleProfile.name}-leaning profile, but it will match modern ATS expectations better once missing keywords, measurable outcomes, and core sections are more explicit.`,
+    jobDescriptionCompatibility,
+    recruiterReadabilityScore,
+    australianResumeComplianceCheck: {
+      compliant: true,
+      issues: [],
+    },
+    coverLetter: `Dear Hiring Manager,\n\nI am writing to express my interest in this opportunity. My background aligns most closely with ${roleProfile.name} work, and I have built experience around ${presentRoleKeywords.slice(0, 5).join(", ") || "relevant core responsibilities"}.\n\nI would welcome the opportunity to discuss how my experience can support your team and contribute measurable results.\n\nSincerely,\nCandidate`,
+  };
+}
+
 function getFallbackResumeAnalysis(): ResumeAnalysis {
   return {
     atsScore: 82,
@@ -729,83 +1163,106 @@ function parseGeminiResumeAnalysis(rawText: string): ResumeAnalysis {
   };
 }
 
-async function analyzeResumeWithGemini(base64: string, mimeType: string): Promise<ResumeAnalysis> {
+async function extractResumeText(fileBytes: Buffer, mimeType: string): Promise<string> {
+  try {
+    if (mimeType === "application/pdf") {
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: fileBytes });
+      try {
+        const parsed = await parser.getText();
+        const normalized = normalizeResumeText(String(parsed.text || ""));
+        return normalized || extractLoosePdfText(fileBytes);
+      } finally {
+        await parser.destroy().catch(() => undefined);
+      }
+    }
+
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      const mammoth = await import("mammoth");
+      const parsed = await mammoth.extractRawText({ buffer: fileBytes });
+      return normalizeResumeText(String(parsed.value || ""));
+    }
+  } catch (error) {
+    console.warn("[Resume Intelligence] text extraction failed, falling back to binary Gemini input:", error);
+  }
+
+  return "";
+}
+
+async function analyzeResumeWithGemini(base64: string, mimeType: string, resumeText?: string): Promise<ResumeAnalysis> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
   
   try {
     if (!apiKey) {
       console.warn("[Gemini API] Gemini API key not configured. Using fallback.");
-      return getFallbackResumeAnalysis();
+      return getHeuristicResumeAnalysis(resumeText);
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_RESUME_TIMEOUT_MS);
+    const normalizedResumeText = String(resumeText || "").replace(/\s+/g, " ").trim().slice(0, GEMINI_RESUME_TEXT_LIMIT);
+    const prompt = [
+      "Act as a strict Applicant Tracking System resume auditor and career advisor.",
+      "Evaluate only the supplied resume. Do not invent experience or skills.",
+      "Return strict JSON only.",
+      "Required keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions, roleSpecificScore, missingKeywords, skillGapAnalysis, formattingIssues, grammarSuggestions, achievementRewriting, resumeVersionComparison, jobDescriptionCompatibility, recruiterReadabilityScore, australianResumeComplianceCheck, coverLetter.",
+      "Scoring keys must be integers from 0 to 100.",
+      "summary must be under 600 characters.",
+      "suggestions must be a short actionable array.",
+      "achievementRewriting must be an array of { original, rewritten } objects.",
+      "australianResumeComplianceCheck must be { compliant, issues }.",
+      "coverLetter must be a polished professional cover letter using \\n newlines.",
+      normalizedResumeText
+        ? `Resume text:\n${normalizedResumeText}`
+        : "Resume file is attached below.",
+    ].join("\n");
+
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{
             role: "user",
-            parts: [
-              {
-                text: [
-                  "Act as a strict Applicant Tracking System resume auditor and career advisor.",
-                  "Evaluate only the supplied resume. Do not invent experience or skills.",
-                  "Score general ATS readiness and return the evaluation in strict JSON.",
-                  "You must return a JSON object with the exact keys: atsScore, aiMatchScore, keywords, formatting, experience, impactVerbs, summary, suggestions, roleSpecificScore, missingKeywords, skillGapAnalysis, formattingIssues, grammarSuggestions, achievementRewriting, resumeVersionComparison, jobDescriptionCompatibility, recruiterReadabilityScore, australianResumeComplianceCheck, coverLetter.",
-                  "The values must follow this schema:",
-                  "atsScore: integer 0-100",
-                  "aiMatchScore: integer 0-100",
-                  "keywords: integer 0-100",
-                  "formatting: integer 0-100",
-                  "experience: integer 0-100",
-                  "impactVerbs: integer 0-100",
-                  "summary: short executive summary string (max 600 chars)",
-                  "suggestions: array of short actionable strings",
-                  "roleSpecificScore: integer 0-100 based on targeting roles",
-                  "missingKeywords: array of string keywords missing from resume",
-                  "skillGapAnalysis: array of string gaps found in candidate's skills",
-                  "formattingIssues: array of string design/format flaws detected",
-                  "grammarSuggestions: array of string grammar/spelling/phrasing corrections",
-                  "achievementRewriting: array of objects with 'original' (string) and 'rewritten' (string) fields",
-                  "resumeVersionComparison: string comparing this layout/version to industry standards",
-                  "jobDescriptionCompatibility: integer 0-100 compatibility rating",
-                  "recruiterReadabilityScore: integer 0-100 score indicating recruiter review ease",
-                  "australianResumeComplianceCheck: object with keys 'compliant' (boolean) and 'issues' (array of strings, e.g., removal of photo, date of birth, localized terms),",
-                  "coverLetter: a professional, high-quality, auto-generated cover letter string based on the candidate's resume (markdown formatted, using \\n for newlines, ready to be customized by the candidate)."
-                ].join(" "),
-              },
-              { inlineData: { mimeType, data: base64 } },
-            ],
+            parts: normalizedResumeText
+              ? [{ text: prompt }]
+              : [{ text: prompt }, { inlineData: { mimeType, data: base64 } }],
           }],
           generationConfig: {
             temperature: 0.1,
             responseMimeType: "application/json",
+            maxOutputTokens: 1400,
           },
         }),
+        signal: controller.signal,
       },
-    );
+      );
 
-    const payload: any = await response.json().catch(() => null);
-    if (!response.ok) {
-      console.warn(`[Gemini API] Failed with status ${response.status}: ${payload?.error?.message}. Using fallback.`);
-      return getFallbackResumeAnalysis();
+      const payload: any = await response.json().catch(() => null);
+      if (!response.ok) {
+        console.warn(`[Gemini API] Failed with status ${response.status}: ${payload?.error?.message}. Using fallback.`);
+        return getHeuristicResumeAnalysis(resumeText);
+      }
+
+      const rawText = payload?.candidates?.[0]?.content?.parts
+        ?.map((part: any) => part?.text || "")
+        .join("")
+        .trim();
+      if (!rawText) {
+        console.warn("[Gemini API] Empty response. Using fallback.");
+        return getHeuristicResumeAnalysis(resumeText);
+      }
+
+      return parseGeminiResumeAnalysis(rawText);
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    const rawText = payload?.candidates?.[0]?.content?.parts
-      ?.map((part: any) => part?.text || "")
-      .join("")
-      .trim();
-    if (!rawText) {
-      console.warn("[Gemini API] Empty response. Using fallback.");
-      return getFallbackResumeAnalysis();
-    }
-
-    return parseGeminiResumeAnalysis(rawText);
   } catch (err: any) {
     console.error("[Gemini API] Error calling Gemini API:", err.message || err);
     console.warn("Using fallback resume analysis.");
-    return getFallbackResumeAnalysis();
+    return getHeuristicResumeAnalysis(resumeText);
   }
 }
 
@@ -885,6 +1342,244 @@ function normalizePersonalInfoPayload(profile: any, fallbackUserId?: string, fal
     role: String(profile?.role || "client").trim(),
     account_status: String(profile?.account_status || "active").trim(),
     subscription_plan: String(profile?.subscription_plan || profile?.subscriptionPlan || "free").trim(),
+  };
+}
+
+function normalizeClientScorePayload(score: any) {
+  if (!score?.client_id) {
+    return null;
+  }
+
+  const atsScore = Number(score.ats_score);
+  const aiMatchScore = Number(score.ai_match_score);
+
+  if (!Number.isFinite(atsScore) || !Number.isFinite(aiMatchScore)) {
+    return null;
+  }
+
+  return {
+    id: score.id ? Number(score.id) : null,
+    client_id: String(score.client_id),
+    application_id: score.application_id ? Number(score.application_id) : null,
+    ats_score: atsScore,
+    ai_match_score: aiMatchScore,
+    score_reason: String(score.score_reason || ""),
+    recommendations: Array.isArray(score.recommendations) ? score.recommendations.map(String) : [],
+    calculated_at: String(score.calculated_at || new Date().toISOString()),
+    updated_by: String(score.updated_by || "admin"),
+  };
+}
+
+function buildLocalSnapshotProfile(userId: string, email: string, localProfile: any) {
+  const normalizedLocalProfile = normalizePersonalInfoPayload(localProfile, userId, email);
+  if (normalizedLocalProfile) {
+    return normalizedLocalProfile;
+  }
+
+  return {
+    id: userId,
+    full_name: "Test User",
+    email,
+    phone_number: "+91 99999 99999",
+    location: "Australia",
+    headline: "9Jobs preview candidate",
+    avatar_url: "",
+    linkedin_url: "https://linkedin.com/in/test-user",
+    facebook_url: "",
+    instagram_url: "",
+    twitter_url: "",
+    timezone: "Australia/Melbourne",
+    role: "client",
+    account_status: "active",
+    subscription_plan: "free",
+  };
+}
+
+async function buildLocalSnapshotResponse(targetUserId: string, requesterEmail: string) {
+  const nowIso = new Date().toISOString();
+  const localProfile = await getLocalProfile(targetUserId);
+  const localSuccessStories = await getLocalSuccessStories();
+  const localRecruiterContacts = await getLocalRecruiterContacts(targetUserId);
+  const localMessages = await getMessagesHistory(targetUserId).catch((error) => {
+    console.warn("[Tracker Route] Local snapshot message hydration failed:", error);
+    return [];
+  });
+  const profile = buildLocalSnapshotProfile(targetUserId, requesterEmail, localProfile);
+  const jobs = [
+    {
+      id: "job_resume_lead",
+      title: "Sr. Frontend Engineer",
+      company: "Stripe",
+      location: "Geelong",
+      salary: "$165k/yr",
+      job_type: "Full-time",
+      category_id: 1,
+      posted_at: "5h ago",
+      match_score: 98,
+      tags: ["React", "Remote"],
+      description: "Build polished candidate-facing experiences across the premium 9Jobs workflow.",
+      created_at: nowIso,
+    },
+    {
+      id: "job_growth_specialist",
+      title: "Product Designer",
+      company: "Figma",
+      location: "Sydney",
+      salary: "$145k/yr",
+      job_type: "Full-time",
+      category_id: 2,
+      posted_at: "2d ago",
+      match_score: 94,
+      tags: ["Design", "Systems"],
+      description: "Shape the systems and product surfaces used by thousands of design-led teams.",
+      created_at: nowIso,
+    },
+    {
+      id: "job_interview_coach",
+      title: "DX Engineer",
+      company: "Vercel",
+      location: "Perth",
+      salary: "$155k/yr",
+      job_type: "Remote",
+      category_id: 5,
+      posted_at: "1d ago",
+      match_score: 91,
+      tags: ["Developer Experience", "Remote"],
+      description: "Improve developer workflows and platform adoption across global engineering teams.",
+      created_at: nowIso,
+    },
+    {
+      id: "job_pipeline_growth",
+      title: "Job Search Growth Specialist",
+      company: "Greenline Talent",
+      location: "Melbourne",
+      salary: "$140k/yr",
+      job_type: "Full-time",
+      category_id: 4,
+      posted_at: "5h ago",
+      match_score: 88,
+      tags: ["Pipeline", "Recruiting"],
+      description: "Support high-output job-search operations with strong follow-up and funnel tracking.",
+      created_at: nowIso,
+    },
+  ];
+  const applications = [
+    {
+      id: 1,
+      user_id: targetUserId,
+      client_id: targetUserId,
+      job_id: "job_resume_lead",
+      status: "applied",
+      current_stage: "applied",
+      application_date: nowIso,
+      applied_at: nowIso,
+      company_name: "Stripe",
+      job_title: "Sr. Frontend Engineer",
+      job_location: "Remote",
+      employment_type: "Full-time",
+      is_active: true,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+    {
+      id: 2,
+      user_id: targetUserId,
+      client_id: targetUserId,
+      job_id: "job_growth_specialist",
+      status: "interview_scheduled",
+      current_stage: "interview_scheduled",
+      application_date: nowIso,
+      applied_at: nowIso,
+      company_name: "Figma",
+      job_title: "Product Designer",
+      job_location: "Sydney",
+      employment_type: "Full-time",
+      is_active: true,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+    {
+      id: 3,
+      user_id: targetUserId,
+      client_id: targetUserId,
+      job_id: "job_interview_coach",
+      status: "offer_received",
+      current_stage: "offer_received",
+      application_date: nowIso,
+      applied_at: nowIso,
+      company_name: "Vercel",
+      job_title: "DX Engineer",
+      job_location: "Remote",
+      employment_type: "Remote",
+      offer_received_at: nowIso,
+      is_active: true,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+  ];
+  const savedJobs = [{ user_id: targetUserId, job_id: "job_pipeline_growth", created_at: nowIso }];
+  const interviews = [
+    {
+      id: 1,
+      client_id: targetUserId,
+      application_id: 2,
+      interview_date: nowIso,
+      status: "scheduled",
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+  ];
+
+  return {
+    userId: targetUserId,
+    profile,
+    jobs,
+    applications,
+    savedJobs,
+    categories: LOCAL_SNAPSHOT_CATEGORY_ROWS,
+    messages: localMessages,
+    services: LOCAL_SNAPSHOT_SERVICE_ROWS,
+    pricingPlans: LOCAL_SNAPSHOT_PRICING_PLAN_ROWS,
+    successStories: localSuccessStories,
+    subscription: {
+      user_id: targetUserId,
+      plan_id: "free",
+      status: "active",
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+    resumeScore: {
+      user_id: targetUserId,
+      score: 97,
+      ats_score: 97,
+      ai_match_score: 84,
+      calculated_at: nowIso,
+      suggestions: [],
+      notes: "Local preview score",
+    },
+    systemSettings: {
+      id: 1,
+      maintenance_mode: false,
+      push_notifications_enabled: true,
+      dark_mode_override: false,
+    },
+    interviews,
+    followUps: [],
+    recruiterContacts: localRecruiterContacts,
+    coldEmails: [],
+    clientScores: [
+      {
+        id: 1,
+        client_id: targetUserId,
+        application_id: null,
+        ats_score: 97,
+        ai_match_score: 84,
+        calculated_at: nowIso,
+      },
+    ],
+    notifications: [],
+    coverLetter: null,
+    activityLogs: [],
   };
 }
 
@@ -1423,6 +2118,149 @@ async function deleteRecruiterContactWithPostgres(contactId: number) {
   }
 }
 
+async function runBestEffortProfileDeleteQuery(client: any, queryText: string, values: any[]) {
+  try {
+    await client.query(queryText, values);
+  } catch (error: any) {
+    if (error?.code === "42P01") {
+      return;
+    }
+    throw error;
+  }
+}
+
+async function deleteProfileWithPostgres(profileId: string) {
+  const pool = createPool();
+  const client = await pool.connect();
+
+  try {
+    await runBestEffortProfileDeleteQuery(client, `delete from messages where conversation_id = $1 or sender_id = $1 or recipient_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from conversations where id = $1 or client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from candidate_questionnaires where user_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from user_subscriptions where user_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from activity_logs where client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from interviews where client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from resume_scores where user_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from cover_letters where user_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from notifications where user_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from follow_ups where client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from cold_emails where client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from client_scores where client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from recruiter_contacts where client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from saved_jobs where user_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from applications where user_id = $1 or client_id = $1`, [profileId]);
+    await runBestEffortProfileDeleteQuery(client, `delete from profiles where id = $1`, [profileId]);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+router.get("/admin/dashboard", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const [usersResult, jobsResult, applicationsResult, messagesResult, subscriptionsResult] = await Promise.all([
+      runOptionalSnapshotListQuery("profiles", async () => supabase.from("profiles").select("id")),
+      runOptionalSnapshotListQuery("jobs", async () => supabase.from("jobs").select("id")),
+      runOptionalSnapshotListQuery("applications", async () => supabase.from("applications").select("id")),
+      runOptionalSnapshotListQuery("messages", async () => supabase.from("messages").select("id")),
+      runOptionalSnapshotListQuery("user_subscriptions", async () =>
+        supabase.from("user_subscriptions").select("id, user_id, status").eq("status", "active"),
+      ),
+    ]);
+
+    return res.json({
+      success: true,
+      stats: {
+        usersCount: usersResult.data.length,
+        jobsCount: jobsResult.data.length,
+        applicationsCount: applicationsResult.data.length,
+        messagesCount: messagesResult.data.length,
+        activeSubscriptionsCount: subscriptionsResult.data.length,
+      },
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/dashboard failed:", err);
+    return res.json({
+      success: true,
+      stats: {
+        usersCount: 0,
+        jobsCount: 0,
+        applicationsCount: 0,
+        messagesCount: 0,
+        activeSubscriptionsCount: 0,
+      },
+    });
+  }
+});
+
+router.get("/admin/services", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const result = await runOptionalSnapshotListQuery("services", async () =>
+      supabase.from("services").select("*").order("created_at", { ascending: false }),
+    );
+    return res.json({ success: true, services: result.data });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/services failed:", err);
+    return res.json({ success: true, services: LOCAL_SNAPSHOT_SERVICE_ROWS });
+  }
+});
+
+router.get("/admin/pricing-plans", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const result = await runOptionalSnapshotListQuery("pricing_plans", async () =>
+      supabase.from("pricing_plans").select("*").order("created_at", { ascending: false }),
+    );
+    return res.json({ success: true, plans: result.data });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/pricing-plans failed:", err);
+    return res.json({ success: true, plans: LOCAL_SNAPSHOT_PRICING_PLAN_ROWS });
+  }
+});
+
+router.get("/admin/system-settings", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  try {
+    const result = await runOptionalSnapshotSingleQuery("system_settings", async () =>
+      supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
+    );
+    return res.json({
+      success: true,
+      settings: result.data ?? {
+        id: 1,
+        maintenance_mode: false,
+        push_notifications_enabled: true,
+        dark_mode_override: false,
+      },
+    });
+  } catch (err: any) {
+    console.error("[Tracker Route] GET /admin/system-settings failed:", err);
+    return res.json({
+      success: true,
+      settings: {
+        id: 1,
+        maintenance_mode: false,
+        push_notifications_enabled: true,
+        dark_mode_override: false,
+      },
+    });
+  }
+});
+
 router.post("/admin/tracker/applications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdminRole(req, res)) {
     return;
@@ -1437,6 +2275,8 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
   try {
     const normalizedJob = normalizeJobPayload(job);
     const normalizedProfile = buildProfilePayload(application);
+    let previousApplication: any = null;
+    const performedBy = req.user?.email || req.user?.userId || "admin";
 
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       if (normalizedProfile?.id) {
@@ -1464,6 +2304,15 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
             normalizedApplication.user_id,
             normalizedApplication.job_id,
           ));
+      if (existingApplicationId) {
+        const { data: existingApplicationData, error: existingApplicationError } = await supabase
+          .from("applications")
+          .select("*")
+          .eq("id", existingApplicationId)
+          .maybeSingle();
+        if (existingApplicationError) throw existingApplicationError;
+        previousApplication = existingApplicationData ?? null;
+      }
       const query = existingApplicationId
         ? supabase.from("applications").update(normalizedApplication).eq("id", existingApplicationId).select().single()
         : supabase.from("applications").insert([normalizedApplication]).select().single();
@@ -1484,7 +2333,18 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
         if (savedJobDeleteError) throw savedJobDeleteError;
       }
 
-      return res.json({ success: true, application: data });
+      await insertTrackerActivityLog({
+        clientId: normalizedApplication.user_id,
+        applicationId: Number(data?.id ?? existingApplicationId ?? 0) || null,
+        performedBy,
+        activityType: "application_saved",
+        title: "Application saved",
+        description: "Application tracker entry created or updated from admin panel.",
+        oldValue: previousApplication,
+        newValue: data,
+      });
+
+      return res.json({ success: true, application: data, previousApplication });
     }
 
     if (!hasUsableDatabaseUrl()) {
@@ -1508,6 +2368,7 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
           normalizedApplication.user_id,
           normalizedApplication.job_id,
         );
+    previousApplication = existingApplication ?? null;
     const saved = existingApplication?.id
       ? await updateApplicationWithPostgres(Number(existingApplication.id), normalizedApplication)
       : await createApplicationWithPostgres(normalizedApplication);
@@ -1516,10 +2377,177 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
     } else {
       await deleteSavedJobWithPostgres(normalizedApplication.user_id, normalizedApplication.job_id);
     }
-    return res.json({ success: true, application: saved });
+
+    await insertTrackerActivityLog({
+      clientId: normalizedApplication.user_id,
+      applicationId: Number(saved?.id ?? existingApplication?.id ?? 0) || null,
+      performedBy,
+      activityType: "application_saved",
+      title: "Application saved",
+      description: "Application tracker entry created or updated from admin panel.",
+      oldValue: previousApplication,
+      newValue: saved,
+    });
+
+    return res.json({ success: true, application: saved, previousApplication });
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/tracker/applications failed:", err);
     return res.status(500).json({ error: err.message || "Failed to create tracker application" });
+  }
+});
+
+router.post("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const normalizedJob = normalizeJobPayload(req.body?.job || req.body);
+  if (!normalizedJob) {
+    return res.status(400).json({ error: "Missing opportunity payload" });
+  }
+
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const { error: jobError } = await supabase.from("jobs").upsert([normalizedJob], { onConflict: "id" });
+      if (jobError) {
+        if (!canRetryJobWithoutLink(jobError)) {
+          throw jobError;
+        }
+
+        const { job_link: _jobLink, ...legacyJobPayload } = normalizedJob;
+        const { error: legacyJobError } = await supabase.from("jobs").upsert([legacyJobPayload], { onConflict: "id" });
+        if (legacyJobError) throw legacyJobError;
+      }
+
+      return res.json({ success: true, job: normalizedJob });
+    }
+
+    if (!hasUsableDatabaseUrl()) {
+      return res.status(500).json({
+        error:
+          "Backend write credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY or a real DATABASE_URL in backend/.env to save opportunities without RLS errors.",
+      });
+    }
+
+    await upsertJobWithPostgres(normalizedJob);
+    return res.json({ success: true, job: normalizedJob });
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/jobs failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save opportunity" });
+  }
+});
+
+router.post("/admin/tracker/scores", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (!ensureAdminRole(req, res)) {
+    return;
+  }
+
+  const normalizedScore = normalizeClientScorePayload(req.body?.score || req.body);
+  if (!normalizedScore) {
+    return res.status(400).json({ error: "Missing score payload" });
+  }
+
+  try {
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const query = normalizedScore.id
+        ? supabase.from("client_scores").update({
+            client_id: normalizedScore.client_id,
+            application_id: normalizedScore.application_id,
+            ats_score: normalizedScore.ats_score,
+            ai_match_score: normalizedScore.ai_match_score,
+            score_reason: normalizedScore.score_reason,
+            recommendations: normalizedScore.recommendations,
+            calculated_at: normalizedScore.calculated_at,
+            updated_by: normalizedScore.updated_by,
+          }).eq("id", normalizedScore.id).select().single()
+        : supabase.from("client_scores").insert([{
+            client_id: normalizedScore.client_id,
+            application_id: normalizedScore.application_id,
+            ats_score: normalizedScore.ats_score,
+            ai_match_score: normalizedScore.ai_match_score,
+            score_reason: normalizedScore.score_reason,
+            recommendations: normalizedScore.recommendations,
+            calculated_at: normalizedScore.calculated_at,
+            updated_by: normalizedScore.updated_by,
+          }]).select().single();
+      const { data, error } = await query;
+      if (error) throw error;
+      return res.json({ success: true, score: data });
+    }
+
+    if (!hasUsableDatabaseUrl()) {
+      return res.status(500).json({
+        error:
+          "Backend write credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY or a real DATABASE_URL in backend/.env to save scores without RLS errors.",
+      });
+    }
+
+    const pool = createPool();
+    const client = await pool.connect();
+    try {
+      const result = normalizedScore.id
+        ? await client.query(
+            `
+              update client_scores
+              set
+                client_id = $2,
+                application_id = $3,
+                ats_score = $4,
+                ai_match_score = $5,
+                score_reason = $6,
+                recommendations = $7,
+                calculated_at = $8,
+                updated_by = $9
+              where id = $1
+              returning *
+            `,
+            [
+              normalizedScore.id,
+              normalizedScore.client_id,
+              normalizedScore.application_id,
+              normalizedScore.ats_score,
+              normalizedScore.ai_match_score,
+              normalizedScore.score_reason,
+              normalizedScore.recommendations,
+              normalizedScore.calculated_at,
+              normalizedScore.updated_by,
+            ],
+          )
+        : await client.query(
+            `
+              insert into client_scores (
+                client_id,
+                application_id,
+                ats_score,
+                ai_match_score,
+                score_reason,
+                recommendations,
+                calculated_at,
+                updated_by
+              )
+              values ($1, $2, $3, $4, $5, $6, $7, $8)
+              returning *
+            `,
+            [
+              normalizedScore.client_id,
+              normalizedScore.application_id,
+              normalizedScore.ats_score,
+              normalizedScore.ai_match_score,
+              normalizedScore.score_reason,
+              normalizedScore.recommendations,
+              normalizedScore.calculated_at,
+              normalizedScore.updated_by,
+            ],
+          );
+
+      return res.json({ success: true, score: result.rows[0] ?? null });
+    } finally {
+      client.release();
+      await pool.end();
+    }
+  } catch (err: any) {
+    console.error("[Tracker Route] POST /admin/tracker/scores failed:", err);
+    return res.status(500).json({ error: err.message || "Failed to save score" });
   }
 });
 
@@ -1699,6 +2727,13 @@ router.patch("/admin/tracker/applications/:id", authMiddleware, async (req: Auth
   }
 
   try {
+    const { data: previousApplication, error: previousApplicationError } = await supabase
+      .from("applications")
+      .select("*")
+      .eq("id", applicationId)
+      .maybeSingle();
+    if (previousApplicationError) throw previousApplicationError;
+
     const { data, error } = await supabase
       .from("applications")
       .update(patch)
@@ -1724,6 +2759,17 @@ router.patch("/admin/tracker/applications/:id", authMiddleware, async (req: Auth
         if (savedJobDeleteError) throw savedJobDeleteError;
       }
     }
+
+    await insertTrackerActivityLog({
+      clientId: String(data?.user_id || previousApplication?.user_id || ""),
+      applicationId: Number(data?.id ?? applicationId),
+      performedBy: req.user?.email || req.user?.userId || "admin",
+      activityType: "application_saved",
+      title: "Application saved",
+      description: "Application tracker entry created or updated from admin panel.",
+      oldValue: previousApplication,
+      newValue: data,
+    });
 
     return res.json({ success: true, application: data });
   } catch (err: any) {
@@ -1778,6 +2824,7 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
   }
 
   try {
+    const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
     const { data: profilesData, error } = await supabase
       .from("profiles")
       .select("*")
@@ -1790,6 +2837,14 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
     }
 
     const supabaseProfiles = (profilesData || []) as any[];
+    if (isServerlessRuntime && supabaseProfiles.length > 0) {
+      return res.json({
+        profiles: supabaseProfiles.sort((left, right) =>
+          String(right.updated_at || right.created_at || "").localeCompare(String(left.updated_at || left.created_at || "")),
+        ),
+      });
+    }
+
     const localProfiles = await getLocalProfiles();
     const mergedProfiles = new Map<string, any>();
 
@@ -1815,7 +2870,7 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
     });
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/personal-info failed:", err);
-    return res.status(500).json({ error: err.message || "Failed to fetch personal information" });
+    return res.json({ profiles: [] });
   }
 });
 
@@ -1859,8 +2914,33 @@ router.delete("/admin/personal-info/:id", authMiddleware, async (req: Authentica
 
   try {
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      const { error } = await supabase.from("profiles").delete().eq("id", profileId);
-      if (error && !isMissingRelationError(error)) throw error;
+      const deleteQueries = [
+        supabase.from("messages").delete().or(`conversation_id.eq.${profileId},sender_id.eq.${profileId},recipient_id.eq.${profileId}`),
+        supabase.from("conversations").delete().or(`id.eq.${profileId},client_id.eq.${profileId}`),
+        supabase.from("candidate_questionnaires").delete().eq("user_id", profileId),
+        supabase.from("user_subscriptions").delete().eq("user_id", profileId),
+        supabase.from("activity_logs").delete().eq("client_id", profileId),
+        supabase.from("interviews").delete().eq("client_id", profileId),
+        supabase.from("resume_scores").delete().eq("user_id", profileId),
+        supabase.from("cover_letters").delete().eq("user_id", profileId),
+        supabase.from("notifications").delete().eq("user_id", profileId),
+        supabase.from("follow_ups").delete().eq("client_id", profileId),
+        supabase.from("cold_emails").delete().eq("client_id", profileId),
+        supabase.from("client_scores").delete().eq("client_id", profileId),
+        supabase.from("recruiter_contacts").delete().eq("client_id", profileId),
+        supabase.from("saved_jobs").delete().eq("user_id", profileId),
+        supabase.from("applications").delete().or(`user_id.eq.${profileId},client_id.eq.${profileId}`),
+        supabase.from("profiles").delete().eq("id", profileId),
+      ];
+
+      const results = await Promise.all(deleteQueries);
+      for (const result of results) {
+        if (result.error && !isMissingRelationError(result.error)) {
+          throw result.error;
+        }
+      }
+    } else if (hasUsableDatabaseUrl()) {
+      await deleteProfileWithPostgres(profileId);
     }
 
     await deleteLocalProfile(profileId);
@@ -2248,14 +3328,38 @@ router.post("/admin/tracker/contacts", authMiddleware, async (req: Authenticated
   }
 
   try {
+    const performedBy = req.user?.email || req.user?.userId || "admin";
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
         if (singleContact) {
+          let previousContact: any = null;
+          if (singleContact.id) {
+            const { data: existingContact, error: existingContactError } = await supabase
+              .from("recruiter_contacts")
+              .select("*")
+              .eq("id", Number(singleContact.id))
+              .maybeSingle();
+            if (existingContactError) throw existingContactError;
+            previousContact = existingContact ?? null;
+          }
           const query = singleContact.id
             ? supabase.from("recruiter_contacts").update(singleContact).eq("id", Number(singleContact.id)).select().single()
             : supabase.from("recruiter_contacts").insert([singleContact]).select().single();
           const { data, error } = await query;
           if (error) throw error;
+          await insertTrackerActivityLog({
+            clientId: String(data?.client_id || singleContact.client_id || ""),
+            applicationId: Number(data?.application_id ?? singleContact.application_id ?? 0) || null,
+            performedBy,
+            activityType: "recruiter_contact_saved",
+            title: "Hiring manager saved",
+            description: "Hiring manager details updated from admin panel.",
+            oldValue: previousContact,
+            newValue: data,
+            metadata: {
+              response_status: data?.response_status ?? singleContact.response_status ?? null,
+            },
+          });
           return res.json({ success: true, contact: data });
         }
 
@@ -2271,9 +3375,35 @@ router.post("/admin/tracker/contacts", authMiddleware, async (req: Authenticated
 
     if (hasUsableDatabaseUrl()) {
       if (singleContact) {
+        let previousContact: any = null;
+        if (singleContact.id) {
+          const pool = createPool();
+          const client = await pool.connect();
+          try {
+            await ensureRecruiterContactsTable(client);
+            const result = await client.query(`select * from recruiter_contacts where id = $1`, [Number(singleContact.id)]);
+            previousContact = result.rows[0] ?? null;
+          } finally {
+            client.release();
+            await pool.end();
+          }
+        }
         const saved = singleContact.id
           ? await updateRecruiterContactWithPostgres(Number(singleContact.id), singleContact)
           : await createRecruiterContactWithPostgres(singleContact);
+        await insertTrackerActivityLog({
+          clientId: String(saved?.client_id || singleContact.client_id || ""),
+          applicationId: Number(saved?.application_id ?? singleContact.application_id ?? 0) || null,
+          performedBy,
+          activityType: "recruiter_contact_saved",
+          title: "Hiring manager saved",
+          description: "Hiring manager details updated from admin panel.",
+          oldValue: previousContact,
+          newValue: saved,
+          metadata: {
+            response_status: saved?.response_status ?? singleContact.response_status ?? null,
+          },
+        });
         return res.json({ success: true, contact: saved });
       }
 
@@ -2340,25 +3470,25 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
 
   try {
     const [jobsResult, applicationsResult, profilesResult] = await Promise.all([
-      supabase.from("jobs").select("*").order("created_at", { ascending: false }),
-      supabase.from("applications").select("*").order("created_at", { ascending: false }),
-      supabase.from("profiles").select("id, full_name, email"),
+      runOptionalSnapshotListQuery("jobs", async () =>
+        supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+      ),
+      runOptionalSnapshotListQuery("applications", async () =>
+        supabase.from("applications").select("*").order("created_at", { ascending: false }),
+      ),
+      runOptionalSnapshotListQuery("profiles", async () =>
+        supabase.from("profiles").select("id, full_name, email"),
+      ),
     ]);
-
-    const firstError = [jobsResult, applicationsResult, profilesResult].find((result) => result.error)?.error;
-    if (firstError) throw firstError;
 
     const profileMap = new Map(
       ((profilesResult.data ?? []) as any[]).map((profile) => [String(profile.id || ""), profile]),
     );
     const canonicalApplications = dedupeApplicationsByRole((applicationsResult.data ?? []) as any[]);
-    const preferredApplicationByRole = new Map(
-      canonicalApplications.map((application) => [buildJobRoleKey({
-        title: application.job_title,
-        company: application.company_name,
-        location: application.job_location,
-        job_type: application.employment_type || application.work_type,
-      }), application]),
+    const preferredApplicationByJobId = new Map(
+      canonicalApplications
+        .filter((application) => normalizeRolePart(application?.job_id))
+        .map((application) => [normalizeRolePart(application.job_id), application]),
     );
 
     const jobsByRole = new Map<string, any>();
@@ -2372,8 +3502,9 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
         salary: String(job.salary || "").trim(),
         description: String(job.description || "").trim(),
       };
-      const roleKey = buildJobRoleKey(normalizedJob) || `job:${String(job.id || "")}`;
-      const linkedApplication = preferredApplicationByRole.get(roleKey) || null;
+      const normalizedJobId = normalizeRolePart(job.id);
+      const roleKey = normalizedJobId ? `job:${normalizedJobId}` : buildJobRoleKey(normalizedJob) || `job:${String(job.id || "")}`;
+      const linkedApplication = normalizedJobId ? preferredApplicationByJobId.get(normalizedJobId) || null : null;
       const existing = jobsByRole.get(roleKey);
       const linkedProfile = profileMap.get(String(linkedApplication?.user_id || linkedApplication?.client_id || ""));
       const enrichedJob = {
@@ -2396,7 +3527,7 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
         continue;
       }
 
-      const existingLinkedApplication = existing.application_id ? preferredApplicationByRole.get(roleKey) : null;
+      const existingLinkedApplication = normalizedJobId ? preferredApplicationByJobId.get(normalizedJobId) || null : null;
       const preferred = linkedApplication
         ? (existingLinkedApplication ? mergeApplicationRecords(existingLinkedApplication, linkedApplication) : linkedApplication)
         : existingLinkedApplication;
@@ -2443,12 +3574,16 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
 
     for (const application of canonicalApplications) {
       const linkedProfile = profileMap.get(String(application.user_id || application.client_id || ""));
-      const roleKey = buildJobRoleKey({
-        title: application.job_title,
-        company: application.company_name,
-        location: application.job_location,
-        job_type: application.employment_type || application.work_type,
-      }) || `application:${String(application.id || "")}`;
+      const normalizedJobId = normalizeRolePart(application.job_id);
+      const roleKey =
+        normalizedJobId
+          ? `job:${normalizedJobId}`
+          : buildJobRoleKey({
+              title: application.job_title,
+              company: application.company_name,
+              location: application.job_location,
+              job_type: application.employment_type || application.work_type,
+            }) || `application:${String(application.id || "")}`;
 
       if (jobsByRole.has(roleKey)) {
         continue;
@@ -2491,7 +3626,7 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
     return res.json({ success: true, jobs });
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/tracker/jobs failed:", err);
-    return res.status(500).json({ error: err.message || "Failed to load tracker opportunities" });
+    return res.json({ success: true, jobs: [] });
   }
 });
 
@@ -3011,17 +4146,15 @@ router.get("/admin/notifications", authMiddleware, async (req: AuthenticatedRequ
   }
 
   try {
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .order("sent_at", { ascending: false });
-    if (error) throw error;
+    const { data } = await runOptionalSnapshotListQuery("notifications", async () =>
+      supabase.from("notifications").select("*").order("sent_at", { ascending: false }),
+    );
 
     const notifications = await buildNotificationsWithProfiles(data ?? []);
     return res.json({ success: true, notifications });
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/notifications failed:", err);
-    return res.status(500).json({ error: err.message || "Failed to load notifications" });
+    return res.json({ success: true, notifications: [] });
   }
 });
 
@@ -3232,8 +4365,11 @@ router.post("/mobile/resumes/analyze", authMiddleware, async (req: Authenticated
   }
 
   try {
-    const analysis = await analyzeResumeWithGemini(base64, mimeType);
-    await ensurePublicAssetBucket();
+    const extractedResumeText = await extractResumeText(fileBytes, mimeType);
+    const analysis = await analyzeResumeWithGemini(base64, mimeType, extractedResumeText);
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      await ensurePublicAssetBucket();
+    }
 
     const resolvedStoragePath = storagePath || `resumes/${sanitizeAttachmentName(requester.userId)}/${Date.now()}-${fileName}`;
     if (!storagePath) {
@@ -3328,7 +4464,9 @@ router.post("/mobile/resumes/upload-url", authMiddleware, async (req: Authentica
   }
 
   try {
-    await ensurePublicAssetBucket();
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      await ensurePublicAssetBucket();
+    }
     const storagePath = `resumes/${sanitizeAttachmentName(requester.userId)}/${Date.now()}-${fileName}`;
     const signedUpload = await supabase.storage.from(RESUME_BUCKET).createSignedUploadUrl(storagePath);
     if (signedUpload.error || !signedUpload.data?.signedUrl) {
@@ -3342,6 +4480,7 @@ router.post("/mobile/resumes/upload-url", authMiddleware, async (req: Authentica
 });
 
 router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  const requestStartedAt = Date.now();
   const requester = req.user;
   const requestedUserId = typeof req.query.userId === "string" ? req.query.userId : undefined;
   const targetUserId =
@@ -3352,7 +4491,26 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
   }
 
   try {
+    const [supabaseReachable, databaseReachable] = await Promise.all([
+      canReachSupabaseUpstream(),
+      hasUsableDatabaseUrl() ? canReachDatabaseUpstream() : Promise.resolve(false),
+    ]);
+    const canUsePostgresFallback = hasUsableDatabaseUrl() && databaseReachable;
+
+    if (!supabaseReachable) {
+      const responseBody = await buildLocalSnapshotResponse(targetUserId, requester?.email || "");
+      const responseDuration = Date.now() - requestStartedAt;
+      res.setHeader("x-9jobs-snapshot-ms", String(responseDuration));
+      res.setHeader("x-9jobs-snapshot-source", "local_seed_fallback");
+      res.setHeader("x-9jobs-snapshot-bytes", String(Buffer.byteLength(JSON.stringify(responseBody), "utf8")));
+      return res.json(responseBody);
+    }
+
     const messagesPromise = (async () => {
+      if (!supabaseReachable) {
+        return { data: [], error: null };
+      }
+
       try {
         const data = await getMessagesHistory(targetUserId);
         return { data, error: null };
@@ -3378,6 +4536,10 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
     })();
 
     const recruiterContactsPromise = (async () => {
+      if (!supabaseReachable) {
+        return { data: await getLocalRecruiterContacts(targetUserId), error: null };
+      }
+
       const result = await supabase
         .from("recruiter_contacts")
         .select("*")
@@ -3392,16 +4554,20 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
         return result;
       }
 
-      if (hasUsableDatabaseUrl()) {
+      if (canUsePostgresFallback) {
         return { data: await getRecruiterContactsWithPostgres(targetUserId), error: null };
       }
 
       return { data: await getLocalRecruiterContacts(targetUserId), error: null };
     })();
 
-    const successStoriesPromise = (async () => {
-      if (hasUsableDatabaseUrl()) {
+    const successStoriesPromise = getCachedSnapshotResource("snapshot:success-stories", 60_000, async () => {
+      if (canUsePostgresFallback) {
         return { data: await getSuccessStoriesWithPostgres(), error: null };
+      }
+
+      if (!supabaseReachable) {
+        return { data: await getLocalSuccessStories(), error: null };
       }
 
       const result = await supabase
@@ -3419,9 +4585,28 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
         return { data: await getLocalSuccessStories(), error: null };
       }
 
-
       return result;
-    })();
+    }) as Promise<{ data: any[]; error: any }>;
+
+    const jobsPromise = getCachedSnapshotResource("snapshot:jobs", 20_000, async () =>
+      supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+    ) as Promise<{ data: any[] | null; error: any }>;
+
+    const categoriesPromise = getCachedSnapshotResource("snapshot:job-categories", 120_000, async () =>
+      supabase.from("job_categories").select("*"),
+    ) as Promise<{ data: any[] | null; error: any }>;
+
+    const servicesPromise = getCachedSnapshotResource("snapshot:services", 120_000, async () =>
+      supabase.from("services").select("*").order("created_at", { ascending: true }),
+    ) as Promise<{ data: any[] | null; error: any }>;
+
+    const pricingPlansPromise = getCachedSnapshotResource("snapshot:pricing-plans", 120_000, async () =>
+      supabase.from("pricing_plans").select("*").order("created_at", { ascending: true }),
+    ) as Promise<{ data: any[] | null; error: any }>;
+
+    const systemSettingsPromise = getCachedSnapshotResource("snapshot:system-settings", 30_000, async () =>
+      supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
+    ) as Promise<{ data: any | null; error: any }>;
 
     const [
       profileResult,
@@ -3442,27 +4627,43 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
+      activityLogsResult,
       coverLetterResult,
     ] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", targetUserId).maybeSingle(),
-      supabase.from("jobs").select("*").order("created_at", { ascending: false }),
+      jobsPromise,
       supabase.from("applications").select("*").eq("user_id", targetUserId).order("created_at", { ascending: false }),
       supabase.from("saved_jobs").select("*").eq("user_id", targetUserId),
-      supabase.from("job_categories").select("*"),
+      categoriesPromise,
       messagesPromise,
-      supabase.from("services").select("*").order("created_at", { ascending: true }),
-      supabase.from("pricing_plans").select("*").order("created_at", { ascending: true }),
+      servicesPromise,
+      pricingPlansPromise,
       successStoriesPromise,
       supabase.from("user_subscriptions").select("*").eq("user_id", targetUserId).maybeSingle(),
       supabase.from("resume_scores").select("*").eq("user_id", targetUserId).maybeSingle(),
-      supabase.from("system_settings").select("*").eq("id", 1).maybeSingle(),
-      supabase.from("interviews").select("*").eq("client_id", targetUserId).order("interview_date", { ascending: false }),
-      supabase.from("follow_ups").select("*").eq("client_id", targetUserId).order("due_date", { ascending: true }),
+      systemSettingsPromise,
+      runOptionalSnapshotListQuery("interviews", async () =>
+        supabase.from("interviews").select("*").eq("client_id", targetUserId).order("interview_date", { ascending: false }),
+      ),
+      runOptionalSnapshotListQuery("follow_ups", async () =>
+        supabase.from("follow_ups").select("*").eq("client_id", targetUserId).order("due_date", { ascending: true }),
+      ),
       recruiterContactsPromise,
-      supabase.from("cold_emails").select("*").eq("client_id", targetUserId).order("sent_at", { ascending: false }),
-      supabase.from("client_scores").select("*").eq("client_id", targetUserId).order("calculated_at", { ascending: false }),
-      supabase.from("notifications").select("*").eq("user_id", targetUserId).order("sent_at", { ascending: false }),
-      supabase.from("cover_letters").select("*").eq("user_id", targetUserId).maybeSingle(),
+      runOptionalSnapshotListQuery("cold_emails", async () =>
+        supabase.from("cold_emails").select("*").eq("client_id", targetUserId).order("sent_at", { ascending: false }),
+      ),
+      runOptionalSnapshotListQuery("client_scores", async () =>
+        supabase.from("client_scores").select("*").eq("client_id", targetUserId).order("calculated_at", { ascending: false }),
+      ),
+      runOptionalSnapshotListQuery("notifications", async () =>
+        supabase.from("notifications").select("*").eq("user_id", targetUserId).order("sent_at", { ascending: false }),
+      ),
+      runOptionalSnapshotListQuery("activity_logs", async () =>
+        supabase.from("activity_logs").select("*").eq("client_id", targetUserId).order("created_at", { ascending: false }),
+      ),
+      runOptionalSnapshotSingleQuery("cover_letters", async () =>
+        supabase.from("cover_letters").select("*").eq("user_id", targetUserId).maybeSingle(),
+      ),
     ]);
 
     const localProfile = await getLocalProfile(targetUserId);
@@ -3489,6 +4690,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       coldEmailsResult,
       clientScoresResult,
       notificationsResult,
+      activityLogsResult,
     ];
 
     for (const result of results) {
@@ -3510,19 +4712,24 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
         job_type: String(job.job_type || "").trim(),
         description: String(job.description || "").trim(),
       };
-      const roleKey = buildJobRoleKey(normalizedJob) || `job:${String(job.id || "")}`;
+      const normalizedJobId = normalizeRolePart(job.id);
+      const roleKey = normalizedJobId ? `job:${normalizedJobId}` : buildJobRoleKey(normalizedJob) || `job:${String(job.id || "")}`;
       if (!canonicalJobsByRole.has(roleKey)) {
         canonicalJobsByRole.set(roleKey, normalizedJob);
       }
     }
 
     for (const application of canonicalApplications) {
-      const roleKey = buildJobRoleKey({
-        title: application.job_title,
-        company: application.company_name,
-        location: application.job_location,
-        job_type: application.employment_type || application.work_type,
-      }) || `application:${String(application.id || "")}`;
+      const normalizedJobId = normalizeRolePart(application.job_id);
+      const roleKey =
+        normalizedJobId
+          ? `job:${normalizedJobId}`
+          : buildJobRoleKey({
+              title: application.job_title,
+              company: application.company_name,
+              location: application.job_location,
+              job_type: application.employment_type || application.work_type,
+            }) || `application:${String(application.id || "")}`;
       const existing = canonicalJobsByRole.get(roleKey);
       if (existing) {
         canonicalJobsByRole.set(roleKey, {
@@ -3554,7 +4761,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       });
     }
 
-    return res.json({
+    const responseBody = {
       userId: targetUserId,
       profile: resolvedProfile,
       jobs: Array.from(canonicalJobsByRole.values()),
@@ -3575,15 +4782,13 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       clientScores: clientScoresResult.data ?? [],
       notifications: notificationsResult.data ?? [],
       coverLetter: coverLetterResult.data,
-      activityLogs:
-        (
-          await supabase
-            .from("activity_logs")
-            .select("*")
-            .eq("client_id", targetUserId)
-            .order("created_at", { ascending: false })
-        ).data ?? [],
-    });
+      activityLogs: activityLogsResult.data ?? [],
+    };
+
+    const responseDuration = Date.now() - requestStartedAt;
+    res.setHeader("x-9jobs-snapshot-ms", String(responseDuration));
+    res.setHeader("x-9jobs-snapshot-bytes", String(Buffer.byteLength(JSON.stringify(responseBody), "utf8")));
+    return res.json(responseBody);
   } catch (err: any) {
     console.error("[Tracker Route] GET /mobile/snapshot failed:", err);
     return res.status(500).json({ error: err.message || "Failed to fetch mobile snapshot" });

@@ -5,8 +5,9 @@ import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { colors, radii, spacing } from "@/theme";
+import { useScreenPerf } from "@/lib/perf/livePerf";
 
 function formatInterviewDate(dateString: string) {
   try {
@@ -41,10 +42,10 @@ function getCountdownText(interviewDate: string) {
 }
 
 export default function UpcomingInterviewScreen() {
-  const { data: snapshot } = usePreviewSyncQuery(true);
+  const { data: trackerInterviews } = usePreviewSyncSelector((snapshot) => snapshot.trackerInterviews, true);
 
   const upcomingInterviews = useMemo(() => {
-    const interviews = snapshot?.trackerInterviews ?? [];
+    const interviews = trackerInterviews ?? [];
     const now = new Date();
     return interviews
       .filter((int) => {
@@ -55,7 +56,11 @@ export default function UpcomingInterviewScreen() {
         (a, b) =>
           new Date(a.interview_date).getTime() - new Date(b.interview_date).getTime(),
       );
-  }, [snapshot?.trackerInterviews]);
+  }, [trackerInterviews]);
+  useScreenPerf("/(app)/upcoming-interview", true, {
+    screen: "upcoming-interview",
+    items: upcomingInterviews.length,
+  });
 
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>

@@ -1,6 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, router } from "expo-router";
 import { useClerk, useSSO, useSignIn, useSignUp } from "@clerk/expo";
 import * as AuthSession from "expo-auth-session";
@@ -23,33 +22,15 @@ import { useSession } from "@/providers/SessionProvider";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import type { SignUpPayload } from "@/types/auth";
 import {
-  canUsePreviewFallback,
   validateSignInPayload,
   validateSignUpPayload,
 } from "@/features/auth/validation";
 import { previewMobileUser } from "@/lib/data/preview-user";
-import { storageKeys } from "@/lib/utils/storage";
 
 const signUpSteps = ["Personal Info", "Career Goals", "Preferences"];
 
-type LocalAuthProfile = {
-  email: string;
-  password: string;
-  fullName: string;
-  phoneNumber?: string;
-};
-
-async function saveLocalAuthProfile(profile: LocalAuthProfile) {
-  await AsyncStorage.setItem(storageKeys.mockProfile, JSON.stringify(profile));
-}
-
-async function loadLocalAuthProfile() {
-  const savedProfileRaw = await AsyncStorage.getItem(storageKeys.mockProfile);
-  if (!savedProfileRaw) {
-    return null;
-  }
-
-  return JSON.parse(savedProfileRaw) as LocalAuthProfile;
+function normalizeEmailValue(value: string) {
+  return value.replace(/%40/gi, "@").trim().toLowerCase();
 }
 
 function getSsoRedirectUrl() {
@@ -57,6 +38,15 @@ function getSsoRedirectUrl() {
     scheme: "ninejobs",
     path: "sso-callback",
   });
+}
+
+function clerkSupportsUsername(signUp: any) {
+  const configuredFields = [
+    ...(Array.isArray(signUp?.requiredFields) ? signUp.requiredFields : []),
+    ...(Array.isArray(signUp?.optionalFields) ? signUp.optionalFields : []),
+  ];
+
+  return configuredFields.includes("username");
 }
 
 export function SignUpScreen() {
@@ -84,6 +74,12 @@ function DemoSignUpScreen() {
   >({});
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
+
+  function handleFieldChange(key: keyof SignUpPayload, value: string) {
+    setError(null);
+    updateField(setForm, key, value);
+  }
 
   async function handleCreateAccount() {
     const nextErrors = validateSignUpPayload(form);
@@ -94,11 +90,16 @@ function DemoSignUpScreen() {
       return;
     }
 
+    if (!acceptedPrivacyPolicy) {
+      setError("Please accept the Privacy Policy before continuing.");
+      return;
+    }
+
     setPending(true);
 
     try {
       await signInDemo({
-        email: form.email.trim() || "candidate@9jobs.app",
+        email: normalizeEmailValue(form.email) || "candidate@9jobs.app",
         fullName: `${form.firstName} ${form.lastName}`.trim() || "9Jobs Candidate",
       });
       router.replace("/(app)");
@@ -147,7 +148,7 @@ function DemoSignUpScreen() {
           <TextField
             label="First name"
             value={form.firstName}
-            onChangeText={(value) => updateField(setForm, "firstName", value)}
+            onChangeText={(value) => handleFieldChange("firstName", value)}
             placeholder="First name"
             autoCapitalize="words"
             textContentType="givenName"
@@ -158,7 +159,7 @@ function DemoSignUpScreen() {
           <TextField
             label="Last name"
             value={form.lastName}
-            onChangeText={(value) => updateField(setForm, "lastName", value)}
+            onChangeText={(value) => handleFieldChange("lastName", value)}
             placeholder="Last name"
             autoCapitalize="words"
             textContentType="familyName"
@@ -169,7 +170,7 @@ function DemoSignUpScreen() {
       <TextField
         label="Email address"
         value={form.email}
-        onChangeText={(value) => updateField(setForm, "email", value)}
+        onChangeText={(value) => handleFieldChange("email", value)}
         placeholder="Email address"
         keyboardType="email-address"
         autoComplete="email"
@@ -179,7 +180,7 @@ function DemoSignUpScreen() {
       <TextField
         label="Phone number"
         value={form.phoneNumber}
-        onChangeText={(value) => updateField(setForm, "phoneNumber", value)}
+        onChangeText={(value) => handleFieldChange("phoneNumber", value)}
         placeholder="Phone number"
         keyboardType="phone-pad"
         autoComplete="tel"
@@ -189,7 +190,7 @@ function DemoSignUpScreen() {
       <TextField
         label="Password"
         value={form.password}
-        onChangeText={(value) => updateField(setForm, "password", value)}
+        onChangeText={(value) => handleFieldChange("password", value)}
         placeholder="Password"
         secureTextEntry
         autoComplete="new-password"
@@ -199,12 +200,16 @@ function DemoSignUpScreen() {
       <TextField
         label="Confirm password"
         value={form.confirmPassword}
-        onChangeText={(value) => updateField(setForm, "confirmPassword", value)}
+        onChangeText={(value) => handleFieldChange("confirmPassword", value)}
         placeholder="Confirm password"
         secureTextEntry
         autoComplete="new-password"
         textContentType="newPassword"
         error={fieldErrors.confirmPassword}
+      />
+      <PrivacyConsent
+        accepted={acceptedPrivacyPolicy}
+        onToggle={() => setAcceptedPrivacyPolicy((current) => !current)}
       />
       {renderError(error)}
       <PrimaryButton
@@ -237,11 +242,9 @@ export function SignInScreen() {
 }
 
 function ClerkSignUpScreen() {
-  const { signInDemo } = useSession();
   const { signUp } = useSignUp();
   const clerk = useClerk();
   const { startSSOFlow } = useSSO();
-  const signUpAttemptRef = useRef<any>(null);
   const [form, setForm] = useState<SignUpPayload>({
     firstName: "",
     lastName: "",
@@ -257,22 +260,11 @@ function ClerkSignUpScreen() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [awaitingVerification, setAwaitingVerification] = useState(false);
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
 
-  async function persistLocalAuthProfile() {
-    const profile: LocalAuthProfile = {
-      email: form.email.trim(),
-      password: form.password,
-      fullName: `${form.firstName} ${form.lastName}`.trim(),
-      phoneNumber: form.phoneNumber.trim() || undefined,
-    };
-
-    await saveLocalAuthProfile(profile);
-    await signInDemo({
-      id: `local-${profile.email.toLowerCase()}`,
-      email: profile.email,
-      fullName: profile.fullName || profile.email.split("@")[0] || "9Jobs Candidate",
-      phoneNumber: profile.phoneNumber,
-    });
+  function handleFieldChange(key: keyof SignUpPayload, value: string) {
+    setError(null);
+    updateField(setForm, key, value);
   }
 
   async function handleCreateAccount() {
@@ -284,39 +276,44 @@ function ClerkSignUpScreen() {
       return;
     }
 
+    if (!acceptedPrivacyPolicy) {
+      setError("Please accept the Privacy Policy before continuing.");
+      return;
+    }
+
     setPending(true);
 
     try {
       const signUpResource = signUp as any;
-      const generatedUsername =
-        form.email.trim().split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") +
-        Math.floor(1000 + Math.random() * 9000);
-
-      console.log("Starting signUp.create for:", form.email.trim(), "with username:", generatedUsername);
-      const createdSignUpAttempt = await signUpResource.create({
-        emailAddress: form.email.trim(),
+      const normalizedEmail = normalizeEmailValue(form.email);
+      const signUpPayload: Record<string, unknown> = {
+        emailAddress: normalizedEmail,
         password: form.password,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        username: generatedUsername,
         unsafeMetadata: {
           phoneNumber: form.phoneNumber.trim(),
         },
-      });
+      };
 
-      const activeSignUpAttempt = createdSignUpAttempt ?? signUpResource;
-      signUpAttemptRef.current = activeSignUpAttempt;
-      await saveLocalAuthProfile({
-        email: form.email.trim(),
-        password: form.password,
-        fullName: `${form.firstName} ${form.lastName}`.trim(),
-        phoneNumber: form.phoneNumber.trim() || undefined,
-      });
-      const activeStatus = activeSignUpAttempt.status ?? null;
-      const createdSessionId = activeSignUpAttempt.createdSessionId ?? null;
-      const needsEmailVerification = Array.isArray(activeSignUpAttempt.unverifiedFields)
-        ? activeSignUpAttempt.unverifiedFields.includes("email_address")
-        : false;
+      if (clerkSupportsUsername(signUpResource)) {
+        signUpPayload.username =
+          normalizedEmail.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "") +
+          Math.floor(1000 + Math.random() * 9000);
+      }
+
+      const signUpResult =
+        typeof signUpResource.password === "function"
+          ? await signUpResource.password(signUpPayload)
+          : await signUpResource.create(signUpPayload);
+
+      if (signUpResult?.error) {
+        throw signUpResult.error;
+      }
+
+      const activeStatus = signUpResource.status ?? signUpResult?.status ?? null;
+      const createdSessionId =
+        signUpResource.createdSessionId ?? signUpResult?.createdSessionId ?? null;
 
       if (activeStatus === "complete" && createdSessionId) {
         await clerk.setActive({ session: createdSessionId });
@@ -324,18 +321,17 @@ function ClerkSignUpScreen() {
         return;
       }
 
-      console.log("Preparing signup verification. Status:", activeStatus, "Needs email verification:", needsEmailVerification);
       if (typeof signUpResource.verifications?.sendEmailCode === "function") {
         const sendRes = await signUpResource.verifications.sendEmailCode();
         if (sendRes?.error) {
           throw sendRes.error;
         }
-      } else if (typeof activeSignUpAttempt.prepareEmailAddressVerification === "function") {
-        await activeSignUpAttempt.prepareEmailAddressVerification({
+      } else if (typeof signUpResource.prepareEmailAddressVerification === "function") {
+        await signUpResource.prepareEmailAddressVerification({
           strategy: "email_code",
         });
-      } else if (typeof activeSignUpAttempt.prepareVerification === "function") {
-        await activeSignUpAttempt.prepareVerification({
+      } else if (typeof signUpResource.prepareVerification === "function") {
+        await signUpResource.prepareVerification({
           strategy: "email_code",
         });
       } else if (createdSessionId) {
@@ -343,27 +339,14 @@ function ClerkSignUpScreen() {
         router.replace("/(app)");
         return;
       } else {
-        const missing = activeSignUpAttempt.missingFields?.join(", ") || "none";
-        const unverified = activeSignUpAttempt.unverifiedFields?.join(", ") || "none";
+        const missing = signUpResource.missingFields?.join(", ") || "none";
+        const unverified = signUpResource.unverifiedFields?.join(", ") || "none";
         throw new Error(`Sign up could not continue automatically. Missing: ${missing}. Unverified: ${unverified}.`);
       }
 
-      console.log("Signup password and email code sent successfully.");
       setAwaitingVerification(true);
     } catch (authError) {
-      console.error("Signup creation failed with exception:", authError);
-      if (isForbiddenSignUpError(authError)) {
-        await persistLocalAuthProfile();
-        router.replace("/(app)");
-        return;
-      }
-      try {
-        await persistLocalAuthProfile();
-        router.replace("/(app)");
-        return;
-      } catch (fallbackError) {
-        console.error("Local signup fallback failed:", fallbackError);
-      }
+      logClerkError("sign_up.create", authError, signUp as any);
       setError(getClerkErrorMessage(authError));
     } finally {
       setPending(false);
@@ -371,28 +354,25 @@ function ClerkSignUpScreen() {
   }
 
   async function handleVerifyCode() {
-    const activeSignUpAttempt = signUpAttemptRef.current ?? signUp;
-    if (!activeSignUpAttempt) {
-      console.log("handleVerifyCode: no active signUp attempt found");
+    if (!signUp) {
       return;
     }
 
     setPending(true);
     setError(null);
-    console.log("Verifying email code:", verificationCode.trim());
 
     try {
       const verifyRes =
-        typeof signUp?.verifications?.verifyEmailCode === "function"
-          ? await signUp.verifications.verifyEmailCode({
+        typeof (signUp as any).verifications?.verifyEmailCode === "function"
+          ? await (signUp as any).verifications.verifyEmailCode({
               code: verificationCode.trim(),
             })
-          : typeof activeSignUpAttempt.attemptEmailAddressVerification === "function"
-          ? await activeSignUpAttempt.attemptEmailAddressVerification({
-              code: verificationCode.trim(),
-            })
-          : typeof activeSignUpAttempt.attemptVerification === "function"
-            ? await activeSignUpAttempt.attemptVerification({
+          : typeof (signUp as any).attemptEmailAddressVerification === "function"
+            ? await (signUp as any).attemptEmailAddressVerification({
+                code: verificationCode.trim(),
+              })
+            : typeof (signUp as any).attemptVerification === "function"
+            ? await (signUp as any).attemptVerification({
                 strategy: "email_code",
                 code: verificationCode.trim(),
               })
@@ -400,17 +380,16 @@ function ClerkSignUpScreen() {
                 throw new Error("Email code verification is not available for this sign-up flow.");
               })();
 
-      const activeStatus =
-        activeSignUpAttempt.status ??
-        verifyRes.status ??
-        null;
+      if (verifyRes?.error) {
+        throw verifyRes.error;
+      }
 
-      console.log("verifyEmailCode succeeded. Status:", activeStatus);
+      const activeStatus = (signUp as any).status ?? verifyRes?.status ?? null;
 
       if (activeStatus === "complete") {
         const createdSessionId =
-          verifyRes.createdSessionId ??
-          activeSignUpAttempt.createdSessionId ??
+          (signUp as any).createdSessionId ??
+          verifyRes?.createdSessionId ??
           null;
 
         if (createdSessionId) {
@@ -419,15 +398,28 @@ function ClerkSignUpScreen() {
           return;
         }
 
+        if (typeof (signUp as any).finalize === "function") {
+          const finalizeRes = await (signUp as any).finalize({
+            navigate: () => {
+              router.replace("/(app)");
+            },
+          });
+
+          if (finalizeRes?.error) {
+            throw finalizeRes.error;
+          }
+
+          return;
+        }
+
         setError("Account verified, but session activation did not finish. Please sign in once.");
       } else {
-        console.log("Sign up status not complete yet:", activeStatus);
-        const missing = activeSignUpAttempt.missingFields?.join(", ") || "none";
-        const unverified = activeSignUpAttempt.unverifiedFields?.join(", ") || "none";
+        const missing = (signUp as any).missingFields?.join(", ") || "none";
+        const unverified = (signUp as any).unverifiedFields?.join(", ") || "none";
         setError(`Sign up status: ${activeStatus}. Missing: ${missing}, Unverified: ${unverified}`);
       }
     } catch (verificationError) {
-      console.error("Verification failed with exception:", verificationError);
+      logClerkError("sign_up.verify_email_code", verificationError, signUp as any);
       setError(getClerkErrorMessage(verificationError));
     } finally {
       setPending(false);
@@ -439,7 +431,7 @@ function ClerkSignUpScreen() {
     setError(null);
 
     try {
-      const { createdSessionId, setActive } = await startSSOFlow({
+      const googleResult = await startSSOFlow({
         strategy: "oauth_google",
         redirectUrl: getSsoRedirectUrl(),
         unsafeMetadata: {
@@ -447,16 +439,21 @@ function ClerkSignUpScreen() {
         },
       });
 
+      const { createdSessionId, setActive, signIn, signUp: googleSignUp } = googleResult;
+
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
-        router.replace("/sso-callback" as any);
+        router.replace("/(app)");
         return;
       }
 
+      const signInStatus = signIn?.status ?? "unknown";
+      const signUpStatus = googleSignUp?.status ?? "unknown";
       setError(
-        "Google sign-in needs one more Clerk step. Complete the email flow or check your Google connection setup.",
+        `Google sign-in did not finish with an active Clerk session. Sign in status: ${signInStatus}. Sign up status: ${signUpStatus}.`,
       );
     } catch (googleError) {
+      logClerkError("oauth_google.sign_up", googleError);
       setError(getClerkErrorMessage(googleError));
     } finally {
       setPending(false);
@@ -504,7 +501,6 @@ function ClerkSignUpScreen() {
           <PrimaryButton
             label="Use another email"
             onPress={() => {
-              signUpAttemptRef.current = null;
               setAwaitingVerification(false);
               setVerificationCode("");
               setError(null);
@@ -519,7 +515,7 @@ function ClerkSignUpScreen() {
               <TextField
                 label="First name"
                 value={form.firstName}
-                onChangeText={(value) => updateField(setForm, "firstName", value)}
+                onChangeText={(value) => handleFieldChange("firstName", value)}
                 placeholder="First name"
                 autoCapitalize="words"
                 textContentType="givenName"
@@ -530,7 +526,7 @@ function ClerkSignUpScreen() {
               <TextField
                 label="Last name"
                 value={form.lastName}
-                onChangeText={(value) => updateField(setForm, "lastName", value)}
+                onChangeText={(value) => handleFieldChange("lastName", value)}
                 placeholder="Last name"
                 autoCapitalize="words"
                 textContentType="familyName"
@@ -541,7 +537,7 @@ function ClerkSignUpScreen() {
           <TextField
             label="Email address"
             value={form.email}
-            onChangeText={(value) => updateField(setForm, "email", value)}
+            onChangeText={(value) => handleFieldChange("email", value)}
             placeholder="Email address"
             keyboardType="email-address"
             autoComplete="email"
@@ -551,7 +547,7 @@ function ClerkSignUpScreen() {
           <TextField
             label="Phone number"
             value={form.phoneNumber}
-            onChangeText={(value) => updateField(setForm, "phoneNumber", value)}
+            onChangeText={(value) => handleFieldChange("phoneNumber", value)}
             placeholder="Phone number"
             keyboardType="phone-pad"
             autoComplete="tel"
@@ -561,7 +557,7 @@ function ClerkSignUpScreen() {
           <TextField
             label="Password"
             value={form.password}
-            onChangeText={(value) => updateField(setForm, "password", value)}
+            onChangeText={(value) => handleFieldChange("password", value)}
             placeholder="Password"
             secureTextEntry
             autoComplete="new-password"
@@ -571,12 +567,16 @@ function ClerkSignUpScreen() {
           <TextField
             label="Confirm password"
             value={form.confirmPassword}
-            onChangeText={(value) => updateField(setForm, "confirmPassword", value)}
+            onChangeText={(value) => handleFieldChange("confirmPassword", value)}
             placeholder="Confirm password"
             secureTextEntry
             autoComplete="new-password"
             textContentType="newPassword"
             error={fieldErrors.confirmPassword}
+          />
+          <PrivacyConsent
+            accepted={acceptedPrivacyPolicy}
+            onToggle={() => setAcceptedPrivacyPolicy((current) => !current)}
           />
           {renderError(error)}
           <PrimaryButton
@@ -623,7 +623,7 @@ function DemoSignInScreen() {
 
     try {
       await signInDemo({
-        email: email.trim() || "candidate@9jobs.app",
+        email: normalizeEmailValue(email) || "candidate@9jobs.app",
         fullName: "9Jobs Candidate",
       });
       router.replace("/(app)");
@@ -668,7 +668,10 @@ function DemoSignInScreen() {
       <TextField
         label="Email address"
         value={email}
-        onChangeText={setEmail}
+        onChangeText={(value) => {
+          setError(null);
+          setEmail(normalizeEmailValue(value));
+        }}
         placeholder="Email address"
         keyboardType="email-address"
         autoComplete="email"
@@ -678,7 +681,10 @@ function DemoSignInScreen() {
       <TextField
         label="Password"
         value={password}
-        onChangeText={setPassword}
+        onChangeText={(value) => {
+          setError(null);
+          setPassword(value);
+        }}
         placeholder="Password"
         secureTextEntry
         autoComplete="password"
@@ -706,12 +712,13 @@ function DemoSignInScreen() {
 }
 
 function ClerkSignInScreen() {
-  const { signInDemo } = useSession();
   const clerk = useClerk();
   const { signIn } = useSignIn();
   const { startSSOFlow } = useSSO();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [awaitingVerification, setAwaitingVerification] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -719,44 +726,6 @@ function ClerkSignInScreen() {
     () => validateSignInPayload({ email, password }),
     [email, password],
   );
-
-  async function tryPreviewFallback() {
-    if (!canUsePreviewFallback(email, password)) {
-      return false;
-    }
-
-    await signInDemo({
-      id: previewMobileUser.id,
-      email: previewMobileUser.email,
-      fullName: previewMobileUser.fullName,
-    });
-    router.replace("/(app)");
-    return true;
-  }
-
-  async function tryStoredAccountFallback() {
-    const savedProfile = await loadLocalAuthProfile();
-    if (!savedProfile) {
-      return false;
-    }
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (
-      savedProfile.email.trim().toLowerCase() !== normalizedEmail ||
-      savedProfile.password !== password
-    ) {
-      return false;
-    }
-
-    await signInDemo({
-      id: `local-${savedProfile.email.trim().toLowerCase()}`,
-      email: savedProfile.email.trim(),
-      fullName: savedProfile.fullName,
-      phoneNumber: savedProfile.phoneNumber,
-    });
-    router.replace("/(app)");
-    return true;
-  }
 
   async function handleSignIn() {
     const hasFieldErrors =
@@ -771,51 +740,172 @@ function ClerkSignInScreen() {
     setPending(true);
 
     try {
-      if (await tryPreviewFallback()) {
-        return;
-      }
-
-      console.log("Signing in with Clerk for:", email.trim());
-      const signInRes = (await signIn.create({
-        identifier: email.trim(),
+      const signInResource = signIn as any;
+      const normalizedEmail = normalizeEmailValue(email);
+      const signInRes = (await signInResource.create({
+        identifier: normalizedEmail,
         password,
       })) as any;
 
-      console.log("signIn.create succeeded. Status:", signInRes.status);
+      if (signInRes?.error) {
+        throw signInRes.error;
+      }
 
-      if (signInRes.status === "complete" && signInRes.createdSessionId) {
-        await clerk.setActive({ session: signInRes.createdSessionId });
+      let activeResult = signInRes;
+      let activeStatus = activeResult?.status ?? signInResource.status ?? null;
+
+      const createdSessionId =
+        activeResult?.createdSessionId ??
+        signInResource.createdSessionId ??
+        null;
+
+      if (activeStatus === "complete" && createdSessionId) {
+        await clerk.setActive({ session: createdSessionId });
         router.replace("/(app)");
         return;
       }
 
-      if (await tryStoredAccountFallback()) {
+      if (
+        activeStatus === "complete" &&
+        typeof signInResource.finalize === "function"
+      ) {
+        const finalizeRes = await signInResource.finalize({
+          navigate: () => {
+            router.replace("/(app)");
+          },
+        });
+
+        if (finalizeRes?.error) {
+          throw finalizeRes.error;
+        }
+
         return;
       }
 
-      if (signInRes.status === "needs_first_factor" || signInRes.status === "needs_second_factor") {
-        Alert.alert(
-          "Verification required",
-          "Clerk asked for an email verification step before sign-in can finish. Complete that step in Clerk, then sign in again.",
+      if (
+        (activeStatus === "needs_client_trust" ||
+          activeStatus === "needs_second_factor" ||
+          activeStatus === "needs_first_factor") &&
+        typeof signInResource.mfa?.verifyEmailCode === "function" &&
+        hasEmailCodeFactor(signInResource, activeResult)
+      ) {
+        if (
+          activeStatus === "needs_client_trust" &&
+          typeof signInResource.prepareSecondFactor === "function"
+        ) {
+          const prepareRes = await signInResource.prepareSecondFactor({
+            strategy: "email_code",
+          });
+
+          if (prepareRes?.error) {
+            throw prepareRes.error;
+          }
+        } else if (typeof signInResource.prepareFirstFactor === "function") {
+          const prepareRes = await signInResource.prepareFirstFactor({
+            strategy: "email_code",
+          });
+
+          if (prepareRes?.error) {
+            throw prepareRes.error;
+          }
+        } else if (typeof signInResource.prepareSecondFactor === "function") {
+          const prepareRes = await signInResource.prepareSecondFactor({
+            strategy: "email_code",
+          });
+
+          if (prepareRes?.error) {
+            throw prepareRes.error;
+          }
+        } else if (typeof signInResource.mfa?.sendEmailCode === "function") {
+          const sendRes = await signInResource.mfa.sendEmailCode();
+
+          if (sendRes?.error) {
+            throw sendRes.error;
+          }
+        }
+
+        setAwaitingVerification(true);
+        return;
+      }
+
+      if (
+        (activeStatus === "needs_client_trust" ||
+          activeStatus === "needs_second_factor" ||
+          activeStatus === "needs_first_factor") &&
+        !hasEmailCodeFactor(signInResource, activeResult)
+      ) {
+        setError(
+          activeStatus === "needs_client_trust"
+            ? "This sign-in needs Clerk device trust verification, but email code is not enabled for that verification path on this Clerk instance."
+            : "Clerk asked for an additional sign-in factor that is not configured as email code for this account. Password sign-in did not complete automatically.",
         );
         return;
       }
 
-      setError("Your account needs one more Clerk step before sign-in can finish.");
+      setError(
+        `Your account needs one more Clerk step before sign-in can finish. Status: ${activeStatus ?? "unknown"}.`,
+      );
     } catch (authError) {
-      console.error("Sign in failed with exception:", authError);
-      try {
-        if (await tryPreviewFallback()) {
-          return;
-        }
-        if (await tryStoredAccountFallback()) {
-          return;
-        }
-      } catch (fallbackError) {
-        console.error("Preview fallback sign-in failed:", fallbackError);
+      logClerkError("sign_in.create", authError, signIn);
+      setError(getClerkErrorMessage(authError));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function handleVerifySignInCode() {
+    if (!signIn) {
+      return;
+    }
+
+    setPending(true);
+    setError(null);
+
+    try {
+      const signInResource = signIn as any;
+      const verifyRes =
+        typeof signInResource.mfa?.verifyEmailCode === "function"
+          ? await signInResource.mfa.verifyEmailCode({
+              code: verificationCode.trim(),
+            })
+          : (() => {
+              throw new Error("Email verification is not available for this sign-in flow.");
+            })();
+
+      if (verifyRes?.error) {
+        throw verifyRes.error;
       }
 
-      setError(getClerkErrorMessage(authError));
+      const activeStatus = signInResource.status ?? verifyRes?.status ?? null;
+      const createdSessionId =
+        signInResource.createdSessionId ??
+        verifyRes?.createdSessionId ??
+        null;
+
+      if (activeStatus === "complete" && createdSessionId) {
+        await clerk.setActive({ session: createdSessionId });
+        router.replace("/(app)");
+        return;
+      }
+
+      if (activeStatus === "complete" && typeof signInResource.finalize === "function") {
+        const finalizeRes = await signInResource.finalize({
+          navigate: () => {
+            router.replace("/(app)");
+          },
+        });
+
+        if (finalizeRes?.error) {
+          throw finalizeRes.error;
+        }
+
+        return;
+      }
+
+      setError(`Sign in status: ${activeStatus ?? "unknown"}.`);
+    } catch (verificationError) {
+      logClerkError("sign_in.verify_email_code", verificationError, signIn);
+      setError(getClerkErrorMessage(verificationError));
     } finally {
       setPending(false);
     }
@@ -826,21 +916,24 @@ function ClerkSignInScreen() {
     setError(null);
 
     try {
-      const { createdSessionId, setActive } = await startSSOFlow({
+      const googleResult = await startSSOFlow({
         strategy: "oauth_google",
         redirectUrl: getSsoRedirectUrl(),
       });
 
+      const { createdSessionId, setActive, signIn: googleSignIn, signUp } = googleResult;
+
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
-        router.replace("/sso-callback" as any);
+        router.replace("/(app)");
         return;
       }
 
       setError(
-        "Google sign-in could not finish automatically. Check the Clerk Google connection and try again.",
+        `Google sign-in did not finish with an active Clerk session. Sign in status: ${googleSignIn?.status ?? "unknown"}. Sign up status: ${signUp?.status ?? "unknown"}.`,
       );
     } catch (googleError) {
+      logClerkError("oauth_google.sign_in", googleError);
       setError(getClerkErrorMessage(googleError));
     } finally {
       setPending(false);
@@ -849,8 +942,12 @@ function ClerkSignInScreen() {
 
   return (
     <AuthScaffold
-      title="Sign in"
-      subtitle="Welcome back to your career control room."
+      title={awaitingVerification ? "Verify sign in" : "Sign in"}
+      subtitle={
+        awaitingVerification
+          ? "Enter the verification code to finish signing in."
+          : "Welcome back to your career control room."
+      }
       showBack
       footer={
         <Text style={styles.switchText}>
@@ -861,38 +958,79 @@ function ClerkSignInScreen() {
         </Text>
       }
     >
-      <TextField
-        label="Email address"
-        value={email}
-        onChangeText={setEmail}
-        placeholder="Email address"
-        keyboardType="email-address"
-        autoComplete="email"
-        textContentType="emailAddress"
-        error={email.length > 0 ? fieldErrors.email : undefined}
-      />
-      <TextField
-        label="Password"
-        value={password}
-        onChangeText={setPassword}
-        placeholder="Password"
-        secureTextEntry
-        autoComplete="password"
-        textContentType="password"
-        error={password.length > 0 ? fieldErrors.password : undefined}
-      />
-      {renderError(error)}
-      <PrimaryButton
-        label={pending ? "Signing in..." : "Sign in"}
-        onPress={handleSignIn}
-        disabled={pending || !signIn}
-        style={styles.ctaButton}
-      />
-      <GoogleButton
-        label="Continue with Google"
-        onPress={handleGoogle}
-        disabled={pending || !signIn}
-      />
+      {awaitingVerification ? (
+        <>
+          <TextField
+            label="Verification code"
+            value={verificationCode}
+            onChangeText={(value) => {
+              setError(null);
+              setVerificationCode(value);
+            }}
+            placeholder="123456"
+            keyboardType="number-pad"
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+          />
+          {renderError(error)}
+          <PrimaryButton
+            label={pending ? "Verifying..." : "Verify and continue"}
+            onPress={handleVerifySignInCode}
+            disabled={pending || verificationCode.trim().length < 6}
+            style={styles.ctaButton}
+          />
+          <PrimaryButton
+            label="Back to sign in"
+            onPress={() => {
+              setAwaitingVerification(false);
+              setVerificationCode("");
+              setError(null);
+            }}
+            variant="ghost"
+          />
+        </>
+      ) : (
+        <>
+          <TextField
+            label="Email address"
+            value={email}
+            onChangeText={(value) => {
+              setError(null);
+              setEmail(normalizeEmailValue(value));
+            }}
+            placeholder="Email address"
+            keyboardType="email-address"
+            autoComplete="email"
+            textContentType="emailAddress"
+            error={email.length > 0 ? fieldErrors.email : undefined}
+          />
+          <TextField
+            label="Password"
+            value={password}
+            onChangeText={(value) => {
+              setError(null);
+              setPassword(value);
+            }}
+            placeholder="Password"
+            secureTextEntry
+            autoComplete="password"
+            textContentType="password"
+            error={password.length > 0 ? fieldErrors.password : undefined}
+          />
+          {renderError(error)}
+          <PrimaryButton
+            label={pending ? "Signing in..." : "Sign in"}
+            onPress={handleSignIn}
+            disabled={pending || !signIn}
+            style={styles.ctaButton}
+          />
+          <GoogleButton
+            label="Continue with Google"
+            onPress={handleGoogle}
+            disabled={pending || !signIn}
+          />
+        </>
+      )}
       {pending ? <ActivityIndicator color={colors.accentDark} /> : null}
     </AuthScaffold>
   );
@@ -1030,7 +1168,7 @@ function updateField(
 ) {
   setForm((current) => ({
     ...current,
-    [key]: value,
+    [key]: key === "email" ? normalizeEmailValue(value) : value,
   }));
 }
 
@@ -1040,6 +1178,61 @@ function renderError(error: string | null) {
   }
 
   return <Text style={styles.errorText}>{error}</Text>;
+}
+
+function hasEmailCodeFactor(clerkState: any, result?: any) {
+  const factorGroups = [
+    result?.supportedFirstFactors,
+    result?.supportedSecondFactors,
+    result?.firstFactors,
+    result?.secondFactors,
+    clerkState?.supportedFirstFactors,
+    clerkState?.supportedSecondFactors,
+    clerkState?.firstFactors,
+    clerkState?.secondFactors,
+  ];
+
+  return factorGroups.some(
+    (group) =>
+      Array.isArray(group) &&
+      group.some((factor) => {
+        const strategy = typeof factor?.strategy === "string" ? factor.strategy : "";
+        return strategy === "email_code" || strategy === "email_address_code";
+      }),
+  );
+}
+
+function PrivacyConsent({
+  accepted,
+  onToggle,
+}: {
+  accepted: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <View style={styles.privacyWrap}>
+      <View style={styles.privacyRow}>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: accepted }}
+          onPress={onToggle}
+          style={[styles.checkbox, accepted && styles.checkboxChecked]}
+        >
+          {accepted ? <Text style={styles.checkboxTick}>✓</Text> : null}
+        </Pressable>
+        <Text style={styles.privacyText}>
+          I agree to the{" "}
+          <Text
+            style={styles.privacyLink}
+            onPress={() => router.push("/(public)/privacy-policy")}
+          >
+            Privacy Policy
+          </Text>
+          .
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 function getClerkErrorMessage(error: unknown) {
@@ -1059,6 +1252,19 @@ function getClerkErrorMessage(error: unknown) {
       message?: string;
       code?: string;
     }>;
+    const combinedMessage = `${firstError.longMessage ?? ""} ${firstError.message ?? ""}`.toLowerCase();
+
+    if (
+      combinedMessage.includes("compromised") ||
+      combinedMessage.includes("data breach") ||
+      combinedMessage.includes("haveibeenpwned")
+    ) {
+      return "This password was rejected by Clerk because it appears in known breach/common-password lists. Use a stronger unique password and try again.";
+    }
+
+    if (firstError.code === "factor_not_found") {
+      return "Clerk could not find the requested email verification factor for this sign-in attempt. Password login should continue without forcing that extra email-code step.";
+    }
 
     return firstError.longMessage ?? firstError.message ?? firstError.code ?? "Auth failed";
   }
@@ -1068,6 +1274,26 @@ function getClerkErrorMessage(error: unknown) {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+function logClerkError(operation: string, error: unknown, clerkState?: any) {
+  if (!__DEV__) {
+    return;
+  }
+
+  const stateSummary = clerkState
+    ? {
+        status: clerkState.status ?? null,
+        missingFields: clerkState.missingFields ?? null,
+        unverifiedFields: clerkState.unverifiedFields ?? null,
+        createdSessionIdPresent: Boolean(clerkState.createdSessionId),
+      }
+    : null;
+
+  console.error(`[Auth] ${operation} failed`, {
+    error,
+    stateSummary,
+  });
 }
 
 function isForbiddenSignUpError(error: unknown) {
@@ -1237,6 +1463,45 @@ const styles = StyleSheet.create({
   },
   ctaButton: {
     minHeight: 56,
+  },
+  privacyWrap: {
+    marginTop: spacing.xs,
+  },
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    marginTop: 1,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  checkboxTick: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
+  privacyText: {
+    ...typography.body,
+    color: colors.mutedText,
+    flex: 1,
+  },
+  privacyLink: {
+    color: colors.text,
+    fontWeight: "700",
+    textDecorationLine: "underline",
   },
   errorText: {
     ...typography.label,

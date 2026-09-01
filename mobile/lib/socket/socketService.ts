@@ -7,28 +7,36 @@ import {
   persistIncomingSocketMessage,
   type MobileSyncSnapshot,
 } from "../data/mobile-sync-repository";
+import { resolveBackendUrl } from "../data/backend-auth-token";
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+const BACKEND_URL = resolveBackendUrl();
 
 let socket: Socket | null = null;
 let activeConversationId: string | null = null;
 let queryClientInstance: QueryClient | null = null;
 let currentUserId: string | null = null;
 let hasLoggedConnectError = false;
+const shouldLogSocketEvents = __DEV__ && process.env.EXPO_PUBLIC_DEBUG_SOCKET === "true";
+
+function logSocketEvent(...args: unknown[]) {
+  if (shouldLogSocketEvents) {
+    console.log(...args);
+  }
+}
 
 export function initializeSocket(userId: string, queryClient: QueryClient) {
   currentUserId = userId;
   queryClientInstance = queryClient;
 
   if (socket) {
-    console.log("[Socket Service] Socket already initialized. Reconnecting if needed.");
+    logSocketEvent("[Socket Service] Socket already initialized. Reconnecting if needed.");
     if (socket.disconnected) {
       void connectSocket();
     }
     return socket;
   }
 
-  console.log("[Socket Service] Initializing socket connection to:", BACKEND_URL);
+  logSocketEvent("[Socket Service] Initializing socket connection to:", BACKEND_URL);
 
   socket = io(BACKEND_URL, {
     autoConnect: false,
@@ -49,28 +57,28 @@ export function initializeSocket(userId: string, queryClient: QueryClient) {
 
   socket.on("connect", () => {
     hasLoggedConnectError = false;
-    console.log("[Socket Service] Connected successfully. Socket ID:", socket?.id);
+    logSocketEvent("[Socket Service] Connected successfully. Socket ID:", socket?.id);
     
     // Rejoin active conversation room if we reconnect
     if (activeConversationId) {
-      console.log(`[Socket Service] Rejoining room conversation:${activeConversationId}`);
+      logSocketEvent(`[Socket Service] Rejoining room conversation:${activeConversationId}`);
       socket?.emit("join_conversation", activeConversationId);
     }
     
     // Invalidate query cache to fetch any messages missed while offline
     if (queryClientInstance) {
-      console.log("[Socket Service] Connected: Invalidating previewSync cache to sync missed messages.");
+      logSocketEvent("[Socket Service] Connected: Invalidating previewSync cache to sync missed messages.");
       queryClientInstance.invalidateQueries({ queryKey: queryKeys.previewSync });
     }
   });
 
   socket.on("disconnect", (reason) => {
-    console.log("[Socket Service] Disconnected. Reason:", reason);
+    logSocketEvent("[Socket Service] Disconnected. Reason:", reason);
   });
 
   // Handle incoming live message
   socket.on("new_message", (message: any) => {
-    console.log("[Socket Service] Received live new_message:", message.id);
+    logSocketEvent("[Socket Service] Received live new_message:", message.id);
 
     if (queryClientInstance) {
       queryClientInstance.setQueriesData(
@@ -83,36 +91,31 @@ export function initializeSocket(userId: string, queryClient: QueryClient) {
     }
 
     void persistIncomingSocketMessage(message, currentUserId ?? undefined);
-
-    if (queryClientInstance) {
-      // Invalidate queries so the messages list and detail refetch immediately
-      queryClientInstance.invalidateQueries({ queryKey: queryKeys.previewSync });
-    }
   });
 
   socket.on("unread_count_updated", (data: any) => {
-    console.log("[Socket Service] Received unread_count_updated:", data);
+    logSocketEvent("[Socket Service] Received unread_count_updated:", data);
     if (queryClientInstance) {
       queryClientInstance.invalidateQueries({ queryKey: queryKeys.previewSync });
     }
   });
 
   socket.on("conversation_updated", (conv: any) => {
-    console.log("[Socket Service] Received conversation_updated:", conv.id);
+    logSocketEvent("[Socket Service] Received conversation_updated:", conv.id);
     if (queryClientInstance) {
       queryClientInstance.invalidateQueries({ queryKey: queryKeys.previewSync });
     }
   });
 
   socket.on("message_deleted", (data: any) => {
-    console.log("[Socket Service] Received message_deleted:", data);
+    logSocketEvent("[Socket Service] Received message_deleted:", data);
     if (queryClientInstance) {
       queryClientInstance.invalidateQueries({ queryKey: queryKeys.previewSync });
     }
   });
 
   socket.on("chat_cleared", (data: any) => {
-    console.log("[Socket Service] Received chat_cleared:", data);
+    logSocketEvent("[Socket Service] Received chat_cleared:", data);
     if (queryClientInstance) {
       queryClientInstance.invalidateQueries({ queryKey: queryKeys.previewSync });
     }
@@ -147,7 +150,7 @@ export async function connectSocket() {
 
 export function disconnectSocket() {
   if (socket) {
-    console.log("[Socket Service] Disconnecting socket manually.");
+    logSocketEvent("[Socket Service] Disconnecting socket manually.");
     socket.disconnect();
     socket = null;
     activeConversationId = null;
@@ -159,11 +162,11 @@ export function disconnectSocket() {
 export function joinSocketConversation(conversationId: string) {
   activeConversationId = conversationId;
   if (socket && socket.connected) {
-    console.log(`[Socket Service] Joining conversation room: conversation:${conversationId}`);
+    logSocketEvent(`[Socket Service] Joining conversation room: conversation:${conversationId}`);
     socket.emit("join_conversation", conversationId);
     socket.emit("mark_seen", conversationId);
   } else {
-    console.log(`[Socket Service] Cannot join room: Socket not connected. Room queued: ${conversationId}`);
+    logSocketEvent(`[Socket Service] Cannot join room: Socket not connected. Room queued: ${conversationId}`);
   }
 }
 
@@ -172,7 +175,7 @@ export function leaveSocketConversation(conversationId: string) {
     activeConversationId = null;
   }
   if (socket && socket.connected) {
-    console.log(`[Socket Service] Leaving conversation room: conversation:${conversationId}`);
+    logSocketEvent(`[Socket Service] Leaving conversation room: conversation:${conversationId}`);
     socket.emit("leave_conversation", conversationId);
   }
 }

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "dev": "npm run dev --prefix mobile",
     "start": "npm run start --prefix mobile",
     "android": "npm run android --prefix mobile",
     "android:app": "npm run android:app --prefix mobile",

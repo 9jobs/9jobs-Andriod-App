@@ -9,18 +9,22 @@ import {
   useState,
 } from "react";
 import { isClerkConfigured } from "@/lib/clerk/config";
+import { clearBackendAuthTokenCache, getBackendAuthToken } from "@/lib/data/backend-auth-token";
 import { previewMobileUser } from "@/lib/data/preview-user";
-import { fetchCandidateQuestionnaireStatus } from "@/lib/data/candidate-questionnaire";
+import { fetchCandidateQuestionnaireStatus, getCachedCandidateQuestionnaire } from "@/lib/data/candidate-questionnaire";
 import { connectSocket } from "@/lib/socket/socketService";
 import { supabase } from "@/lib/supabase/client";
+import { queryKeys } from "@/lib/queries";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearInMemoryTokenCache, getLocalSyncSnapshot } from "@/lib/data/mobile-sync-repository";
+import { InteractionManager } from "react-native";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
   (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
+const QUESTIONNAIRE_STATUS_GRACE_MS = 1800;
 
 type SessionContextValue = {
   isBooting: boolean;
@@ -44,34 +48,30 @@ export function SessionProvider({ children }: PropsWithChildren) {
 
 async function syncBackendToken(sessionUser: SessionUser | null) {
   if (!sessionUser) {
-    await AsyncStorage.multiRemove([storageKeys.authToken, storageKeys.authTokenUserId]);
     return;
   }
   try {
-    const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
-    const res = await fetch(`${backendUrl}/api/auth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: sessionUser.id,
-        email: sessionUser.email,
-        fullName: sessionUser.fullName,
-        phoneNumber: sessionUser.phoneNumber,
-        role: "client",
-      }),
+    const [[, storedToken], [, storedTokenUserId]] = await AsyncStorage.multiGet([
+      storageKeys.authToken,
+      storageKeys.authTokenUserId,
+    ]);
+    if (storedToken && storedTokenUserId === sessionUser.id) {
+      if (shouldEnableLiveTransport) {
+        await connectSocket();
+      }
+      return;
+    }
+
+    const token = await getBackendAuthToken(sessionUser, {
+      label: "session.syncBackendToken",
     });
-    if (res.ok) {
-      const data = await res.json();
-      await AsyncStorage.multiSet([
-        [storageKeys.authToken, data.token],
-        [storageKeys.authTokenUserId, sessionUser.id],
-      ]);
+    if (token) {
       if (shouldEnableLiveTransport) {
         await connectSocket();
       }
       console.log("[SessionProvider] Sync: Backend JWT token saved successfully.");
     } else {
-      console.warn("[SessionProvider] Sync: Failed to exchange token:", res.status);
+      console.warn("[SessionProvider] Sync: Failed to exchange token.");
     }
   } catch (err) {
     console.warn("[SessionProvider] Sync: Error connecting to backend:", err);
@@ -115,6 +115,7 @@ async function syncSupabaseProfile(sessionUser: SessionUser | null) {
 }
 
 async function clearPreviewSnapshotCache() {
+  clearBackendAuthTokenCache();
   clearInMemoryTokenCache();
   const keys = await AsyncStorage.getAllKeys();
   const removableKeys = keys.filter(
@@ -127,6 +128,13 @@ async function clearPreviewSnapshotCache() {
   if (removableKeys.length > 0) {
     await AsyncStorage.multiRemove(removableKeys);
   }
+}
+
+async function persistOnboardingStatus(userId: string, completed: boolean) {
+  await AsyncStorage.multiSet([
+    [storageKeys.onboardingComplete, completed ? "true" : "false"],
+    [`${storageKeys.onboardingComplete}:${userId}`, completed ? "true" : "false"],
+  ]);
 }
 
 function resolvePreviewCompatibleUser(user: SessionUser | null) {
@@ -301,36 +309,21 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     let active = true;
+    let cancelled = false;
 
-    async function loadQuestionnaireStatus() {
-      if (!sessionUser) {
-        if (active) {
-          setHasCompletedOnboarding(false);
-          setIsQuestionnaireStatusLoaded(true);
-        }
-        return;
-      }
-
-      // 1. Try to read from local storage first to unblock booting immediately
-      let localValue: string | null = null;
+    async function syncQuestionnaireStatus(sessionUserValue: SessionUser, localValue: string | null) {
       try {
-        localValue = await AsyncStorage.getItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`);
-        if (localValue !== null && active) {
-          setHasCompletedOnboarding(localValue === "true");
-          setIsQuestionnaireStatusLoaded(true);
-        }
-      } catch (err) {
-        console.warn("[SessionProvider] Failed to read local onboarding status:", err);
-      }
-
-      // 2. Fetch the latest status in the background
-      try {
-        const completed = await fetchCandidateQuestionnaireStatus(sessionUser);
+        const completed = await Promise.race<boolean>([
+          fetchCandidateQuestionnaireStatus(sessionUserValue),
+          new Promise<boolean>((_, reject) =>
+            setTimeout(() => reject(new Error("Questionnaire status timeout")), QUESTIONNAIRE_STATUS_GRACE_MS),
+          ),
+        ]);
         if (active) {
           setHasCompletedOnboarding(completed);
           setIsQuestionnaireStatusLoaded(true);
         }
-        await AsyncStorage.setItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`, completed ? "true" : "false");
+        await persistOnboardingStatus(sessionUserValue.id, completed);
       } catch (error) {
         console.warn("[SessionProvider] Questionnaire status sync failed, using local state:", error);
         if (localValue === null && active) {
@@ -341,9 +334,79 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
       }
     }
 
+    async function loadQuestionnaireStatus() {
+      if (!sessionUser) {
+        if (active) {
+          setHasCompletedOnboarding(false);
+          setIsQuestionnaireStatusLoaded(true);
+        }
+        return;
+      }
+
+      if (sessionUser.id === previewMobileUser.id) {
+        await persistOnboardingStatus(sessionUser.id, true);
+        if (active) {
+          setHasCompletedOnboarding(true);
+          setIsQuestionnaireStatusLoaded(true);
+        }
+        InteractionManager.runAfterInteractions(() => {
+          if (!cancelled) {
+            void syncQuestionnaireStatus(sessionUser, "true");
+          }
+        });
+        return;
+      }
+
+      // 1. Try to read from local storage first to unblock booting immediately
+      let localValue: string | null = null;
+      try {
+        localValue = await AsyncStorage.getItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`);
+        if (localValue === null) {
+          localValue = await AsyncStorage.getItem(storageKeys.onboardingComplete);
+          if (localValue !== null) {
+            await AsyncStorage.setItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`, localValue);
+          }
+        }
+        if (localValue !== null && active) {
+          setHasCompletedOnboarding(localValue === "true");
+          setIsQuestionnaireStatusLoaded(true);
+        }
+      } catch (err) {
+        console.warn("[SessionProvider] Failed to read local onboarding status:", err);
+      }
+
+      if (localValue === null) {
+        try {
+          const cachedQuestionnaire = await getCachedCandidateQuestionnaire(sessionUser.id);
+          if (cachedQuestionnaire?.completed_at) {
+            localValue = "true";
+            await persistOnboardingStatus(sessionUser.id, true);
+            if (active) {
+              setHasCompletedOnboarding(true);
+              setIsQuestionnaireStatusLoaded(true);
+            }
+          }
+        } catch (err) {
+          console.warn("[SessionProvider] Failed to read cached questionnaire status:", err);
+        }
+      }
+
+      if (localValue !== null) {
+        InteractionManager.runAfterInteractions(() => {
+          if (!cancelled) {
+            void syncQuestionnaireStatus(sessionUser, localValue);
+          }
+        });
+        return;
+      }
+
+      await syncQuestionnaireStatus(sessionUser, localValue);
+    }
+
     void loadQuestionnaireStatus();
     return () => {
       active = false;
+      cancelled = true;
     };
   }, [sessionUser]);
 
@@ -360,9 +423,10 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
       hasCompletedOnboarding,
       clerkConfigured: true,
       async setOnboardingComplete() {
-        await AsyncStorage.setItem(storageKeys.onboardingComplete, "true");
         if (sessionUser) {
-          await AsyncStorage.setItem(`${storageKeys.onboardingComplete}:${sessionUser.id}`, "true");
+          await persistOnboardingStatus(sessionUser.id, true);
+        } else {
+          await AsyncStorage.setItem(storageKeys.onboardingComplete, "true");
         }
         setHasCompletedOnboarding(true);
       },

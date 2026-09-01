@@ -3,4 +3,5 @@ export const queryKeys = {
   profile: ["profile"] as const,
   previewSync: ["preview-sync"] as const,
   questionnaire: ["questionnaire"] as const,
+  interviewPrep: ["interview-prep"] as const,
 };

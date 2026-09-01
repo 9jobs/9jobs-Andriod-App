@@ -33,4 +33,35 @@ describe("calculateTrackerMetrics", () => {
     expect(metrics.atsScore).toBe(91);
     expect(metrics.aiMatchScore).toBe(84);
   });
+
+  test("preserves milestone counts from activity history after later status updates", () => {
+    const metrics = calculateTrackerMetrics({
+      applications: [
+        {
+          id: 11,
+          status: "shortlisted",
+          current_stage: "shortlisted",
+          created_at: "2026-08-31T09:00:00.000Z",
+          application_date: "2026-08-31T09:00:00.000Z",
+          is_active: true,
+        },
+      ],
+      activityLogs: [
+        {
+          application_id: 11,
+          old_value: { status: "rejected" },
+          new_value: { status: "recruiter_contacted" },
+        },
+        {
+          application_id: 11,
+          old_value: { status: "recruiter_contacted" },
+          new_value: { status: "shortlisted" },
+        },
+      ],
+    });
+
+    expect(metrics.recruiterContacted).toBe(1);
+    expect(metrics.shortlisted).toBe(1);
+    expect(metrics.rejected).toBe(1);
+  });
 });

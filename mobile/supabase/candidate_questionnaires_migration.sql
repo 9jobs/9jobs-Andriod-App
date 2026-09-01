@@ -13,6 +13,7 @@ create table if not exists candidate_questionnaires (
   preferred_roles text[] not null default '{}',
   resume_path text not null default '',
   resume_name text not null default '',
+  visa_type text not null default '',
   visa_path text not null default '',
   visa_name text not null default '',
   enhanced_resume_path text not null default '',
@@ -26,6 +27,7 @@ create table if not exists candidate_questionnaires (
 alter table if exists candidate_questionnaires add column if not exists enhanced_resume_path text not null default '';
 alter table if exists candidate_questionnaires add column if not exists enhanced_resume_name text not null default '';
 alter table if exists candidate_questionnaires add column if not exists enhanced_resume_updated_at timestamptz;
+alter table if exists candidate_questionnaires add column if not exists visa_type text not null default '';
 
 create index if not exists idx_candidate_questionnaires_completed_at
   on candidate_questionnaires(completed_at desc);

@@ -52,6 +52,29 @@ describe("tracker screenshot sync", () => {
     ]);
   });
 
+  test("prefers the most recently updated row when the same job has duplicate applications", () => {
+    const applications = latestApplicationsByJob([
+      {
+        id: 1,
+        job_id: "job-1",
+        status: "applied",
+        created_at: "2026-07-29T10:00:00.000Z",
+        updated_at: "2026-07-29T10:00:00.000Z",
+      },
+      {
+        id: 2,
+        job_id: "job-1",
+        status: "shortlisted",
+        created_at: "2026-07-28T10:00:00.000Z",
+        updated_at: "2026-07-31T10:00:00.000Z",
+      },
+    ]);
+
+    expect(applications).toEqual([
+      expect.objectContaining({ id: 2, status: "shortlisted" }),
+    ]);
+  });
+
   test("restores admin-uploaded screenshots from the latest activity payload", () => {
     const applications = [
       {

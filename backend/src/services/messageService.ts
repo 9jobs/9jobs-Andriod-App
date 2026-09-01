@@ -1,3 +1,4 @@
+import { Pool } from "pg";
 import { supabase, hasNewSchema } from "../lib/supabase";
 import { Server } from "socket.io";
 import {
@@ -35,6 +36,553 @@ export interface SendMessageResult {
 
 export const DEFAULT_SUPPORT_WELCOME_MESSAGE =
   "Welcome to the live 9Jobs preview. This thread is synced with the admin panel.";
+
+function hasUsableDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL || "";
+  return Boolean(databaseUrl) && !databaseUrl.includes("[YOUR_DB_PASSWORD]");
+}
+
+function createPool() {
+  return new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  });
+}
+
+type PostgresChatSchema = {
+  hasConversationsTable: boolean;
+  hasMessagesTable: boolean;
+  messageColumns: Set<string>;
+};
+
+let postgresChatSchemaPromise: Promise<PostgresChatSchema> | null = null;
+
+async function getPostgresChatSchema(): Promise<PostgresChatSchema> {
+  if (!hasUsableDatabaseUrl()) {
+    return {
+      hasConversationsTable: false,
+      hasMessagesTable: false,
+      messageColumns: new Set<string>(),
+    };
+  }
+
+  if (!postgresChatSchemaPromise) {
+    postgresChatSchemaPromise = (async () => {
+      const pool = createPool();
+      try {
+        const [tablesResult, columnsResult] = await Promise.all([
+          pool.query(
+            `
+              select table_name
+              from information_schema.tables
+              where table_schema = 'public'
+                and table_name in ('conversations', 'messages')
+            `,
+          ),
+          pool.query(
+            `
+              select column_name
+              from information_schema.columns
+              where table_schema = 'public'
+                and table_name = 'messages'
+            `,
+          ),
+        ]);
+
+        const tableNames = new Set<string>(tablesResult.rows.map((row: any) => row.table_name));
+        return {
+          hasConversationsTable: tableNames.has("conversations"),
+          hasMessagesTable: tableNames.has("messages"),
+          messageColumns: new Set<string>(columnsResult.rows.map((row: any) => row.column_name)),
+        };
+      } finally {
+        await pool.end();
+      }
+    })().catch((error) => {
+      postgresChatSchemaPromise = null;
+      throw error;
+    });
+  }
+
+  return postgresChatSchemaPromise;
+}
+
+async function getPostgresConversations() {
+  if (!hasUsableDatabaseUrl()) {
+    return [];
+  }
+
+  const schema = await getPostgresChatSchema();
+  if (!schema.hasMessagesTable) {
+    return [];
+  }
+
+  const pool = createPool();
+  try {
+    if (!schema.hasConversationsTable) {
+      const result = await pool.query(`
+        with ranked_messages as (
+          select
+            case
+              when sender_id in ('admin', 'bot', 'staff') then recipient_id
+              else sender_id
+            end as conversation_id,
+            sender_id,
+            recipient_id,
+            content,
+            created_at,
+            id,
+            row_number() over (
+              partition by case
+                when sender_id in ('admin', 'bot', 'staff') then recipient_id
+                else sender_id
+              end
+              order by created_at desc, id desc
+            ) as row_num
+          from messages
+          where coalesce(sender_id, '') <> ''
+            and coalesce(recipient_id, '') <> ''
+        )
+        select
+          ranked_messages.conversation_id as id,
+          ranked_messages.conversation_id as client_id,
+          'open' as status,
+          'support' as type,
+          ranked_messages.id as last_message_id,
+          ranked_messages.content as last_message_text,
+          ranked_messages.created_at as last_message_at,
+          ranked_messages.sender_id as last_message_sender_id,
+          0 as admin_unread_count,
+          null::text as assigned_admin_id,
+          ranked_messages.created_at as created_at,
+          profiles.full_name as profile_full_name,
+          profiles.email as profile_email
+        from ranked_messages
+        join profiles
+          on profiles.id = ranked_messages.conversation_id
+        where row_num = 1
+          and ranked_messages.conversation_id is not null
+          and coalesce(profiles.role, 'client') <> 'admin'
+        order by ranked_messages.created_at desc nulls last
+      `);
+      return result.rows;
+    }
+
+    const result = await pool.query(`
+      select
+        id,
+        client_id,
+        status,
+        type,
+        last_message_id,
+        last_message_text,
+        last_message_at,
+        last_message_sender_id,
+        admin_unread_count,
+        assigned_admin_id,
+        created_at
+      from conversations
+      order by coalesce(last_message_at, created_at) desc nulls last
+    `);
+    return result.rows;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function getPostgresMessages(conversationId: string) {
+  if (!hasUsableDatabaseUrl()) {
+    return [];
+  }
+
+  const schema = await getPostgresChatSchema();
+  if (!schema.hasMessagesTable) {
+    return [];
+  }
+
+  const pool = createPool();
+  try {
+    if (!schema.messageColumns.has("conversation_id")) {
+      const result = await pool.query(
+        `
+          select
+            id,
+            sender_id,
+            recipient_id,
+            content,
+            created_at
+          from messages
+          where sender_id = $1 or recipient_id = $1
+          order by created_at asc nulls last, id asc
+        `,
+        [conversationId],
+      );
+      return result.rows.map((row: any) => ({
+        ...row,
+        conversation_id: conversationId,
+        text: row.content,
+      }));
+    }
+
+    const result = await pool.query(
+      `
+        select
+          id,
+          conversation_id,
+          sender_id,
+          sender_role,
+          recipient_id,
+          message_type,
+          text,
+          content,
+          attachment_url,
+          attachment_name,
+          attachment_mime_type,
+          attachment_size,
+          status,
+          created_at,
+          sent_at,
+          client_message_id,
+          is_automated,
+          sender_type
+        from messages
+        where conversation_id = $1
+        order by coalesce(created_at, sent_at) asc nulls last
+      `,
+      [conversationId],
+    );
+    return result.rows;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function getPostgresConversation(conversationId: string) {
+  if (!hasUsableDatabaseUrl()) {
+    return null;
+  }
+
+  const schema = await getPostgresChatSchema();
+  if (!schema.hasMessagesTable) {
+    return null;
+  }
+
+  const pool = createPool();
+  try {
+    if (!schema.hasConversationsTable) {
+      const result = await pool.query(
+        `
+          select
+            id,
+            sender_id,
+            recipient_id,
+            content,
+            created_at
+          from messages
+          where sender_id = $1 or recipient_id = $1
+          order by created_at desc nulls last, id desc
+          limit 1
+        `,
+        [conversationId],
+      );
+      const latestMessage = result.rows[0];
+      if (!latestMessage) {
+        return null;
+      }
+
+      return {
+        id: conversationId,
+        client_id: conversationId,
+        status: "open",
+        type: "support",
+        last_message_id: latestMessage.id,
+        last_message_text: latestMessage.content || "No messages yet",
+        last_message_at: latestMessage.created_at || new Date().toISOString(),
+        last_message_sender_id: latestMessage.sender_id || "admin",
+        client_unread_count: 0,
+        admin_unread_count: 0,
+        chatbot_enabled: true,
+        assigned_admin_id: null,
+        created_at: latestMessage.created_at || new Date().toISOString(),
+        updated_at: latestMessage.created_at || new Date().toISOString(),
+      };
+    }
+
+    const result = await pool.query(
+      `
+        select
+          id,
+          client_id,
+          status,
+          type,
+          last_message_id,
+          last_message_text,
+          last_message_at,
+          last_message_sender_id,
+          client_unread_count,
+          admin_unread_count,
+          chatbot_enabled,
+          assigned_admin_id,
+          created_at,
+          updated_at
+        from conversations
+        where id = $1
+        limit 1
+      `,
+      [conversationId],
+    );
+    return result.rows[0] ?? null;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function ensurePostgresConversation(conversationId: string) {
+  if (!hasUsableDatabaseUrl()) {
+    return null;
+  }
+
+  const schema = await getPostgresChatSchema();
+  if (!schema.hasMessagesTable) {
+    return null;
+  }
+
+  if (!schema.hasConversationsTable) {
+    return {
+      id: conversationId,
+      client_id: conversationId,
+      status: "open",
+      type: "support",
+      client_unread_count: 0,
+      admin_unread_count: 0,
+      chatbot_enabled: true,
+    };
+  }
+
+  const pool = createPool();
+  try {
+    const existing = await pool.query(
+      `
+        select *
+        from conversations
+        where id = $1
+        limit 1
+      `,
+      [conversationId],
+    );
+
+    if (existing.rows[0]) {
+      return existing.rows[0];
+    }
+
+    const inserted = await pool.query(
+      `
+        insert into conversations (
+          id,
+          client_id,
+          status,
+          type,
+          client_unread_count,
+          admin_unread_count,
+          chatbot_enabled
+        )
+        values ($1, $1, 'open', 'support', 0, 0, true)
+        returning *
+      `,
+      [conversationId],
+    );
+
+    return inserted.rows[0] ?? null;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function insertPostgresMessages(rows: any[]) {
+  if (!hasUsableDatabaseUrl() || rows.length === 0) {
+    return [];
+  }
+
+  const schema = await getPostgresChatSchema();
+  if (!schema.hasMessagesTable) {
+    return [];
+  }
+
+  const pool = createPool();
+  try {
+    const inserted: any[] = [];
+    for (const row of rows) {
+      if (!schema.messageColumns.has("conversation_id")) {
+        const result = await pool.query(
+          `
+            insert into messages (
+              sender_id,
+              recipient_id,
+              content,
+              created_at
+            )
+            values ($1, $2, $3, $4)
+            returning *
+          `,
+          [
+            row.sender_id,
+            row.recipient_id,
+            row.text,
+            row.sent_at ?? new Date().toISOString(),
+          ],
+        );
+        if (result.rows[0]) {
+          inserted.push({
+            ...result.rows[0],
+            conversation_id: row.conversation_id,
+            text: result.rows[0].content,
+            client_message_id: row.client_message_id,
+            sender_role: row.sender_role,
+            message_type: row.message_type,
+            status: row.status,
+            is_automated: row.is_automated ?? false,
+            sender_type: row.sender_type ?? row.sender_role,
+          });
+        }
+        continue;
+      }
+
+      const result = await pool.query(
+        `
+          insert into messages (
+            conversation_id,
+            sender_id,
+            sender_role,
+            recipient_id,
+            message_type,
+            text,
+            attachment_url,
+            attachment_name,
+            attachment_mime_type,
+            attachment_size,
+            client_message_id,
+            status,
+            is_automated,
+            sender_type,
+            sent_at
+          )
+          values (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+          )
+          returning *
+        `,
+        [
+          row.conversation_id,
+          row.sender_id,
+          row.sender_role,
+          row.recipient_id,
+          row.message_type,
+          row.text,
+          row.attachment_url ?? null,
+          row.attachment_name ?? null,
+          row.attachment_mime_type ?? null,
+          row.attachment_size ?? null,
+          row.client_message_id,
+          row.status,
+          row.is_automated ?? false,
+          row.sender_type ?? row.sender_role,
+          row.sent_at ?? new Date().toISOString(),
+        ],
+      );
+      if (result.rows[0]) {
+        inserted.push(result.rows[0]);
+      }
+    }
+
+    return inserted;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function updatePostgresConversationAfterSend(params: {
+  conversationId: string;
+  senderId: string;
+  senderRole: "client" | "admin" | "staff";
+  activeConversation: any;
+  finalMessageId: any;
+  finalMessageText: string;
+  finalMessageAt: string;
+  finalMessageSenderId: string;
+  willTriggerBot: boolean;
+}) {
+  if (!hasUsableDatabaseUrl()) {
+    return null;
+  }
+
+  const schema = await getPostgresChatSchema();
+  if (!schema.hasConversationsTable) {
+    return {
+      id: params.conversationId,
+      client_id: params.conversationId,
+      status: "open",
+      type: "support",
+      last_message_id: params.finalMessageId,
+      last_message_text: params.finalMessageText,
+      last_message_at: params.finalMessageAt,
+      last_message_sender_id: params.finalMessageSenderId,
+      admin_unread_count:
+        params.senderRole === "client"
+          ? (params.activeConversation?.admin_unread_count || 0) + 1
+          : params.activeConversation?.admin_unread_count || 0,
+      client_unread_count:
+        params.senderRole === "client"
+          ? (params.activeConversation?.client_unread_count || 0) + (params.willTriggerBot ? 1 : 0)
+          : (params.activeConversation?.client_unread_count || 0) + 1,
+      chatbot_enabled: params.activeConversation?.chatbot_enabled ?? true,
+      assigned_admin_id: params.activeConversation?.assigned_admin_id || null,
+      created_at: params.finalMessageAt,
+      updated_at: params.finalMessageAt,
+    };
+  }
+
+  const pool = createPool();
+  try {
+    const adminUnreadCount =
+      params.senderRole === "client"
+        ? (params.activeConversation?.admin_unread_count || 0) + 1
+        : params.activeConversation?.admin_unread_count || 0;
+    const clientUnreadCount =
+      params.senderRole === "client"
+        ? (params.activeConversation?.client_unread_count || 0) + (params.willTriggerBot ? 1 : 0)
+        : (params.activeConversation?.client_unread_count || 0) + 1;
+
+    const result = await pool.query(
+      `
+        update conversations
+        set
+          status = 'open',
+          last_message_id = $2,
+          last_message_text = $3,
+          last_message_at = $4,
+          last_message_sender_id = $5,
+          admin_unread_count = $6,
+          client_unread_count = $7,
+          updated_at = now()
+        where id = $1
+        returning *
+      `,
+      [
+        params.conversationId,
+        params.finalMessageId,
+        params.finalMessageText,
+        params.finalMessageAt,
+        params.finalMessageSenderId,
+        adminUnreadCount,
+        clientUnreadCount,
+      ],
+    );
+
+    return result.rows[0] ?? null;
+  } finally {
+    await pool.end();
+  }
+}
 
 let ioInstance: Server | null = null;
 
@@ -133,16 +681,19 @@ export async function sendMessage(
         }
       }
     } else {
-      // Old schema fallback: use mock conversation
-      activeConversation = {
-        id: conversationId,
-        client_id: conversationId,
-        status: "open",
-        type: "support",
-        client_unread_count: 0,
-        admin_unread_count: 0,
-        chatbot_enabled: true,
-      };
+      activeConversation = await ensurePostgresConversation(conversationId);
+      if (!activeConversation) {
+        // Old schema fallback: use mock conversation
+        activeConversation = {
+          id: conversationId,
+          client_id: conversationId,
+          status: "open",
+          type: "support",
+          client_unread_count: 0,
+          admin_unread_count: 0,
+          chatbot_enabled: true,
+        };
+      }
     }
 
     // Determine chatbot response first so we can save both client and bot messages to Supabase concurrently
@@ -292,6 +843,59 @@ export async function sendMessage(
             if (botData) savedBotMsg.id = botData.id;
           }
         }
+      } else if (hasUsableDatabaseUrl()) {
+        const insertedData = await insertPostgresMessages(
+          [
+            {
+              conversation_id: conversationId,
+              sender_id: senderId,
+              sender_role: senderRole,
+              recipient_id: senderRole === "client" ? "admin" : conversationId,
+              message_type: resolvedMessageType,
+              text: trimmedText,
+              attachment_url: attachmentUrl,
+              attachment_name: attachmentName,
+              attachment_mime_type: attachmentMimeType,
+              attachment_size: attachmentSize,
+              client_message_id: clientMessageId,
+              status: "sent",
+              is_automated: false,
+              sender_type: senderRole,
+              sent_at: new Date().toISOString(),
+            },
+            ...(willTriggerBot
+              ? [
+                  {
+                    conversation_id: conversationId,
+                    sender_id: "bot",
+                    sender_role: "admin",
+                    recipient_id: conversationId,
+                    message_type: "text",
+                    text: botReply,
+                    client_message_id: botMessageId,
+                    status: "delivered",
+                    is_automated: true,
+                    sender_type: "bot",
+                    sent_at: new Date().toISOString(),
+                  },
+                ]
+              : []),
+          ],
+        );
+
+        const clientData = insertedData.find((m: any) => m.client_message_id === clientMessageId);
+        if (clientData) {
+          savedMessage.id = clientData.id;
+          savedMessage.created_at = clientData.created_at || savedMessage.created_at;
+        }
+
+        if (willTriggerBot && savedBotMsg) {
+          const botData = insertedData.find((m: any) => m.client_message_id === botMessageId);
+          if (botData) {
+            savedBotMsg.id = botData.id;
+            savedBotMsg.created_at = botData.created_at || savedBotMsg.created_at;
+          }
+        }
       } else {
         const { data, error: msgError } = await supabase
           .from("messages")
@@ -358,6 +962,29 @@ export async function sendMessage(
           };
           
           // Emit updated conversation to admins after DB saves complete
+          if (ioInstance) {
+            ioInstance.to("admins").emit("conversation_updated", updatedConversation);
+          }
+        }
+      } else if (hasUsableDatabaseUrl()) {
+        const updatedConv = await updatePostgresConversationAfterSend({
+          conversationId,
+          senderId,
+          senderRole,
+          activeConversation,
+          finalMessageId: willTriggerBot ? (savedBotMsg?.id || botMessageId) : savedMessage.id,
+          finalMessageText: willTriggerBot ? botReply : lastMessagePreview,
+          finalMessageAt: willTriggerBot ? savedBotMsg?.created_at : savedMessage.created_at,
+          finalMessageSenderId: willTriggerBot ? "bot" : senderId,
+          willTriggerBot,
+        });
+
+        if (updatedConv) {
+          updatedConversation = {
+            ...updatedConversation,
+            ...updatedConv,
+          };
+
           if (ioInstance) {
             ioInstance.to("admins").emit("conversation_updated", updatedConversation);
           }
@@ -1091,6 +1718,7 @@ export async function deleteConversation(
 
 export async function getConversationsList(): Promise<any[]> {
   const isNew = await hasNewSchema();
+  const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
   let supabaseConvs: any[] = [];
   
   try {
@@ -1110,18 +1738,28 @@ export async function getConversationsList(): Promise<any[]> {
         .select("*")
         .order("created_at", { ascending: false });
 
-      const clientIds = new Set<string>();
-      (lastMsgs || []).forEach((m: any) => {
-        if (m.sender_id && m.sender_id !== "admin") clientIds.add(m.sender_id);
-        if (m.recipient_id && m.recipient_id !== "admin") clientIds.add(m.recipient_id);
+      const profilesById = new Map<string, any>();
+      (msgProfiles || []).forEach((profile: any) => {
+        if (profile?.id && profile.role !== "admin") {
+          profilesById.set(profile.id, profile);
+        }
       });
 
-      supabaseConvs = Array.from(clientIds).map((cid) => {
-        const profile = (msgProfiles || []).find((p: any) => p.id === cid) || {};
-        const userMsgs = (lastMsgs || []).filter((m: any) => m.sender_id === cid || m.recipient_id === cid);
+      supabaseConvs = Array.from(profilesById.entries()).flatMap(([cid, profile]) => {
+        const userMsgs = (lastMsgs || []).filter((m: any) => {
+          const derivedConversationId =
+            m.sender_id === "admin" || m.sender_id === "bot" || m.sender_id === "staff"
+              ? m.recipient_id
+              : m.sender_id;
+          return derivedConversationId === cid;
+        });
         const lastMsg = userMsgs[0];
-        
-        return {
+
+        if (!lastMsg) {
+          return [];
+        }
+
+        return [{
           id: cid,
           client_id: cid,
           status: "open",
@@ -1132,11 +1770,38 @@ export async function getConversationsList(): Promise<any[]> {
           last_message_at: lastMsg?.created_at || new Date().toISOString(),
           client_unread_count: 0,
           admin_unread_count: 0,
-        };
+          profile_full_name: profile.full_name,
+          profile_email: profile.email,
+        }];
       });
     }
   } catch (err) {
     console.warn("[Message Service] Failed to fetch Supabase conversations, using local DB:", err);
+  }
+
+  if (isServerlessRuntime && supabaseConvs.length === 0) {
+    try {
+      supabaseConvs = await getPostgresConversations();
+    } catch (err) {
+      console.warn("[Message Service] Failed to fetch Postgres conversations, using local DB:", err);
+    }
+  }
+
+  if (isServerlessRuntime && supabaseConvs.length > 0) {
+    return supabaseConvs.map((c) => ({
+      id: c.id,
+      clientId: c.id,
+      clientName: c.profile_full_name || `Client (${c.id.substring(0, 8)})`,
+      clientEmail: c.profile_email || `${c.id}@9jobs.app`,
+      lastMessageText: c.last_message_text || "No messages yet",
+      lastMessageSender: c.last_message_sender_id || "bot",
+      lastMessageAt: c.last_message_at || c.created_at || new Date().toISOString(),
+      adminUnreadCount: c.admin_unread_count || 0,
+      status: c.status || "open",
+      assignedAdminId: c.assigned_admin_id || null,
+    })).sort((a, b) => {
+      return b.lastMessageAt.localeCompare(a.lastMessageAt);
+    });
   }
 
   // Get local conversations
@@ -1157,8 +1822,8 @@ export async function getConversationsList(): Promise<any[]> {
   return Array.from(mergedMap.values()).map((c) => ({
     id: c.id,
     clientId: c.id,
-    clientName: `Client (${c.id.substring(0, 8)})`,
-    clientEmail: `${c.id}@9jobs.app`,
+    clientName: c.profile_full_name || `Client (${c.id.substring(0, 8)})`,
+    clientEmail: c.profile_email || `${c.id}@9jobs.app`,
     lastMessageText: c.last_message_text || "No messages yet",
     lastMessageSender: c.last_message_sender_id || "bot",
     lastMessageAt: c.last_message_at || c.created_at || new Date().toISOString(),
@@ -1172,6 +1837,7 @@ export async function getConversationsList(): Promise<any[]> {
 
 export async function getMessagesHistory(conversationId: string): Promise<any[]> {
   const isNew = await hasNewSchema();
+  const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
   let supabaseMsgs: any[] = [];
 
   try {
@@ -1196,6 +1862,14 @@ export async function getMessagesHistory(conversationId: string): Promise<any[]>
     }
   } catch (err) {
     console.warn("[Message Service] Failed to fetch Supabase messages:", err);
+  }
+
+  if (isServerlessRuntime && supabaseMsgs.length === 0) {
+    try {
+      supabaseMsgs = await getPostgresMessages(conversationId);
+    } catch (err) {
+      console.warn("[Message Service] Failed to fetch Postgres messages:", err);
+    }
   }
 
   if (supabaseMsgs.length === 0) {
@@ -1278,12 +1952,6 @@ export async function getMessagesHistory(conversationId: string): Promise<any[]>
     }
   }
 
-  // Get local messages
-  const localMsgs = await getLocalMessages(conversationId);
-
-  // Merge messages (de-duplicate by client_message_id or ID if they match)
-  const mergedMap = new Map<string, any>();
-  
   const standardize = (m: any) => ({
     id: m.id,
     conversation_id: m.conversation_id || conversationId,
@@ -1304,6 +1972,18 @@ export async function getMessagesHistory(conversationId: string): Promise<any[]>
     sender_type: m.sender_type || (m.sender_id === "bot" ? "bot" : m.sender_id === "admin" ? "admin" : "client"),
     direction: m.sender_role === "client" ? "outgoing" : "incoming",
   });
+
+  if (isServerlessRuntime && supabaseMsgs.length > 0) {
+    return supabaseMsgs.map(standardize).sort((a, b) => {
+      return a.created_at.localeCompare(b.created_at);
+    });
+  }
+
+  // Get local messages
+  const localMsgs = await getLocalMessages(conversationId);
+
+  // Merge messages (de-duplicate by client_message_id or ID if they match)
+  const mergedMap = new Map<string, any>();
 
   for (const m of supabaseMsgs) {
     const std = standardize(m);
@@ -1334,6 +2014,7 @@ export async function getMessagesHistory(conversationId: string): Promise<any[]>
 
 export async function getConversationDetails(id: string): Promise<any> {
   const isNew = await hasNewSchema();
+  const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
   let supabaseConv: any = null;
 
   try {
@@ -1361,7 +2042,15 @@ export async function getConversationDetails(id: string): Promise<any> {
     console.warn("[Message Service] Failed to fetch Supabase conversation details:", err);
   }
 
-  const localConv = await getLocalConversation(id);
+  if (isServerlessRuntime && !supabaseConv) {
+    try {
+      supabaseConv = await getPostgresConversation(id);
+    } catch (err) {
+      console.warn("[Message Service] Failed to fetch Postgres conversation details:", err);
+    }
+  }
+
+  const localConv = isServerlessRuntime && supabaseConv ? null : await getLocalConversation(id);
   
   const merged = {
     id,

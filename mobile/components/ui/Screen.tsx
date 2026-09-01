@@ -91,13 +91,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    flexGrow: 1,
     width: "100%",
     paddingHorizontal: spacing.lg,
     paddingBottom: 120,
     gap: spacing.lg,
   },
   scrollInner: {
+    flexGrow: 1,
     paddingBottom: 12,
   },
 });

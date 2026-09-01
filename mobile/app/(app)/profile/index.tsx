@@ -5,10 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { useSession } from "@/providers/SessionProvider";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { useUpdateProfileMutation } from "@/features/jobs/hooks";
 import { colors, shadows, spacing, typography } from "@/theme";
 import { FadeInView } from "@/components/motion/FadeInView";
+import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
 
 const profileItems = [
   {
@@ -56,11 +57,15 @@ export default function ProfileScreen() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const migratedAvatarUrlRef = useRef<string | null>(null);
   const isPickingRef = useRef(false);
-  const { data: snapshot } = usePreviewSyncQuery();
-  const profile = snapshot?.profile;
+  const { data: profile } = usePreviewSyncSelector((snapshot) => snapshot.profile);
+  const { data: pricingContent } = usePreviewSyncSelector((snapshot) => snapshot.pricingContent);
   const activePlanLabel =
-    snapshot?.pricingContent.sections[0]?.items?.find((item) => item.badge === "Active")?.title ?? null;
+    pricingContent?.sections[0]?.items?.find((item) => item.badge === "Active")?.title ?? null;
   const { mutate: updateProfile, mutateAsync: updateProfileAsync, isPending: isSavingAvatar } = useUpdateProfileMutation();
+  useScreenPerf("/(app)/profile", Boolean(profile && pricingContent), {
+    screen: "profile",
+    active_plan: activePlanLabel,
+  });
 
   async function convertImageUriToDataUrl(uri: string) {
     return await new Promise<string>((resolve, reject) => {
@@ -216,7 +221,7 @@ export default function ProfileScreen() {
             <Text style={styles.title}>Profile</Text>
             <Pressable
               style={styles.settingsButton}
-              onPress={() => router.push("/(app)/settings")}
+              onPress={() => traceNavigation("/(app)/settings", "profile.settings", () => router.push("/(app)/settings"))}
             >
               <AppIcon name="settings" size={18} color={colors.surface} />
             </Pressable>

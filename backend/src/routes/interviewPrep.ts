@@ -12,6 +12,7 @@ import {
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 
 const router = Router();
+const GEMINI_RESPONSE_TIMEOUT_MS = 8_000;
 
 type InterviewQuestion = {
   id: string;
@@ -151,6 +152,9 @@ async function generateInterviewAnswer(question: InterviewQuestion, transcript: 
     return buildFallbackAnswer(question, transcript);
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GEMINI_RESPONSE_TIMEOUT_MS);
+
   try {
     const prompt = [
       "You are Sarah, a professional AI Interview Coach for 9Jobs.",
@@ -187,8 +191,10 @@ async function generateInterviewAnswer(question: InterviewQuestion, transcript: 
           generationConfig: {
             responseMimeType: "application/json",
             temperature: 0.2,
+            maxOutputTokens: 400,
           },
         }),
+        signal: controller.signal,
       },
     );
 
@@ -214,6 +220,8 @@ async function generateInterviewAnswer(question: InterviewQuestion, transcript: 
   } catch (error) {
     console.warn("[Interview Prep] Gemini failed, using fallback:", error);
     return buildFallbackAnswer(question, transcript);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

@@ -6,7 +6,7 @@ import { Screen } from "@/components/ui/Screen";
 import {
   useMarkAllNotificationsAsReadMutation,
   useMarkNotificationAsReadMutation,
-  usePreviewSyncQuery,
+  usePreviewSyncSelector,
 } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
@@ -17,11 +17,11 @@ type NotificationVisual = {
 };
 
 export default function NotificationsScreen() {
-  const { data: snapshot } = usePreviewSyncQuery();
+  const { data: sourceNotifications } = usePreviewSyncSelector((snapshot) => snapshot.notifications);
   const markOneReadMutation = useMarkNotificationAsReadMutation();
   const markAllReadMutation = useMarkAllNotificationsAsReadMutation();
   const [selectedNotificationId, setSelectedNotificationId] = useState<number | null>(null);
-  const notifications = (snapshot?.notifications ?? []).map((item) => {
+  const notifications = (sourceNotifications ?? []).map((item) => {
     const parts = splitNotificationBody(item.body);
     return {
       ...item,

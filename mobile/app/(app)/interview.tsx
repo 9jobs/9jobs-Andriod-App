@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
-import { fetchInterviewPrepSession, requestInterviewPrepAnswer } from "@/lib/data/interview-prep";
+import { fetchInterviewPrepSession, requestInterviewPrepAnswer, setInterviewPrepScreenActive } from "@/lib/data/interview-prep";
 import { useSession } from "@/providers/SessionProvider";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { useScreenPerf } from "@/lib/perf/livePerf";
 
 type ExpoSpeechModule = {
   speak: (id: string, text: string, options?: Record<string, unknown>) => void;
@@ -50,8 +51,12 @@ const SPEECH_RECOGNITION_OPTIONS = {
   interimResults: true,
   continuous: false,
   addsPunctuation: true,
+  maxAlternatives: 1,
   androidIntentOptions: {
     EXTRA_LANGUAGE_MODEL: "web_search",
+    // Submit the final transcript promptly after the speaker finishes.
+    EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: 900,
+    EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: 500,
   },
 };
 
@@ -103,11 +108,10 @@ export default function InterviewScreen() {
   const speechServerRetryRef = useRef(0);
   const speechServerRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechModuleRef = useRef<OptionalSpeechRecognitionModule | null>(getSpeechRecognitionModule());
-
-  const refreshSession = async () => {
-    const payload = await fetchInterviewPrepSession(user);
-    setScreenData(payload);
-  };
+  useScreenPerf("/(app)/interview", Boolean(screenData) && !isLoading, {
+    screen: "interview",
+    has_error: Boolean(error),
+  });
 
   useEffect(() => {
     const runAnimation = (val: Animated.Value) => {
@@ -139,22 +143,42 @@ export default function InterviewScreen() {
     };
   }, [pulseAnim1, pulseAnim2, pulseAnim3]);
 
-  useEffect(() => {
-    const loadSession = async () => {
-      try {
-        setIsLoading(true);
-        setError("");
-        const payload = await fetchInterviewPrepSession(user);
-        setScreenData(payload);
-      } catch (err: any) {
-        setError(err.message || "Could not load interview preparation.");
-      } finally {
-        setIsLoading(false);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      if (user?.id) {
+        setInterviewPrepScreenActive(user.id, true);
       }
-    };
 
-    void loadSession();
-  }, [user]);
+      const loadSession = async () => {
+        try {
+          setIsLoading(true);
+          setError("");
+          const payload = await fetchInterviewPrepSession(user);
+          if (active) {
+            setScreenData(payload);
+          }
+        } catch (err: any) {
+          if (active) {
+            setError(err.message || "Could not load interview preparation.");
+          }
+        } finally {
+          if (active) {
+            setIsLoading(false);
+          }
+        }
+      };
+
+      void loadSession();
+
+      return () => {
+        active = false;
+        if (user?.id) {
+          setInterviewPrepScreenActive(user.id, false);
+        }
+      };
+    }, [user]),
+  );
 
   useEffect(() => {
     const speechRecognitionModule = speechModuleRef.current;
@@ -174,7 +198,21 @@ export default function InterviewScreen() {
         setIsGeneratingAnswer(true);
         setError("");
         const result = await requestInterviewPrepAnswer(user, transcript);
-        await refreshSession();
+        setScreenData((current: any) => ({
+          ...current,
+          session: result.session,
+          currentQuestion: result.nextQuestion,
+          responses: [
+            result.response,
+            ...(current?.responses ?? []).filter((response: any) => response.id !== result.response.id),
+          ],
+          interviewer: current?.interviewer ?? {
+            name: result.session.interviewer_name,
+            role: result.session.interviewer_role,
+            company: result.session.interviewer_company,
+            avatarUrl: result.session.interviewer_avatar_url,
+          },
+        }));
         const spokenAnswer = result?.response?.ai_answer;
         if (spokenAnswer) {
           getSpeechModule()?.speak(spokenAnswer);

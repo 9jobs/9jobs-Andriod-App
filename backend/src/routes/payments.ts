@@ -92,8 +92,16 @@ function normalizePlanId(value: unknown): SupportedPlanId | null {
 }
 
 function buildReturnUrl(pathname: string, params: Record<string, string>) {
-  const search = new URLSearchParams(params);
-  return `ninejobs://${pathname}?${search.toString()}`;
+  const search = Object.entries(params)
+    .map(([key, value]) => {
+      const encodedValue = value === "{CHECKOUT_SESSION_ID}"
+        ? value
+        : encodeURIComponent(value);
+      return `${encodeURIComponent(key)}=${encodedValue}`;
+    })
+    .join("&");
+
+  return `ninejobs://${pathname}?${search}`;
 }
 
 router.post("/payments/checkout-session", async (req, res) => {

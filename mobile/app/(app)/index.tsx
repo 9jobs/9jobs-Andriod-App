@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View, Image, TextInput } from "react-native";
 import { router } from "expo-router";
 import Svg, { Path } from "react-native-svg";
@@ -6,7 +6,7 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { Screen } from "@/components/ui/Screen";
 import { colors, radii, spacing } from "@/theme";
 import { useSession } from "@/providers/SessionProvider";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { useJobFilters } from "@/features/jobs/useJobFilters";
 
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
@@ -14,19 +14,52 @@ import { FadeInView } from "@/components/motion/FadeInView";
 import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
 import { RocketLaunchGlow } from "@/components/motion/rocket-launch-glow";
 import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
+import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
 
 export default function HomeScreen() {
   const { user } = useSession();
-  const { data: snapshot } = usePreviewSyncQuery(true);
+  const { data: profile } = usePreviewSyncSelector((snapshot) => snapshot.profile, true);
+  const { data: metrics } = usePreviewSyncSelector((snapshot) => snapshot.homeMetrics, true);
+  const { data: notifications } = usePreviewSyncSelector((snapshot) => snapshot.notifications, true);
+  const { data: trackerInterviews } = usePreviewSyncSelector((snapshot) => snapshot.trackerInterviews, true);
+  const { data: rawApplications } = usePreviewSyncSelector((snapshot) => snapshot.rawApplications, true);
   const jobFilters = useJobFilters();
-  const profile = snapshot?.profile;
-  const metrics = snapshot?.homeMetrics;
   const [searchQuery, setSearchQuery] = useState("");
-  const hasUnreadNotifications = snapshot?.notifications.some((item) => item.unread) ?? false;
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const hasUnreadNotifications = notifications?.some((item) => item.unread) ?? false;
+  useScreenPerf("/(app)", Boolean(profile && metrics && notifications && trackerInterviews && rawApplications), {
+    screen: "home",
+  });
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, []);
+
+  const greetingText = useMemo(() => {
+    const hour = currentTime.getHours();
+
+    if (hour < 12) {
+      return "Good morning 👋";
+    }
+
+    if (hour < 17) {
+      return "Good afternoon 👋";
+    }
+
+    if (hour < 21) {
+      return "Good evening 👋";
+    }
+
+    return "Good night 👋";
+  }, [currentTime]);
 
   // 1. Calculate next upcoming interview
   const nextInterview = useMemo(() => {
-    const interviews = snapshot?.trackerInterviews ?? [];
+    const interviews = trackerInterviews ?? [];
     const now = new Date();
     const upcoming = interviews
       .filter((int: any) => {
@@ -35,7 +68,7 @@ export default function HomeScreen() {
       })
       .sort((a: any, b: any) => new Date(a.interview_date).getTime() - new Date(b.interview_date).getTime());
     return upcoming[0] || null;
-  }, [snapshot?.trackerInterviews]);
+  }, [trackerInterviews]);
 
   // 2. Calculate countdown text
   const countdownInfo = useMemo(() => {
@@ -58,7 +91,7 @@ export default function HomeScreen() {
 
   // 3. Calculate weekly progress
   const weeklyProgress = useMemo(() => {
-    const apps = snapshot?.rawApplications ?? [];
+    const apps = rawApplications ?? [];
     const goalText = profile?.weeklyGoal || "10";
     const goal = parseInt(goalText, 10) || 10;
 
@@ -82,7 +115,7 @@ export default function HomeScreen() {
       goal,
       percentage,
     };
-  }, [snapshot?.rawApplications, profile?.weeklyGoal]);
+  }, [rawApplications, profile?.weeklyGoal]);
 
   function openSearchScreen() {
     const normalizedQuery = searchQuery.trim();
@@ -100,7 +133,7 @@ export default function HomeScreen() {
       <FadeInView type="fade-down" delay={0}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Text style={styles.greetingText}>Good morning 👋</Text>
+            <Text style={styles.greetingText}>{greetingText}</Text>
             <Text numberOfLines={2} style={styles.userNameText}>
               {profile?.fullName ?? user?.fullName ?? "Test User"}
             </Text>
@@ -108,7 +141,7 @@ export default function HomeScreen() {
           <View style={styles.headerRight}>
             <AnimatedPressable
               style={styles.bellButton}
-              onPress={() => router.push("/(app)/notifications" as never)}
+              onPress={() => traceNavigation("/(app)/notifications", "home.notifications", () => router.push("/(app)/notifications" as never))}
               scaleTo={0.95}
             >
               <AppIcon name="bell" size={22} color={colors.text} />
@@ -187,7 +220,7 @@ export default function HomeScreen() {
         <View style={styles.quickActionRow}>
           <AnimatedPressable
             style={styles.quickActionCard}
-            onPress={() => router.push("/(app)/resume" as never)}
+            onPress={() => traceNavigation("/(app)/resume", "home.resume", () => router.push("/(app)/resume" as never))}
             scaleTo={0.96}
           >
             <AppIcon name="resume" size={24} color={colors.accent} />
@@ -195,7 +228,7 @@ export default function HomeScreen() {
           </AnimatedPressable>
           <AnimatedPressable
             style={styles.quickActionCard}
-            onPress={() => router.push("/(app)/outreach" as never)}
+            onPress={() => traceNavigation("/(app)/outreach", "home.outreach", () => router.push("/(app)/outreach" as never))}
             scaleTo={0.96}
           >
             <AppIcon name="mail" size={24} color={colors.accent} />
@@ -203,7 +236,7 @@ export default function HomeScreen() {
           </AnimatedPressable>
           <AnimatedPressable
             style={styles.quickActionCard}
-            onPress={() => router.push("/(app)/interview" as never)}
+            onPress={() => traceNavigation("/(app)/interview", "home.interview", () => router.push("/(app)/interview" as never))}
             scaleTo={0.96}
           >
             <AppIcon name="mic" size={24} color={colors.accent} />
@@ -211,7 +244,7 @@ export default function HomeScreen() {
           </AnimatedPressable>
           <AnimatedPressable
             style={styles.quickActionCard}
-            onPress={() => router.push("/(app)/services" as never)}
+            onPress={() => traceNavigation("/(app)/services", "home.services", () => router.push("/(app)/services" as never))}
             scaleTo={0.96}
           >
             <AppIcon name="grid" size={24} color={colors.accent} />

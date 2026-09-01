@@ -45,6 +45,7 @@ type FormState = {
   workTypes: string[];
   noticePeriod: string;
   preferredRoles: string;
+  visaType: string;
 };
 
 const STEPS = [
@@ -59,7 +60,7 @@ const STEPS = [
   { key: "workTypes", title: "What type of work do you prefer?", subtitle: "You can select more than one option." },
   { key: "noticePeriod", title: "What’s your notice period?", subtitle: "Select when you can start a new role." },
   { key: "preferredRoles", title: "Which roles are you targeting?", subtitle: "List all preferred roles, separated by commas." },
-  { key: "documents", title: "Upload your documents", subtitle: "Resume is required. Visa is required when your work rights depend on a visa." },
+  { key: "documents", title: "Upload your documents", subtitle: "Resume is required. Visa / work-rights document is optional. Add your visa type if applicable." },
 ] as const;
 
 const OPTION_MAP: Record<string, string[]> = {
@@ -95,21 +96,21 @@ export default function CandidateQuestionnaireScreen() {
     workTypes: [],
     noticePeriod: "",
     preferredRoles: "",
+    visaType: "",
   });
 
   const currentStep = STEPS[step];
   const progress = `${((step + 1) / STEPS.length) * 100}%` as `${number}%`;
-  const requiresVisa = /visa/i.test(form.workingRights);
   const selectedOptions = OPTION_MAP[currentStep.key] || [];
   const textValue = currentStep.key in form && !Array.isArray(form[currentStep.key as keyof FormState])
     ? String(form[currentStep.key as keyof FormState] || "")
     : "";
   const keyboardType = currentStep.key === "contactNumber" ? "phone-pad" : "default";
   const canContinue = useMemo(() => {
-    if (currentStep.key === "documents") return Boolean(resume && (!requiresVisa || visa));
+    if (currentStep.key === "documents") return Boolean(resume);
     if (currentStep.key === "workTypes") return form.workTypes.length > 0;
     return textValue.trim().length > 0;
-  }, [currentStep.key, form.workTypes.length, requiresVisa, resume, textValue, visa]);
+  }, [currentStep.key, form.workTypes.length, resume, textValue]);
 
   const moveCalendar = useCallback((months: number) => {
     setCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + months, 1, 12));
@@ -208,7 +209,7 @@ export default function CandidateQuestionnaireScreen() {
 
   function validateCurrentStep() {
     if (!canContinue) return currentStep.key === "documents"
-      ? requiresVisa ? "Please upload both your resume and visa document." : "Please upload your resume."
+      ? "Please upload your resume."
       : "Please answer this question to continue.";
     return "";
   }
@@ -252,6 +253,7 @@ export default function CandidateQuestionnaireScreen() {
         preferredRoles: form.preferredRoles.split(",").map((item) => item.trim()).filter(Boolean),
         resumePath: uploadedResume.path,
         resumeName: uploadedResume.name,
+        visaType: form.visaType.trim(),
         visaPath: uploadedVisa.path,
         visaName: uploadedVisa.name,
       });
@@ -301,7 +303,21 @@ export default function CandidateQuestionnaireScreen() {
         ) : currentStep.key === "documents" ? (
           <View style={styles.documentList}>
             <DocumentButton label="Resume" required file={resume} onPress={() => void chooseDocument("resume")} />
-            <DocumentButton label="Visa / Work-rights document" required={requiresVisa} file={visa} onPress={() => void chooseDocument("visa")} />
+            <DocumentButton label="Visa / Work-rights document" required={false} file={visa} onPress={() => void chooseDocument("visa")} />
+            <Animated.View entering={FadeInDown.duration(220)} style={[styles.inputShell, form.visaType.trim() && styles.inputFilled]}>
+              <TextInput
+                value={form.visaType}
+                onChangeText={(value) => {
+                  setForm((current) => ({ ...current, visaType: value }));
+                  setError("");
+                }}
+                autoCapitalize="words"
+                placeholder="Visa type (optional)"
+                placeholderTextColor={colors.darkMuted}
+                style={styles.input}
+              />
+              {form.visaType.trim() ? <View style={styles.filledBadge}><Text style={styles.filledBadgeText}>✓</Text></View> : null}
+            </Animated.View>
             <Text style={styles.documentHint}>Accepted: PDF, DOC, DOCX, JPG or PNG · Maximum 12 MB</Text>
           </View>
         ) : currentStep.key === "dateOfBirth" ? (

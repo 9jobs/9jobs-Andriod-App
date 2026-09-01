@@ -255,6 +255,10 @@ export default function PricingScreen() {
 
 function PricingCard({
   plan,
+  amountValue,
+  onAmountChange,
+  onPayNow,
+  isPaying,
 }: {
   plan: {
     id: string;

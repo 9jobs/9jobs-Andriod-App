@@ -1,12 +1,23 @@
 import express from "express";
 import cors from "cors";
-import authRoutes from "./routes/auth";
-import chatRoutes from "./routes/chat";
-import interviewPrepRoutes from "./routes/interviewPrep";
-import trackerRoutes from "./routes/tracker";
-import contactRoutes from "./routes/contact";
-import questionnaireRoutes from "./routes/questionnaire";
-import paymentRoutes from "./routes/payments";
+import type { Router } from "express";
+
+function lazyRouter(loadRouter: () => Promise<{ default: Router }>) {
+  let routerPromise: Promise<Router> | null = null;
+
+  return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    try {
+      if (!routerPromise) {
+        routerPromise = loadRouter().then((module) => module.default);
+      }
+
+      const router = await routerPromise;
+      return router(req, res, next);
+    } catch (error) {
+      return next(error);
+    }
+  };
+}
 
 export function createApp() {
   const app = express();
@@ -21,13 +32,13 @@ export function createApp() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  app.use("/api/auth", authRoutes);
-  app.use("/api", chatRoutes);
-  app.use("/api", interviewPrepRoutes);
-  app.use("/api", trackerRoutes);
-  app.use("/api", contactRoutes);
-  app.use("/api", questionnaireRoutes);
-  app.use("/api", paymentRoutes);
+  app.use("/api/auth", lazyRouter(() => import("./routes/auth")));
+  app.use("/api", lazyRouter(() => import("./routes/chat")));
+  app.use("/api", lazyRouter(() => import("./routes/interviewPrep")));
+  app.use("/api", lazyRouter(() => import("./routes/tracker")));
+  app.use("/api", lazyRouter(() => import("./routes/contact")));
+  app.use("/api", lazyRouter(() => import("./routes/questionnaire")));
+  app.use("/api", lazyRouter(() => import("./routes/payments")));
 
   app.get("/health", (req, res) => {
     res.json({ status: "healthy", time: new Date().toISOString() });

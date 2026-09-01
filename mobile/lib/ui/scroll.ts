@@ -2,11 +2,13 @@ import { Platform, type NativeScrollEvent } from "react-native";
 
 export const verticalScrollProps = {
   showsVerticalScrollIndicator: false,
-  nestedScrollEnabled: true,
   scrollEventThrottle: 16,
   keyboardShouldPersistTaps: "handled" as const,
   keyboardDismissMode: "on-drag" as const,
   decelerationRate: "normal" as const,
+  bounces: false,
+  alwaysBounceVertical: false,
+  overScrollMode: "never" as const,
 };
 
 export function isNearBottom(event: NativeScrollEvent, threshold = 72) {

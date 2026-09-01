@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseQueryOptions } from "@tanstack/react-query";
 import {
   fetchMobileSyncSnapshot,
+  getLocalSyncSnapshot,
   markAllNotificationsAsRead,
   markNotificationAsRead,
   sendMessageToAdmin,
@@ -11,7 +12,7 @@ import { queryKeys } from "@/lib/queries";
 import { useRealtimeInvalidation } from "@/lib/supabase/useRealtimeInvalidation";
 import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { useSession } from "@/providers/SessionProvider";
-import { fetchCandidateQuestionnaire } from "@/lib/data/candidate-questionnaire";
+import { fetchCandidateQuestionnaireSafe } from "@/lib/data/candidate-questionnaire";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -70,16 +71,29 @@ export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
   });
 }
 
+export function usePreviewSyncSelector<TSelected>(
+  selector: (snapshot: MobileSyncSnapshot) => TSelected,
+  enableRealtime = false,
+  options?: Omit<UseQueryOptions<MobileSyncSnapshot, Error, TSelected>, "queryKey" | "queryFn" | "select"> & {
+    queryKey?: readonly unknown[];
+  },
+) {
+  return usePreviewSyncQuery(enableRealtime, {
+    ...options,
+    select: selector,
+  });
+}
+
 export function useCandidateQuestionnaireQuery() {
   const { user } = useSession();
   return useQuery({
     queryKey: [queryKeys.questionnaire, user?.id ?? "preview-user"],
     queryFn: () => {
       if (!user) return Promise.resolve(null);
-      return fetchCandidateQuestionnaire(user);
+      return fetchCandidateQuestionnaireSafe(user);
     },
     staleTime: 120_000,
-    retry: 1,
+    retry: 0,
     refetchOnMount: false,
     refetchOnReconnect: true,
   });
@@ -102,12 +116,13 @@ export function useSendMessageToAdminMutation() {
             attachmentSize?: number;
           },
     ) => (typeof content === "string" ? sendMessageToAdmin(content, user) : sendRichMessageToAdmin(content, user)),
-    onMutate: (content) => {
+    onMutate: async (content) => {
       const previousSnapshots = queryClient.getQueriesData<MobileSyncSnapshot>({
         queryKey: queryKeys.previewSync,
       });
       const payload = typeof content === "string" ? { text: content } : content;
       const createdAt = new Date().toISOString();
+      const baseSnapshot = await getLocalSyncSnapshot(user);
       const optimisticMessage = {
         id: -Date.now(),
         conversation_id: user?.id ?? "preview-user-9jobs",
@@ -130,7 +145,7 @@ export function useSendMessageToAdminMutation() {
         { queryKey: queryKeys.previewSync },
         (current) => current
           ? { ...current, messages: [...current.messages, optimisticMessage] }
-          : current,
+          : { ...baseSnapshot, messages: [...baseSnapshot.messages, optimisticMessage] },
       );
       void queryClient.cancelQueries({ queryKey: queryKeys.previewSync });
 
@@ -141,8 +156,24 @@ export function useSendMessageToAdminMutation() {
         queryClient.setQueryData(queryKey, snapshot);
       });
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+    onSuccess: async (result) => {
+      if (result?.snapshot) {
+        queryClient.setQueriesData<MobileSyncSnapshot>(
+          { queryKey: queryKeys.previewSync },
+          () => result.snapshot,
+        );
+      }
+
+      if (result?.backendSucceeded) {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.previewSync });
+        return;
+      }
+
+      const localSnapshot = await getLocalSyncSnapshot(user);
+      queryClient.setQueriesData<MobileSyncSnapshot>(
+        { queryKey: queryKeys.previewSync },
+        () => localSnapshot,
+      );
     },
   });
 }

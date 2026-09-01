@@ -11,10 +11,21 @@ export type ScreenshotActivityRow = {
 
 type DatedApplicationRow = ScreenshotApplicationRow & {
   job_id: string;
+  updated_at?: string | null;
   application_date?: string | null;
   applied_at?: string | null;
   created_at?: string | null;
 };
+
+function getApplicationTime(application: DatedApplicationRow) {
+  return new Date(
+    application.updated_at ??
+      application.application_date ??
+      application.applied_at ??
+      application.created_at ??
+      0,
+  ).getTime();
+}
 
 export function latestApplicationsByJob<T extends DatedApplicationRow>(
   applications: T[],
@@ -28,18 +39,8 @@ export function latestApplicationsByJob<T extends DatedApplicationRow>(
       continue;
     }
 
-    const applicationTime = new Date(
-      application.application_date ??
-        application.applied_at ??
-        application.created_at ??
-        0,
-    ).getTime();
-    const existingTime = new Date(
-      existing.application_date ??
-        existing.applied_at ??
-        existing.created_at ??
-        0,
-    ).getTime();
+    const applicationTime = getApplicationTime(application);
+    const existingTime = getApplicationTime(existing);
 
     if (applicationTime > existingTime) {
       latestByJobId.set(application.job_id, {

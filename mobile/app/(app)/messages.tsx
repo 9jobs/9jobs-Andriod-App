@@ -3,11 +3,12 @@ import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing, shadows } from "@/theme";
 import { FadeInView } from "@/components/motion/FadeInView";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
+import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
 
 type ChatItem = {
   initials: string;
@@ -27,13 +28,16 @@ export default function MessagesScreen() {
     process.env.NODE_ENV === "test" ||
     (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
 
-  const { data: snapshot } = usePreviewSyncQuery(shouldEnableLive, {
+  const { data: thread } = usePreviewSyncSelector((snapshot) => snapshot.messageThread, shouldEnableLive, {
     refetchInterval: shouldEnableLive ? false : 3000,
   });
-  const thread = snapshot?.messageThread;
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");
   const [activeTab, setActiveTab] = useState("All");
+  useScreenPerf("/(app)/messages", Boolean(thread), {
+    screen: "messages",
+    unread: thread?.unreadCount ?? 0,
+  });
 
   const cardStyle = useMemo(() => {
     const isDark = colors.background === "#000000";
@@ -174,7 +178,7 @@ export default function MessagesScreen() {
     );
   }, [allChats, searchText, activeTab]);
 
-  const openSupportChat = () => router.push("/(app)/chat/admin-thread" as never);
+  const openSupportChat = () => traceNavigation("/(app)/chat/admin-thread", "messages.primary-chat", () => router.push("/(app)/chat/admin-thread" as never));
 
   return (
     <Screen scroll={false} contentStyle={styles.screenContent}>

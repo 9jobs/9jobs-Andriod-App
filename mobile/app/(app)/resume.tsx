@@ -3,12 +3,13 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, Animated, 
 import { router } from "expo-router";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import * as DocumentPicker from "expo-document-picker";
 import { useUploadResumeMutation } from "@/features/jobs/hooks";
 import { ResumeDataTransferSpline } from "@/components/resume/ResumeDataTransferSpline";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { useScreenPerf } from "@/lib/perf/livePerf";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -49,7 +50,9 @@ function CircularScanner() {
 }
 
 export default function ResumeScreen() {
-  const { data: snapshot } = usePreviewSyncQuery();
+  const { data: trackerSummary } = usePreviewSyncSelector((snapshot) => snapshot.trackerSummary);
+  const { data: resumeAnalysis } = usePreviewSyncSelector((snapshot) => snapshot.resumeAnalysis);
+  const { data: coverLetterSnapshot } = usePreviewSyncSelector((snapshot) => snapshot.coverLetter);
   
   const copyToClipboard = async (text: string) => {
     try {
@@ -105,6 +108,11 @@ export default function ResumeScreen() {
   });
 
   const uploadResumeMutation = useUploadResumeMutation();
+  useScreenPerf("/(app)/resume", Boolean(trackerSummary && resumeAnalysis && coverLetterSnapshot), {
+    screen: "resume",
+    ats_score: trackerSummary?.atsResumeScore ?? 0,
+    ai_match_score: trackerSummary?.aiMatchScore ?? 0,
+  });
 
   const scanAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -121,8 +129,8 @@ export default function ResumeScreen() {
     };
   }, [progressAnim]);
 
-  const atsScore = Math.max(0, Math.min(100, Math.round(Number(snapshot?.trackerSummary?.atsResumeScore ?? 0))));
-  const aiMatchScore = Math.max(0, Math.min(100, Math.round(Number(snapshot?.trackerSummary?.aiMatchScore ?? 0))));
+  const atsScore = Math.max(0, Math.min(100, Math.round(Number(trackerSummary?.atsResumeScore ?? 0))));
+  const aiMatchScore = Math.max(0, Math.min(100, Math.round(Number(trackerSummary?.aiMatchScore ?? 0))));
   const metrics = [
     { label: "Keywords", value: analysisMetrics.keywords },
     { label: "Formatting", value: analysisMetrics.formatting },
@@ -266,77 +274,32 @@ export default function ResumeScreen() {
   }, [atsScore, aiMatchScore]);
 
   useEffect(() => {
-    if (snapshot?.resumeAnalysis) {
+    if (resumeAnalysis) {
       setAnalysisMetrics({
-        keywords: snapshot.resumeAnalysis.keywords || 0,
-        formatting: snapshot.resumeAnalysis.formatting || 0,
-        experience: snapshot.resumeAnalysis.experience || 0,
-        impactVerbs: snapshot.resumeAnalysis.impactVerbs || 0,
-        atsScore: snapshot.resumeAnalysis.atsScore || 0,
-        roleSpecificScore: snapshot.resumeAnalysis.roleSpecificScore || 0,
-        missingKeywords: snapshot.resumeAnalysis.missingKeywords || [],
-        skillGapAnalysis: snapshot.resumeAnalysis.skillGapAnalysis || [],
-        formattingIssues: snapshot.resumeAnalysis.formattingIssues || [],
-        grammarSuggestions: snapshot.resumeAnalysis.grammarSuggestions || [],
-        achievementRewriting: snapshot.resumeAnalysis.achievementRewriting || [],
-        resumeVersionComparison: snapshot.resumeAnalysis.resumeVersionComparison || "",
-        jobDescriptionCompatibility: snapshot.resumeAnalysis.jobDescriptionCompatibility || 0,
-        recruiterReadabilityScore: snapshot.resumeAnalysis.recruiterReadabilityScore || 0,
-        australianResumeComplianceCheck: snapshot.resumeAnalysis.australianResumeComplianceCheck || { compliant: true, issues: [] },
+        keywords: resumeAnalysis.keywords || 0,
+        formatting: resumeAnalysis.formatting || 0,
+        experience: resumeAnalysis.experience || 0,
+        impactVerbs: resumeAnalysis.impactVerbs || 0,
+        atsScore: resumeAnalysis.atsScore || 0,
+        roleSpecificScore: resumeAnalysis.roleSpecificScore || 0,
+        missingKeywords: resumeAnalysis.missingKeywords || [],
+        skillGapAnalysis: resumeAnalysis.skillGapAnalysis || [],
+        formattingIssues: resumeAnalysis.formattingIssues || [],
+        grammarSuggestions: resumeAnalysis.grammarSuggestions || [],
+        achievementRewriting: resumeAnalysis.achievementRewriting || [],
+        resumeVersionComparison: resumeAnalysis.resumeVersionComparison || "",
+        jobDescriptionCompatibility: resumeAnalysis.jobDescriptionCompatibility || 0,
+        recruiterReadabilityScore: resumeAnalysis.recruiterReadabilityScore || 0,
+        australianResumeComplianceCheck: resumeAnalysis.australianResumeComplianceCheck || { compliant: true, issues: [] },
       });
     }
-  }, [snapshot?.resumeAnalysis]);
+  }, [resumeAnalysis]);
 
   useEffect(() => {
-    if (snapshot?.coverLetter) {
-      setCoverLetter(snapshot.coverLetter.content || "");
+    if (coverLetterSnapshot) {
+      setCoverLetter(coverLetterSnapshot.content || "");
     }
-  }, [snapshot?.coverLetter]);
-
-  if (isScanning) {
-    return (
-      <Screen scroll={true} contentStyle={styles.screenContent}>
-        <BackHeader label="Back" />
-        <Text style={styles.title}>Resume Intelligence</Text>
-        <View style={styles.scanningContainer}>
-          <View style={styles.scanningHeader}>
-            <Text style={styles.scanningSubtitle}>Analyzing Your Resume</Text>
-            <Text style={styles.scanningDescription}>
-              Please wait while we scan your resume and calculate your ATS score.
-            </Text>
-          </View>
-
-          <CircularScanner />
-
-          <View style={styles.scanningProgressContainer}>
-            <View style={styles.scanningProgressBarTrack}>
-              <View style={[styles.scanningProgressBarFill, { width: `${Math.round(progressVal * 100)}%` }]} />
-            </View>
-            <Text style={styles.scanningProgressText}>{Math.round(progressVal * 100)}%</Text>
-          </View>
-
-          <View style={styles.scanningMetricsRow}>
-            <View style={styles.scanningMetricItem}>
-              <Text style={styles.scanningMetricLabel}>Content</Text>
-              <Text style={styles.scanningMetricValue}>92%</Text>
-            </View>
-            <View style={styles.scanningMetricItem}>
-              <Text style={styles.scanningMetricLabel}>Structure</Text>
-              <Text style={styles.scanningMetricValue}>88%</Text>
-            </View>
-            <View style={styles.scanningMetricItem}>
-              <Text style={styles.scanningMetricLabel}>Keywords</Text>
-              <Text style={styles.scanningMetricValue}>95%</Text>
-            </View>
-          </View>
-
-          <Text style={styles.scanningFooter}>
-            AI is analyzing your resume deeply to give you the best improvement tips.
-          </Text>
-        </View>
-      </Screen>
-    );
-  }
+  }, [coverLetterSnapshot]);
 
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>

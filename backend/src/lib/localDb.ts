@@ -25,6 +25,7 @@ function ensureLocalDbFile() {
               interview_prep_responses: [],
               success_stories: [],
               profiles: [],
+              candidate_questionnaires: [],
             },
             null,
             2
@@ -165,6 +166,32 @@ export interface LocalProfile {
   updated_at: string;
 }
 
+export interface LocalCandidateQuestionnaire {
+  user_id: string;
+  full_name: string;
+  contact_number: string;
+  working_rights: string;
+  full_address: string;
+  date_of_birth: string;
+  gender: string;
+  expected_salary: string;
+  preferred_job_locations: string[];
+  work_types: string[];
+  notice_period: string;
+  preferred_roles: string[];
+  resume_path: string;
+  resume_name: string;
+  visa_type: string;
+  visa_path: string;
+  visa_name: string;
+  enhanced_resume_path: string;
+  enhanced_resume_name: string;
+  enhanced_resume_updated_at: string | null;
+  completed_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface LocalDbSchema {
   messages: LocalMessage[];
   conversations: LocalConversation[];
@@ -173,27 +200,52 @@ interface LocalDbSchema {
   interview_prep_responses: LocalInterviewPrepResponse[];
   success_stories: LocalSuccessStory[];
   profiles: LocalProfile[];
+  candidate_questionnaires: LocalCandidateQuestionnaire[];
 }
 
 const SYNC_SCRIPT = fs.existsSync(path.resolve(__dirname, "../syncDbHelper.js"))
   ? path.resolve(__dirname, "../syncDbHelper.js")
   : path.resolve(__dirname, "../syncDbHelper.ts");
+const LOCAL_DB_SYNC_RETRY_MS = 60 * 1000;
+const LOCAL_DB_SYNC_TIMEOUT_MS = 5000;
+let lastLocalDbSyncAttemptAt = 0;
+let lastLocalDbSyncSucceededAt = 0;
 
 function readDb(): LocalDbSchema {
   try {
     ensureLocalDbFile();
 
     if (process.env.VERCEL || __dirname.includes("/var/task")) {
-      try {
-        console.log("[Local DB Sync] Pulling latest db file from Supabase Storage...");
-        execSync(`node "${SYNC_SCRIPT}" download "${DB_FILE}"`, { stdio: "inherit", env: process.env });
-      } catch (syncErr: any) {
-        console.error("[Local DB Sync] Pull failed:", syncErr.message);
+      const now = Date.now();
+      if (now - lastLocalDbSyncAttemptAt >= LOCAL_DB_SYNC_RETRY_MS) {
+        lastLocalDbSyncAttemptAt = now;
+        try {
+          console.log("[Local DB Sync] Pulling latest db file from Supabase Storage...");
+          execSync(`node "${SYNC_SCRIPT}" download "${DB_FILE}"`, {
+            stdio: "inherit",
+            env: process.env,
+            timeout: LOCAL_DB_SYNC_TIMEOUT_MS,
+          });
+          lastLocalDbSyncSucceededAt = Date.now();
+        } catch (syncErr: any) {
+          console.error("[Local DB Sync] Pull failed:", syncErr.message);
+        }
+      } else if (lastLocalDbSyncSucceededAt > 0) {
+        console.log("[Local DB Sync] Reusing recently synced local db snapshot.");
       }
     }
 
     if (!fs.existsSync(DB_FILE)) {
-      return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [], profiles: [] };
+      return {
+        messages: [],
+        conversations: [],
+        recruiter_contacts: [],
+        interview_prep_sessions: [],
+        interview_prep_responses: [],
+        success_stories: [],
+        profiles: [],
+        candidate_questionnaires: [],
+      };
     }
     const data = fs.readFileSync(DB_FILE, "utf8");
     const parsed = JSON.parse(data);
@@ -205,9 +257,19 @@ function readDb(): LocalDbSchema {
       interview_prep_responses: Array.isArray(parsed.interview_prep_responses) ? parsed.interview_prep_responses : [],
       success_stories: Array.isArray(parsed.success_stories) ? parsed.success_stories : [],
       profiles: Array.isArray(parsed.profiles) ? parsed.profiles : [],
+      candidate_questionnaires: Array.isArray(parsed.candidate_questionnaires) ? parsed.candidate_questionnaires : [],
     };
   } catch (err) {
-    return { messages: [], conversations: [], recruiter_contacts: [], interview_prep_sessions: [], interview_prep_responses: [], success_stories: [], profiles: [] };
+    return {
+      messages: [],
+      conversations: [],
+      recruiter_contacts: [],
+      interview_prep_sessions: [],
+      interview_prep_responses: [],
+      success_stories: [],
+      profiles: [],
+      candidate_questionnaires: [],
+    };
   }
 }
 
@@ -617,6 +679,19 @@ export async function deleteLocalProfile(id: string): Promise<boolean> {
   const db = readDb();
   const originalLength = db.profiles.length;
   db.profiles = db.profiles.filter((item) => item.id !== id);
+  db.conversations = db.conversations.filter(
+    (conversation) => conversation.id !== id && conversation.client_id !== id,
+  );
+  db.messages = db.messages.filter(
+    (message) =>
+      message.conversation_id !== id &&
+      message.sender_id !== id &&
+      message.recipient_id !== id,
+  );
+  db.recruiter_contacts = db.recruiter_contacts.filter((contact) => contact.client_id !== id);
+  db.interview_prep_sessions = db.interview_prep_sessions.filter((session) => session.client_id !== id);
+  db.interview_prep_responses = db.interview_prep_responses.filter((response) => response.client_id !== id);
+  db.candidate_questionnaires = db.candidate_questionnaires.filter((item) => item.user_id !== id);
 
   if (db.profiles.length === originalLength) {
     return false;
@@ -624,6 +699,71 @@ export async function deleteLocalProfile(id: string): Promise<boolean> {
 
   writeDb(db);
   return true;
+}
+
+export async function getLocalCandidateQuestionnaire(userId: string): Promise<LocalCandidateQuestionnaire | undefined> {
+  const db = readDb();
+  const questionnaire = db.candidate_questionnaires.find((item) => item.user_id === userId);
+  return questionnaire ? { ...questionnaire, visa_type: questionnaire.visa_type ?? "" } : undefined;
+}
+
+export async function getLocalCandidateQuestionnaires(): Promise<LocalCandidateQuestionnaire[]> {
+  const db = readDb();
+  return db.candidate_questionnaires.map((item) => ({
+    ...item,
+    visa_type: item.visa_type ?? "",
+  })).sort((a, b) => {
+    const aTime = new Date(a.updated_at || a.completed_at || a.created_at).getTime();
+    const bTime = new Date(b.updated_at || b.completed_at || b.created_at).getTime();
+    return bTime - aTime;
+  });
+}
+
+export async function upsertLocalCandidateQuestionnaire(
+  questionnaire: Omit<LocalCandidateQuestionnaire, "created_at" | "updated_at"> & {
+    created_at?: string;
+    updated_at?: string;
+  },
+): Promise<LocalCandidateQuestionnaire> {
+  const db = readDb();
+  const existingIndex = db.candidate_questionnaires.findIndex((item) => item.user_id === questionnaire.user_id);
+  const existing = existingIndex >= 0 ? db.candidate_questionnaires[existingIndex] : null;
+  const now = new Date().toISOString();
+
+  const normalized: LocalCandidateQuestionnaire = {
+    user_id: questionnaire.user_id,
+    full_name: questionnaire.full_name,
+    contact_number: questionnaire.contact_number,
+    working_rights: questionnaire.working_rights,
+    full_address: questionnaire.full_address,
+    date_of_birth: questionnaire.date_of_birth,
+    gender: questionnaire.gender,
+    expected_salary: questionnaire.expected_salary,
+    preferred_job_locations: Array.isArray(questionnaire.preferred_job_locations) ? questionnaire.preferred_job_locations : [],
+    work_types: Array.isArray(questionnaire.work_types) ? questionnaire.work_types : [],
+    notice_period: questionnaire.notice_period,
+    preferred_roles: Array.isArray(questionnaire.preferred_roles) ? questionnaire.preferred_roles : [],
+    resume_path: questionnaire.resume_path,
+    resume_name: questionnaire.resume_name,
+    visa_type: questionnaire.visa_type ?? existing?.visa_type ?? "",
+    visa_path: questionnaire.visa_path,
+    visa_name: questionnaire.visa_name,
+    enhanced_resume_path: questionnaire.enhanced_resume_path,
+    enhanced_resume_name: questionnaire.enhanced_resume_name,
+    enhanced_resume_updated_at: questionnaire.enhanced_resume_updated_at ?? null,
+    completed_at: questionnaire.completed_at,
+    created_at: existing?.created_at || questionnaire.created_at || now,
+    updated_at: questionnaire.updated_at || now,
+  };
+
+  if (existingIndex >= 0) {
+    db.candidate_questionnaires[existingIndex] = normalized;
+  } else {
+    db.candidate_questionnaires.push(normalized);
+  }
+
+  writeDb(db);
+  return normalized;
 }
 
 export async function getLocalInterviewPrepSessions(clientId?: string): Promise<LocalInterviewPrepSession[]> {

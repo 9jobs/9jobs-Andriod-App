@@ -1,16 +1,114 @@
-import { Router, Response } from "express";
+import fs from "fs/promises";
+import path from "path";
+import express, { Router, Response } from "express";
 import { Pool } from "pg";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
-import { supabase } from "../lib/supabase";
+import {
+  getLocalCandidateQuestionnaire,
+  getLocalCandidateQuestionnaires,
+  upsertLocalCandidateQuestionnaire,
+  upsertLocalProfile,
+} from "../lib/localDb";
+import { canReachSupabaseUpstream, getSupabaseReachabilityState, supabase } from "../lib/supabase";
 
 const router = Router();
 const DOCUMENT_BUCKET = "candidate-documents";
 const MAX_DOCUMENT_SIZE = 12 * 1024 * 1024;
+const LOCAL_UPLOADS_DIR = path.resolve(__dirname, "../../local_uploads");
 
 let schemaReady: Promise<void> | null = null;
+let schemaFailed = false;
+const LOCAL_PREVIEW_QUESTIONNAIRE_USER_ID = "preview-user-9jobs";
+
+function hasUsableDatabaseUrl() {
+  const databaseUrl = process.env.DATABASE_URL || "";
+  return Boolean(databaseUrl) && !databaseUrl.includes("[YOUR_DB_PASSWORD]");
+}
+
+function isUpstreamResolutionFailure(error: unknown) {
+  const details =
+    typeof error === "object" && error && "details" in error
+      ? String((error as { details?: string }).details || "")
+      : "";
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: string }).message || "")
+      : "";
+
+  const combined = `${message}\n${details}`.toLowerCase();
+  return combined.includes("enotfound") || combined.includes("getaddrinfo");
+}
 
 function sanitizeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+function buildLocalPreviewQuestionnaire(userId: string) {
+  const nowIso = new Date().toISOString();
+  return {
+    completed: true,
+    questionnaire: {
+      user_id: userId,
+      full_name: "Test User",
+      contact_number: "+91 99999 99999",
+      working_rights: "Australian Citizen",
+      full_address: "Melbourne, Australia",
+      date_of_birth: "1998-01-01",
+      gender: "Prefer not to say",
+      expected_salary: "$120k - $150k",
+      preferred_job_locations: ["Melbourne", "Remote"],
+      work_types: ["Full-time", "Remote"],
+      notice_period: "2 weeks",
+      preferred_roles: ["Frontend Engineer", "Product Designer"],
+      resume_path: "local-preview/resume.pdf",
+      resume_name: "Test-User-Resume.pdf",
+      visa_type: "",
+      visa_path: "",
+      visa_name: "",
+      enhanced_resume_path: "",
+      enhanced_resume_name: "",
+      enhanced_resume_updated_at: null,
+      enhanced_resume_url: "",
+      completed_at: nowIso,
+      created_at: nowIso,
+      updated_at: nowIso,
+    },
+  };
+}
+
+function getBaseUrl(req: AuthenticatedRequest) {
+  return `${req.protocol}://${req.get("host") || "127.0.0.1:3000"}`;
+}
+
+function buildLocalUploadPath(userId: string, documentType: "resume" | "visa", fileName: string) {
+  return `${sanitizeFileName(userId)}/${documentType}/${Date.now()}-${sanitizeFileName(fileName)}`;
+}
+
+function buildLocalUploadFilePath(storagePath: string) {
+  return path.join(LOCAL_UPLOADS_DIR, storagePath);
+}
+
+async function createLocalQuestionnaireBody(userId: string) {
+  const localQuestionnaire = await getLocalCandidateQuestionnaire(userId);
+  if (localQuestionnaire) {
+    return {
+      completed: Boolean(localQuestionnaire.completed_at),
+      questionnaire: {
+        ...localQuestionnaire,
+        enhanced_resume_url: "",
+      },
+    };
+  }
+
+  if (userId === LOCAL_PREVIEW_QUESTIONNAIRE_USER_ID) {
+    const preview = buildLocalPreviewQuestionnaire(userId);
+    if (preview.questionnaire) {
+      await upsertLocalCandidateQuestionnaire(preview.questionnaire);
+    }
+    return preview;
+  }
+
+  return { completed: false, questionnaire: null };
 }
 
 function ensureAdmin(req: AuthenticatedRequest, res: Response) {
@@ -22,6 +120,7 @@ function ensureAdmin(req: AuthenticatedRequest, res: Response) {
 }
 
 async function ensureQuestionnaireSchema() {
+  if (schemaFailed) return;
   if (schemaReady) return schemaReady;
 
   schemaReady = (async () => {
@@ -46,6 +145,7 @@ async function ensureQuestionnaireSchema() {
           preferred_roles text[] not null default '{}',
           resume_path text not null default '',
           resume_name text not null default '',
+          visa_type text not null default '',
           visa_path text not null default '',
           visa_name text not null default '',
           enhanced_resume_path text not null default '',
@@ -58,6 +158,7 @@ async function ensureQuestionnaireSchema() {
         alter table candidate_questionnaires add column if not exists enhanced_resume_path text not null default '';
         alter table candidate_questionnaires add column if not exists enhanced_resume_name text not null default '';
         alter table candidate_questionnaires add column if not exists enhanced_resume_updated_at timestamptz;
+        alter table candidate_questionnaires add column if not exists visa_type text not null default '';
         create index if not exists idx_candidate_questionnaires_completed_at
           on candidate_questionnaires(completed_at desc);
       `);
@@ -66,6 +167,7 @@ async function ensureQuestionnaireSchema() {
     }
   })().catch((error) => {
     schemaReady = null;
+    schemaFailed = true;
     throw error;
   });
 
@@ -97,25 +199,101 @@ async function createDownloadUrl(path: string) {
   return data?.signedUrl || "";
 }
 
+async function ensureSupabaseProfile(params: {
+  userId: string;
+  email: string;
+  role: string;
+  fullName: string;
+  phoneNumber: string;
+  location: string;
+  headline: string;
+  updatedAt: string;
+}) {
+  const { error } = await supabase.from("profiles").upsert(
+    [
+      {
+        id: params.userId,
+        email: params.email,
+        role: params.role || "client",
+        full_name: params.fullName,
+        phone_number: params.phoneNumber,
+        location: params.location,
+        headline: params.headline,
+        updated_at: params.updatedAt,
+      },
+    ],
+    { onConflict: "id" },
+  );
+
+  if (error) {
+    throw error;
+  }
+}
+
 router.get("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.user?.userId;
   if (!userId) return res.status(400).json({ error: "Missing authenticated user" });
+  const requestStartedAt = Date.now();
 
   try {
-    await ensureQuestionnaireSchema();
+    const reachabilityStartedAt = Date.now();
+    const supabaseReachable = await canReachSupabaseUpstream();
+    const reachabilityMs = Date.now() - reachabilityStartedAt;
+    if (!supabaseReachable) {
+      const reachability = getSupabaseReachabilityState();
+      const body = await createLocalQuestionnaireBody(userId);
+      res.setHeader("x-9jobs-questionnaire-reachability-ms", String(reachabilityMs));
+      res.setHeader("x-9jobs-questionnaire-fallback", "local_db");
+      res.setHeader("x-9jobs-questionnaire-fallback-reason", reachability?.reason || "supabase_unreachable");
+      res.setHeader("x-9jobs-questionnaire-total-ms", String(Date.now() - requestStartedAt));
+      res.setHeader("x-9jobs-questionnaire-bytes", String(Buffer.byteLength(JSON.stringify(body), "utf8")));
+      return res.status(200).json(body);
+    }
+
+    let schemaMs = 0;
+    if (hasUsableDatabaseUrl() && !schemaFailed) {
+      const schemaStartedAt = Date.now();
+      try {
+        await ensureQuestionnaireSchema();
+      } catch (schemaError) {
+        console.warn("[Questionnaire] schema ensure failed during GET /mobile/questionnaire; continuing with Supabase read:", schemaError);
+      } finally {
+        schemaMs = Date.now() - schemaStartedAt;
+      }
+    }
+
+    const queryStartedAt = Date.now();
     const { data, error } = await supabase
       .from("candidate_questionnaires")
       .select("*")
       .eq("user_id", userId)
       .maybeSingle();
+    const queryMs = Date.now() - queryStartedAt;
     if (error) throw error;
+
+    const signedUrlStartedAt = Date.now();
     const questionnaire = data ? {
       ...data,
       enhanced_resume_url: await createDownloadUrl(data.enhanced_resume_path || ""),
     } : null;
-    return res.json({ completed: Boolean(data?.completed_at), questionnaire });
+    const signedUrlMs = Date.now() - signedUrlStartedAt;
+    const body = { completed: Boolean(data?.completed_at), questionnaire };
+    res.setHeader("x-9jobs-questionnaire-reachability-ms", String(reachabilityMs));
+    res.setHeader("x-9jobs-questionnaire-schema-ms", String(schemaMs));
+    res.setHeader("x-9jobs-questionnaire-db-ms", String(queryMs));
+    res.setHeader("x-9jobs-questionnaire-signed-url-ms", String(signedUrlMs));
+    res.setHeader("x-9jobs-questionnaire-total-ms", String(Date.now() - requestStartedAt));
+    res.setHeader("x-9jobs-questionnaire-bytes", String(Buffer.byteLength(JSON.stringify(body), "utf8")));
+    return res.json(body);
   } catch (error: any) {
     console.error("[Questionnaire] status load failed:", error);
+    if (isUpstreamResolutionFailure(error)) {
+      const body = await createLocalQuestionnaireBody(userId);
+      res.setHeader("x-9jobs-questionnaire-fallback", "local_db");
+      res.setHeader("x-9jobs-questionnaire-total-ms", String(Date.now() - requestStartedAt));
+      res.setHeader("x-9jobs-questionnaire-bytes", String(Buffer.byteLength(JSON.stringify(body), "utf8")));
+      return res.status(200).json(body);
+    }
     return res.status(500).json({ error: error.message || "Could not load questionnaire status" });
   }
 });
@@ -132,6 +310,17 @@ router.post("/mobile/questionnaire/upload-url", authMiddleware, async (req: Auth
   if (fileSize > MAX_DOCUMENT_SIZE) return res.status(413).json({ error: "Document must be smaller than 12 MB" });
 
   try {
+    const supabaseReachable = await canReachSupabaseUpstream();
+    if (!supabaseReachable) {
+      const storagePath = buildLocalUploadPath(userId, documentType as "resume" | "visa", fileName);
+      return res.json({
+        storagePath,
+        uploadMode: "local-inline",
+        uploadUrl: `${getBaseUrl(req)}/api/mobile/questionnaire/local-upload`,
+        mimeType,
+      });
+    }
+
     await ensureDocumentBucket();
     const storagePath = `${sanitizeFileName(userId)}/${documentType}/${Date.now()}-${fileName}`;
     const { data, error } = await supabase.storage
@@ -142,6 +331,28 @@ router.post("/mobile/questionnaire/upload-url", authMiddleware, async (req: Auth
   } catch (error: any) {
     console.error("[Questionnaire] document upload preparation failed:", error);
     return res.status(502).json({ error: error.message || "Could not prepare document upload" });
+  }
+});
+
+router.post("/mobile/questionnaire/local-upload", authMiddleware, express.raw({ type: "*/*", limit: "12mb" }), async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.user?.userId;
+  const storagePath = String(req.headers["x-9jobs-storage-path"] || "").trim();
+  if (!userId) return res.status(400).json({ error: "Missing authenticated user" });
+  if (!storagePath || !storagePath.startsWith(`${sanitizeFileName(userId)}/`)) {
+    return res.status(400).json({ error: "Invalid document path" });
+  }
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    return res.status(400).json({ error: "Missing document payload" });
+  }
+
+  try {
+    const destination = buildLocalUploadFilePath(storagePath);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.writeFile(destination, req.body);
+    return res.json({ success: true, storagePath });
+  } catch (error: any) {
+    console.error("[Questionnaire] local document upload failed:", error);
+    return res.status(500).json({ error: error.message || "Could not store local document" });
   }
 });
 
@@ -165,6 +376,7 @@ router.post("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRe
     preferred_roles: Array.isArray(input.preferredRoles) ? input.preferredRoles.map(String) : [],
     resume_path: String(input.resumePath || "").trim(),
     resume_name: String(input.resumeName || "").trim(),
+    visa_type: String(input.visaType || "").trim(),
     visa_path: String(input.visaPath || "").trim(),
     visa_name: String(input.visaName || "").trim(),
     completed_at: new Date().toISOString(),
@@ -180,7 +392,38 @@ router.post("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRe
   }
 
   try {
+    const supabaseReachable = await canReachSupabaseUpstream();
+    if (!supabaseReachable) {
+      const questionnaire = await upsertLocalCandidateQuestionnaire({
+        ...row,
+        enhanced_resume_path: "",
+        enhanced_resume_name: "",
+        enhanced_resume_updated_at: null,
+      });
+      await upsertLocalProfile({
+        id: userId,
+        full_name: row.full_name,
+        email: req.user?.email || `${userId}@9jobs.local`,
+        phone_number: row.contact_number,
+        location: row.full_address,
+        headline: row.preferred_roles.join(", "),
+        role: req.user?.role || "client",
+      });
+      return res.json({ success: true, questionnaire });
+    }
+
     await ensureQuestionnaireSchema();
+    await ensureSupabaseProfile({
+      userId,
+      email: req.user?.email || `${userId}@9jobs.local`,
+      role: req.user?.role || "client",
+      fullName: row.full_name,
+      phoneNumber: row.contact_number,
+      location: row.full_address,
+      headline: row.preferred_roles.join(", "),
+      updatedAt: row.updated_at,
+    });
+
     const { data, error } = await supabase
       .from("candidate_questionnaires")
       .upsert(row, { onConflict: "user_id" })
@@ -206,6 +449,12 @@ router.post("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRe
 router.get("/admin/questionnaires", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdmin(req, res)) return;
   try {
+    const supabaseReachable = await canReachSupabaseUpstream();
+    if (!supabaseReachable) {
+      const questionnaires = await getLocalCandidateQuestionnaires();
+      return res.json({ questionnaires });
+    }
+
     await ensureQuestionnaireSchema();
     const { data, error } = await supabase
       .from("candidate_questionnaires")
