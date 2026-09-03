@@ -1,0 +1,11 @@
+.next
+node_modules
+.env
+website-admin/.next
+website-admin/node_modules
+website-admin/.env.local
+website-admin/.vercel
+website-admin/logs
+website-admin/reports
+public/_next
+public/index.html

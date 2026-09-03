@@ -105,9 +105,14 @@ export default function TrackerDetailsScreen() {
     jobs: jobs.length,
   });
 
+  const lastFocusRefetchRef = React.useRef<number>(0);
   useFocusEffect(
     React.useCallback(() => {
-      void refetch();
+      const now = Date.now();
+      if (now - lastFocusRefetchRef.current > 60_000) {
+        lastFocusRefetchRef.current = now;
+        void refetch();
+      }
     }, [refetch]),
   );
 

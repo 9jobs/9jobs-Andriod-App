@@ -133,7 +133,7 @@ export async function fetchInterviewPrepSession(
     tracker.finish({
       status: res.status,
       user_id: sessionUser?.id ?? "unknown",
-      payload_bytes: Number(res.headers.get("content-length") || 0),
+      payload_bytes: Number(res.headers?.get?.("content-length") || 0),
     });
     if (!res.ok) {
       throw new Error(`Interview prep session failed with HTTP ${res.status}`);
@@ -168,7 +168,7 @@ export async function requestInterviewPrepAnswer(sessionUser?: SessionUser | nul
   tracker.finish({
     status: res.status,
     user_id: sessionUser?.id ?? "unknown",
-    payload_bytes: Number(res.headers.get("content-length") || 0),
+    payload_bytes: Number(res.headers?.get?.("content-length") || 0),
   });
   if (!res.ok) {
     throw new Error(`Interview answer failed with HTTP ${res.status}`);
@@ -200,7 +200,7 @@ export async function navigateInterviewPrep(sessionUser?: SessionUser | null, di
   tracker.finish({
     status: res.status,
     user_id: sessionUser?.id ?? "unknown",
-    payload_bytes: Number(res.headers.get("content-length") || 0),
+    payload_bytes: Number(res.headers?.get?.("content-length") || 0),
     direction,
   });
   if (!res.ok) {

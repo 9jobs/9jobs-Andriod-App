@@ -91,7 +91,7 @@ export async function getBackendAuthToken(
       tracker.finish({
         status: response.status,
         user_id: user.id,
-        payload_bytes: Number(response.headers.get("content-length") || 0),
+        payload_bytes: Number(response.headers?.get?.("content-length") || 0),
       });
       if (!response.ok || !payload?.token) {
         throw new Error(payload?.error || "Could not authenticate backend request.");

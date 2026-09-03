@@ -1,0 +1,29 @@
+{
+  "name": "9jobs-admin-next",
+  "private": true,
+  "version": "0.0.0",
+  "main": "api/server.cjs",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "app-build": "node scripts/clean-static-admin.cjs && npm run build && node scripts/prepare-static-admin.cjs && npm --prefix website-admin ci --include=dev && npm --prefix website-admin run build",
+    "start": "next start",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clerk/clerk-react": "^5.61.8",
+    "@supabase/supabase-js": "^2.110.1",
+    "lucide-react": "^1.23.0",
+    "next": "16.2.6",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "~6.0.2",
+    "vitest": "^3.2.4"
+  }
+}

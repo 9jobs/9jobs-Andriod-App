@@ -66,25 +66,21 @@ export default function AppLayout() {
           return;
         }
 
-        void Promise.allSettled([
-          import("./services"),
-          import("./tracker"),
-          import("./profile/index"),
-        ]);
-
-        deepWarmupTimeoutRef.current = setTimeout(() => {
-          if (cancelled) {
-            return;
-          }
-
-          void Promise.allSettled([
-            import("./messages"),
-            import("./resume"),
-            import("./outreach"),
-            import("./interview"),
-          ]);
-        }, 5500);
-      }, 3500);
+        // Stagger prewarm imports during idle time to prevent JS thread contention
+        void import("./services").then(() => {
+          if (cancelled) return;
+          deepWarmupTimeoutRef.current = setTimeout(() => {
+            if (cancelled) return;
+            void import("./tracker").then(() => {
+              if (cancelled) return;
+              setTimeout(() => {
+                if (cancelled) return;
+                void import("./profile/index");
+              }, 1500);
+            });
+          }, 1500);
+        });
+      }, 7000);
     });
 
     return () => {

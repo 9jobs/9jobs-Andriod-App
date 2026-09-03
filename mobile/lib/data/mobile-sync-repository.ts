@@ -1183,11 +1183,11 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
     status: res.status,
     user_id: activeUser.id,
     payload_bytes: Number(
-      res.headers.get("x-9jobs-snapshot-bytes")
-      || res.headers.get("content-length")
+      res.headers?.get?.("x-9jobs-snapshot-bytes")
+      || res.headers?.get?.("content-length")
       || 0,
     ),
-    server_ms: Number(res.headers.get("x-9jobs-snapshot-ms") || 0),
+    server_ms: Number(res.headers?.get?.("x-9jobs-snapshot-ms") || 0),
   });
   return payload;
 }

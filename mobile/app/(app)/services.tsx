@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Svg, { Path, Circle } from "react-native-svg";
@@ -75,27 +76,29 @@ export default function ServicesScreen() {
     screen: "services",
     service_count: liveServices?.length ?? 0,
   });
-  const serviceOrder = ["job-tracker", "tracker", "resume-intelligence", "resume", "hiring-manager-outreach", "outreach", "interview-prep", "interview", "success-stories", "stories", "pricing"];
-  const services = [...(liveServices && liveServices.length > 0 ? liveServices : SERVICES_DATA)]
-    .map((service) => {
-      if (service.id === "job-tracker" || service.id === "tracker" || service.title === "Job Tracker") {
-        return {
-          ...service,
-          title: "Job Application Service",
-          route: "/(app)/tracker",
-          isIconDark: true,
-        };
-      }
+  const services = useMemo(() => {
+    const serviceOrder = ["job-tracker", "tracker", "resume-intelligence", "resume", "hiring-manager-outreach", "outreach", "interview-prep", "interview", "success-stories", "stories", "pricing"];
+    const serviceOrderMap = new Map(serviceOrder.map((id, index) => [id, index]));
+    const source = liveServices && liveServices.length > 0 ? liveServices : SERVICES_DATA;
+    return [...source]
+      .map((service) => {
+        if (service.id === "job-tracker" || service.id === "tracker" || service.title === "Job Tracker") {
+          return {
+            ...service,
+            title: "Job Application Service",
+            route: "/(app)/tracker",
+            isIconDark: true,
+          };
+        }
 
-      return service;
-    })
-    .sort((left, right) => {
-      const leftIndex = serviceOrder.indexOf(left.id);
-      const rightIndex = serviceOrder.indexOf(right.id);
-      const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
-      const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
-      return normalizedLeft - normalizedRight;
-    });
+        return service;
+      })
+      .sort((left, right) => {
+        const leftIndex = serviceOrderMap.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+        const rightIndex = serviceOrderMap.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+        return leftIndex - rightIndex;
+      });
+  }, [liveServices]);
 
   return (
     <Screen scroll={true} contentStyle={styles.screenContent}>

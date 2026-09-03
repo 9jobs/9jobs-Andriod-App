@@ -101,7 +101,7 @@ export async function fetchCandidateQuestionnaire(user: SessionUser) {
     tracker.finish({
       status: response.status,
       user_id: user.id,
-      payload_bytes: Number(response.headers.get("content-length") || 0),
+      payload_bytes: Number(response.headers?.get?.("content-length") || 0),
     });
     if (!response.ok) throw new Error(payload?.error || `Questionnaire status failed with HTTP ${response.status}`);
     const questionnaire = payload?.questionnaire || null;

@@ -207,9 +207,14 @@ export default function TrackerScreen() {
     applications: snapshot?.rawApplications?.length ?? 0,
   });
 
+  const lastFocusRefetchRef = React.useRef<number>(0);
   useFocusEffect(
     React.useCallback(() => {
-      void refetch();
+      const now = Date.now();
+      if (now - lastFocusRefetchRef.current > 60_000) {
+        lastFocusRefetchRef.current = now;
+        void refetch();
+      }
     }, [refetch]),
   );
 

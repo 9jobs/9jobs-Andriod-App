@@ -1,6 +1,6 @@
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
@@ -9,6 +9,8 @@ import { colors, spacing, shadows } from "@/theme";
 import { FadeInView } from "@/components/motion/FadeInView";
 import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
+
+const useSafeFocusEffect = typeof useFocusEffect === "function" ? useFocusEffect : useEffect;
 
 type ChatItem = {
   initials: string;
@@ -24,12 +26,22 @@ type ChatItem = {
 const sampleChats: ChatItem[] = [];
 
 export default function MessagesScreen() {
+  const [isScreenFocused, setIsScreenFocused] = useState(true);
+  useSafeFocusEffect(
+    useCallback(() => {
+      setIsScreenFocused(true);
+      return () => {
+        setIsScreenFocused(false);
+      };
+    }, []),
+  );
+
   const shouldEnableLive =
     process.env.NODE_ENV === "test" ||
     (!__DEV__ || process.env.EXPO_PUBLIC_ENABLE_MOBILE_SOCKET === "true");
 
   const { data: thread } = usePreviewSyncSelector((snapshot) => snapshot.messageThread, shouldEnableLive, {
-    refetchInterval: shouldEnableLive ? false : 3000,
+    refetchInterval: isScreenFocused && !shouldEnableLive ? 15000 : false,
   });
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchText, setSearchText] = useState("");

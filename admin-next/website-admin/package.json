@@ -1,0 +1,51 @@
+{
+  "name": "frontend",
+  "//": "trigger redeploy",
+  "version": "0.1.0",
+  "private": true,
+  "main": "api/server.cjs",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "jest --config ./jest.config.mjs"
+  },
+  "dependencies": {
+    "@next/third-parties": "^16.2.7",
+    "@stripe/react-stripe-js": "^6.3.0",
+    "@stripe/stripe-js": "^9.5.0",
+    "@supabase/supabase-js": "^2.113.0",
+    "@types/node": "^20.11.24",
+    "@types/react": "^19.0.0",
+    "bcryptjs": "^3.0.3",
+    "framer-motion": "^12.38.0",
+    "lucide-react": "^1.14.0",
+    "mongoose": "^9.6.2",
+    "next": "16.2.6",
+    "nodemailer": "^8.0.7",
+    "pdf-lib": "^1.17.1",
+    "pdfkit": "^0.19.1",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "stripe": "^22.1.1",
+    "typescript": "^5.3.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "eslint": "^9",
+    "eslint-config-next": "16.2.6",
+    "puppeteer-core": "^25.1.0"
+  },
+  "browserslist": {
+    "production": [
+      "last 2 Chrome versions",
+      "last 2 Firefox versions",
+      "last 2 Safari versions",
+      "last 2 Edge versions"
+    ],
+    "development": [
+      "last 1 Chrome version"
+    ]
+  }
+}

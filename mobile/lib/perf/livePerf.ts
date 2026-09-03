@@ -1,5 +1,12 @@
-import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef } from "react";
+
+let useFocusEffect: any = (cb: any) => {};
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  useFocusEffect = require("expo-router").useFocusEffect || useFocusEffect;
+} catch {
+  // in Jest node runner, expo-router standard navigation may not be mocked
+}
 
 type PerfMeta = Record<string, unknown>;
 

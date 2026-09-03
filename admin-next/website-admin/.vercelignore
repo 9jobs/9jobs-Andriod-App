@@ -1,0 +1,7 @@
+.next
+node_modules
+logs
+reports
+.env.local
+.vercel
+admin-next

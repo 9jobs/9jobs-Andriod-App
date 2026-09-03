@@ -1,0 +1,33 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "node",
+  "buildCommand": "npm run app-build",
+  "functions": {
+    "api/server.cjs": {
+      "includeFiles": "{.next,node_modules/next,src,public,website-admin}/**",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/admin/website-admin",
+      "destination": "/api/server?kind=embedded"
+    },
+    {
+      "source": "/admin/website-admin/:path*",
+      "destination": "/api/server?kind=embedded&path=:path*"
+    },
+    {
+      "source": "/agreements/:path*",
+      "destination": "/api/server?kind=agreements&path=:path*"
+    },
+    {
+      "source": "/fortnight-agreements/:path*",
+      "destination": "/api/server?kind=fortnight-agreements&path=:path*"
+    },
+    {
+      "source": "/billing/:path*",
+      "destination": "/api/server?kind=billing&path=:path*"
+    }
+  ]
+}
