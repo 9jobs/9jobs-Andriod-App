@@ -8,6 +8,33 @@ import { fetchBlobBuffer, uploadPrivatePdf } from '@/lib/storage/blob';
 import { getStripeClient } from '@/lib/billing/stripe';
 import { getHostedCheckoutCustomerCaptureConfig } from '@/lib/billing/checkout';
 import { BILLING_PLAN_TYPES, BILLING_STATES } from '@/lib/billing/constants';
+import { getSupabaseServerClient } from '@/lib/supabase/server';
+
+async function getLatestInvoiceNumber() {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    // Fetch only the newest invoice row instead of loading every stored record.
+    const { data, error } = await getSupabaseServerClient()
+      .from('website_admin_records')
+      .select('payload')
+      .eq('model', 'Invoice')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn('Unable to load the latest invoice number:', error.message);
+      return '';
+    }
+
+    return String(data?.[0]?.payload?.invoiceNumber || '');
+  }
+
+  const latestInvoice = await Invoice.findOne({})
+    .sort({ _id: -1 })
+    .select('invoiceNumber')
+    .lean();
+
+  return String(latestInvoice?.invoiceNumber || '');
+}
 
 function getBaseUrl(origin = '') {
   const normalizedOrigin = String(origin || '').replace(/\/$/, '');
@@ -454,10 +481,7 @@ export async function updateInvoicePaymentStatus(id, nextPaymentStatus) {
 
 export async function suggestNextInvoiceDetails() {
   await connectDB();
-  const latestInvoice = await Invoice.findOne({})
-    .sort({ _id: -1 })
-    .select('invoiceNumber')
-    .lean();
+  const latestInvoiceNumber = await getLatestInvoiceNumber();
 
   // Calculate current date details
   const now = new Date();
@@ -467,8 +491,8 @@ export async function suggestNextInvoiceDetails() {
 
   let nextNum = 17; // Default start if no database records
 
-  if (latestInvoice?.invoiceNumber) {
-    const match = latestInvoice.invoiceNumber.match(/9J-\d{6}-(\d+)/);
+  if (latestInvoiceNumber) {
+    const match = latestInvoiceNumber.match(/9J-\d{6}-(\d+)/);
     if (match) {
       nextNum = parseInt(match[1], 10) + 1;
     }

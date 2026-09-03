@@ -7,6 +7,33 @@ import { fetchBlobBuffer, uploadPrivatePdf } from '@/lib/storage/blob';
 import { constantTimeCompare, generateSecureToken, hashToken } from '@/utils/cryptoUtils';
 import { getStripeClient } from '@/lib/billing/stripe';
 import { getHostedCheckoutCustomerCaptureConfig } from '@/lib/billing/checkout';
+import { getSupabaseServerClient } from '@/lib/supabase/server';
+
+async function getLatestFortnightInvoiceNumber() {
+  if (process.env.DATABASE_PROVIDER === 'supabase') {
+    // Fetch only the newest invoice row instead of loading every stored record.
+    const { data, error } = await getSupabaseServerClient()
+      .from('website_admin_records')
+      .select('payload')
+      .eq('model', 'FortnightInvoice')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.warn('Unable to load the latest fortnight invoice number:', error.message);
+      return '';
+    }
+
+    return String(data?.[0]?.payload?.invoiceNumber || '');
+  }
+
+  const latestInvoice = await FortnightInvoice.findOne({})
+    .sort({ _id: -1 })
+    .select('invoiceNumber')
+    .lean();
+
+  return String(latestInvoice?.invoiceNumber || '');
+}
 
 function formatDateOnly(date) {
   return date.toISOString().split('T')[0];
@@ -669,10 +696,7 @@ export async function updateFortnightInvoicePaymentStatus(id, nextPaymentStatus)
 
 export async function suggestNextFortnightInvoiceDetails() {
   await connectDB();
-  const latestInvoice = await FortnightInvoice.findOne({})
-    .sort({ _id: -1 })
-    .select('invoiceNumber')
-    .lean();
+  const latestInvoiceNumber = await getLatestFortnightInvoiceNumber();
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -680,8 +704,8 @@ export async function suggestNextFortnightInvoiceDetails() {
 
   let nextNum = 1;
 
-  if (latestInvoice?.invoiceNumber) {
-    const match = latestInvoice.invoiceNumber.match(/9JF-\d{6}-(\d+)/);
+  if (latestInvoiceNumber) {
+    const match = latestInvoiceNumber.match(/9JF-\d{6}-(\d+)/);
     if (match) {
       nextNum = parseInt(match[1], 10) + 1;
     }
