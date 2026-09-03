@@ -133,7 +133,17 @@ class SupabaseQuery {
   skip(count) { this.skipCount = count; return this; }
   lean() { this.asLean = true; return this; }
   async exec() {
-    const { data, error } = await getSupabaseServerClient().from(TABLE).select('id,payload,created_at,updated_at').eq('model', this.model);
+    let request = getSupabaseServerClient()
+      .from(TABLE)
+      .select('id,payload,created_at,updated_at')
+      .eq('model', this.model);
+
+    // ID lookups are used by invoice actions and must not scan every model record.
+    if (typeof this.filter?._id === 'string') {
+      request = request.eq('id', this.filter._id);
+    }
+
+    const { data, error } = await request;
     if (error) throw new Error(`Supabase query failed: ${error.message}`);
     let documents = (data || []).map((row) => ({ _id: row.id, ...hydrate(row.payload || {}), createdAt: new Date(row.created_at), updatedAt: new Date(row.updated_at) })).filter((document) => matches(document, this.filter));
     if (this.sortSpec) documents.sort((a, b) => {
