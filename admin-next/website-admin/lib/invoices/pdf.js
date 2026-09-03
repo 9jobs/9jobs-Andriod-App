@@ -24,7 +24,13 @@ const COLOR_PANEL = rgb(0.96, 0.97, 0.99);
 const COLOR_NAVY = rgb(0.08, 0.18, 0.36);
 
 function formatDate(value) {
-  const date = new Date(`${value}T00:00:00Z`);
+  const dateOnly = String(value || '').trim().match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+
+  if (dateOnly) {
+    return dateOnly;
+  }
+
+  const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return value;
