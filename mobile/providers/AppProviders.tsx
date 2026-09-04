@@ -7,6 +7,20 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { clerkPublishableKey, isClerkConfigured } from "@/lib/clerk/config";
 import { SessionProvider } from "@/providers/SessionProvider";
 import { BackgroundAnimationProvider } from "@/components/motion/background-animation-provider";
+import mobileAds from "react-native-google-mobile-ads";
+
+let adMobInitializationStarted = false;
+
+function initializeAdMob() {
+  if (adMobInitializationStarted) return;
+
+  adMobInitializationStarted = true;
+  void mobileAds().initialize().catch((error: unknown) => {
+    if (__DEV__) {
+      console.warn("[AdMob] Test SDK initialization failed:", error);
+    }
+  });
+}
 
 export function AppProviders({ children }: PropsWithChildren) {
   const [queryClient] = useState(
@@ -25,6 +39,8 @@ export function AppProviders({ children }: PropsWithChildren) {
     if (__DEV__) {
       LogBox.ignoreAllLogs();
     }
+
+    initializeAdMob();
   }, []);
 
   const app = (

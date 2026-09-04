@@ -60,6 +60,13 @@
       "expo-speech-recognition",
       "expo-status-bar",
       [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-1998504395902764~2807939779",
+          "iosAppId": "ca-app-pub-1998504395902764~1981943267"
+        }
+      ],
+      [
         "expo-contacts",
         {
           "contactsPermission": "Allow 9Jobs to access your contacts to share them in chat."

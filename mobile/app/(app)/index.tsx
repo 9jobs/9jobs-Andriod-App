@@ -15,6 +15,7 @@ import { CardFloatingParticles } from "@/components/motion/card-floating-particl
 import { RocketLaunchGlow } from "@/components/motion/rocket-launch-glow";
 import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
 import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
+import { TestBannerAd } from "@/components/ads/TestBannerAd";
 
 export default function HomeScreen() {
   const { user } = useSession();
@@ -337,6 +338,8 @@ export default function HomeScreen() {
           </AnimatedPressable>
         </View>
       </FadeInView>
+
+      <TestBannerAd />
 
     </Screen>
   );
