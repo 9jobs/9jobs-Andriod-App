@@ -14,7 +14,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "codex/localhost-app-updates": false
+      "codex/localhost-app-updates": false,
+      "main": false
     }
   }
 }
