@@ -142,4 +142,4 @@ FortnightAgreementSchema.index({ createdAt: -1 });
 FortnightAgreementSchema.index({ status: 1, createdAt: -1 });
 
 const mongoModel = mongoose.models.FortnightAgreement || mongoose.model('FortnightAgreement', FortnightAgreementSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('FortnightAgreement') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('FortnightAgreement') : mongoModel;

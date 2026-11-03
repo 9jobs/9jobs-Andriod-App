@@ -1,6 +1,11 @@
 import { randomBytes } from 'crypto';
 
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getNeonRecordClient } from '@/lib/storage/neon-client';
+
+function getRecordClient() {
+  return process.env.DATABASE_PROVIDER === 'neon' ? getNeonRecordClient() : getSupabaseServerClient();
+}
 
 const TABLE = 'website_admin_records';
 const DATE_FIELD = /(?:At|Date)$/;
@@ -115,7 +120,7 @@ class SupabaseDocument {
     delete payload._id;
     delete payload.createdAt;
     delete payload.updatedAt;
-    const { error } = await getSupabaseServerClient().from(TABLE).upsert({
+    const { error } = await getRecordClient().from(TABLE).upsert({
       id: String(this._id), model: this.__model, payload, created_at: normalize(this.createdAt), updated_at: now,
     }, { onConflict: 'id' });
     if (error) throw new Error(`Supabase save failed: ${error.message}`);
@@ -133,7 +138,7 @@ class SupabaseQuery {
   skip(count) { this.skipCount = count; return this; }
   lean() { this.asLean = true; return this; }
   async exec() {
-    let request = getSupabaseServerClient()
+    let request = getRecordClient()
       .from(TABLE)
       .select('id,payload,created_at,updated_at')
       .eq('model', this.model);
@@ -204,9 +209,9 @@ export function getSupabaseModel(model) {
       await Promise.all(documents.map(async (document) => { const next = new SupabaseDocument(model, applyUpdate(document.toObject(), update)); await next.save(); }));
       return { acknowledged: true, matchedCount: documents.length, modifiedCount: documents.length };
     },
-    async deleteOne(filter) { const existing = await new SupabaseQuery(model, filter, true).exec(); if (!existing) return { acknowledged: true, deletedCount: 0 }; const { error } = await getSupabaseServerClient().from(TABLE).delete().eq('id', String(existing._id)); if (error) throw new Error(`Supabase delete failed: ${error.message}`); return { acknowledged: true, deletedCount: 1 }; },
-    async deleteMany(filter = {}) { const documents = await new SupabaseQuery(model, filter).exec(); if (!documents.length) return { acknowledged: true, deletedCount: 0 }; const { error } = await getSupabaseServerClient().from(TABLE).delete().in('id', documents.map((document) => String(document._id))); if (error) throw new Error(`Supabase delete failed: ${error.message}`); return { acknowledged: true, deletedCount: documents.length }; },
-    async findByIdAndDelete(id) { const existing = await new SupabaseQuery(model, { _id: String(id) }, true).exec(); if (!existing) return null; const { error } = await getSupabaseServerClient().from(TABLE).delete().eq('id', String(id)); if (error) throw new Error(`Supabase delete failed: ${error.message}`); return existing; },
+    async deleteOne(filter) { const existing = await new SupabaseQuery(model, filter, true).exec(); if (!existing) return { acknowledged: true, deletedCount: 0 }; const { error } = await getRecordClient().from(TABLE).delete().eq('id', String(existing._id)); if (error) throw new Error(`Supabase delete failed: ${error.message}`); return { acknowledged: true, deletedCount: 1 }; },
+    async deleteMany(filter = {}) { const documents = await new SupabaseQuery(model, filter).exec(); if (!documents.length) return { acknowledged: true, deletedCount: 0 }; const { error } = await getRecordClient().from(TABLE).delete().in('id', documents.map((document) => String(document._id))); if (error) throw new Error(`Supabase delete failed: ${error.message}`); return { acknowledged: true, deletedCount: documents.length }; },
+    async findByIdAndDelete(id) { const existing = await new SupabaseQuery(model, { _id: String(id) }, true).exec(); if (!existing) return null; const { error } = await getRecordClient().from(TABLE).delete().eq('id', String(id)); if (error) throw new Error(`Supabase delete failed: ${error.message}`); return existing; },
     async countDocuments(filter = {}) { return (await new SupabaseQuery(model, filter).exec()).length; },
     async exists(filter = {}) { const document = await new SupabaseQuery(model, filter, true).exec(); return document ? { _id: document._id } : null; },
   });

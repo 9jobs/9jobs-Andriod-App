@@ -33,7 +33,7 @@ function toSupabaseStorageKey(key) {
 }
 
 function isSupabaseEnabled() {
-  return process.env.DATABASE_PROVIDER === 'supabase';
+  return ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER);
 }
 
 async function getBucket() {

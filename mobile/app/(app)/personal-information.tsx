@@ -1,3 +1,4 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import { useEffect, useState, useRef } from "react";
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
@@ -151,7 +152,7 @@ export default function PersonalInformationScreen() {
         <Text style={styles.title}>Personal Information</Text>
       </View>
 
-      <ScrollView
+      <SmoothScrollView
         {...verticalScrollProps}
         contentContainerStyle={styles.content}
       >
@@ -182,7 +183,7 @@ export default function PersonalInformationScreen() {
             <Text style={styles.buttonText}>{isPending ? "Saving..." : "Save Personal Information"}</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </SmoothScrollView>
     </Screen>
   );
 }
@@ -236,14 +237,14 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 24,
     lineHeight: 30,
     marginTop: spacing.xs,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   content: {
     paddingBottom: spacing.xl,
   },
@@ -258,7 +259,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   photoRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -284,7 +285,7 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 14,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   inputGroup: {
     gap: spacing.xs,
   },
@@ -292,14 +293,14 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.mutedText,
     fontSize: 13,
-  },
+   fontFamily: "Inter_400Regular" },
   input: {
     minHeight: 52,
     borderRadius: radii.lg,
     paddingHorizontal: 16,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   button: {
     backgroundColor: colors.accent,
     borderRadius: radii.pill,
@@ -315,5 +316,5 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 16,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
 });

@@ -127,7 +127,7 @@ describe("SessionProvider", () => {
     expect(getByTestId("session-state").props.children).toBe("restored@9jobs.app");
   });
 
-  test("connects the socket after saving the backend auth token", async () => {
+  test("keeps demo login local without minting backend identity or connecting a private socket", async () => {
     let tree!: TestRenderer.ReactTestRenderer;
 
     await act(async () => {
@@ -149,7 +149,7 @@ describe("SessionProvider", () => {
       await Promise.resolve();
     });
 
-    expect(await AsyncStorage.getItem("auth_token")).toBe("test-backend-token");
-    expect(mockConnectSocket).toHaveBeenCalled();
+    expect(await AsyncStorage.getItem("auth_token")).toBeNull();
+    expect(mockConnectSocket).not.toHaveBeenCalled();
   });
 });

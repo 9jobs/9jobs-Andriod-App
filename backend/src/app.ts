@@ -1,3 +1,4 @@
+import "./lib/env";
 import express from "express";
 import cors from "cors";
 import type { Router } from "express";
@@ -26,11 +27,17 @@ export function createApp() {
     cors({
       origin: "*",
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
+      allowedHeaders: ["Content-Type", "Authorization", "x-9jobs-storage-path"],
     })
   );
 
+  // Stripe signature verification requires the exact raw bytes, before JSON parsing.
+  app.use("/api/stripe/webhook", express.raw({ type: "application/json", limit: "1mb" }),
+    lazyRouter(() => import("./routes/stripeWebhook")));
+
   app.use(express.json({ limit: "10mb" }));
+  app.use("/api", lazyRouter(() => import("./routes/sheetSync")));
+  app.use("/api", lazyRouter(() => import("./routes/database")));
 
   app.use("/api/auth", lazyRouter(() => import("./routes/auth")));
   app.use("/api", lazyRouter(() => import("./routes/chat")));
@@ -38,10 +45,11 @@ export function createApp() {
   app.use("/api", lazyRouter(() => import("./routes/tracker")));
   app.use("/api", lazyRouter(() => import("./routes/contact")));
   app.use("/api", lazyRouter(() => import("./routes/questionnaire")));
+  app.use("/api", lazyRouter(() => import("./routes/platformCredentials")));
   app.use("/api", lazyRouter(() => import("./routes/payments")));
 
   app.get("/health", (req, res) => {
-    res.json({ status: "healthy", time: new Date().toISOString() });
+    res.json({ status: "healthy", time: new Date().toISOString(), ...(process.env.LOCAL_DATABASE_MODE === "isolated-e2e" ? {localTestEnvironment:true} : {}) });
   });
 
   return app;

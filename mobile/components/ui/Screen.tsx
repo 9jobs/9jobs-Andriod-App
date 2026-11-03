@@ -1,17 +1,20 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import { PropsWithChildren, useCallback, useRef } from "react";
-import { useFocusEffect, usePathname } from "expo-router";
+import { useFocusEffect, usePathname, useSegments } from "expo-router";
 import { ScrollView, StyleSheet, View, ViewStyle } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, type SafeAreaViewProps } from "react-native-safe-area-context";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing, useThemeVersion } from "@/theme";
-import { AnimatedScreenContainer } from "@/components/motion/animated-screen-container";
 import { ScreenBackground } from "@/components/motion/screen-background";
+import { AppHeader } from "./AppHeader";
 
 type ScreenProps = PropsWithChildren<{
   scroll?: boolean;
   preserveScroll?: boolean;
+  showHeader?: boolean;
   style?: ViewStyle;
   contentStyle?: ViewStyle;
+  safeAreaEdges?: SafeAreaViewProps["edges"];
 }>;
 
 const screenScrollOffsets = new Map<string, number>();
@@ -20,11 +23,16 @@ export function Screen({
   children,
   scroll = true,
   preserveScroll = false,
+  showHeader = true,
   style,
   contentStyle,
+  safeAreaEdges,
 }: ScreenProps) {
   useThemeVersion();
   const pathname = usePathname();
+  const segments = useSegments();
+  const mainTitles: Record<string, string> = { "/": "Home", "/about": "About", "/services": "Services", "/tracker": "Tracker", "/messages": "Chat", "/profile": "Profile" };
+  const mainTitle = segments.some(segment => String(segment) === "(app)") ? mainTitles[pathname] : undefined;
   const scrollRef = useRef<ScrollView | null>(null);
   const lastOffsetRef = useRef(screenScrollOffsets.get(pathname) ?? 0);
 
@@ -61,23 +69,25 @@ export function Screen({
   );
 
   const body = (
-    <AnimatedScreenContainer style={[styles.content, contentStyle]}>
-      <ScreenBackground />
+    <View style={[styles.content, contentStyle]}>
       {children}
-    </AnimatedScreenContainer>
+    </View>
   );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
+    <SafeAreaView edges={safeAreaEdges} style={[styles.safeArea, { backgroundColor: colors.background }, style]}>
+      {/* Keep native SVG backing surfaces bounded by the viewport, not long scroll content. */}
+      <ScreenBackground />
+      {showHeader && mainTitle ? <AppHeader title={mainTitle} /> : null}
       {scroll ? (
-        <ScrollView
+        <SmoothScrollView
           ref={scrollRef}
           {...verticalScrollProps}
           onScroll={preserveScroll ? (event) => saveOffset(event.nativeEvent.contentOffset.y) : undefined}
           contentContainerStyle={styles.scrollInner}
         >
           {body}
-        </ScrollView>
+        </SmoothScrollView>
       ) : (
         body
       )}
@@ -94,7 +104,9 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingHorizontal: spacing.lg,
     paddingBottom: 120,
-    gap: spacing.lg,
+    gap: 24,
+
+    paddingTop: 8,
   },
   scrollInner: {
     flexGrow: 1,

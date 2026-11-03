@@ -1,6 +1,6 @@
 import { buildMessageThread, buildPricingScreenContent, buildTrackerSummaryFromApplications, buildUserHomeMetrics, mapJobsWithUserState } from "@/lib/data/live-sync";
 import { previewMobileUser } from "@/lib/data/preview-user";
-import { supabase } from "@/lib/supabase/client";
+import { neonDatabase as supabase } from "@/lib/data/neon-database-client";
 import { setTheme } from "@/theme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { PremiumScreenContent } from "@/lib/data/premium-content";
@@ -10,6 +10,7 @@ import type { SessionUser } from "@/types/auth";
 import { storageKeys } from "@/lib/utils/storage";
 import { clearBackendAuthTokenCache, getBackendAuthToken, resolveBackendUrl } from "@/lib/data/backend-auth-token";
 import { startTrackedRequest } from "@/lib/perf/livePerf";
+import { fetchAuthorizedSheetJobs } from "./sheet-records";
 import {
   latestApplicationsByJob,
   mergeApplicationScreenshotsFromActivity,
@@ -357,6 +358,7 @@ export type LiveOutreachContact = {
 };
 
 export type MobileSyncSnapshot = {
+  cacheContext?: { backendUrl: string; source: "server" | "backend-api" | "empty" };
   profile: CandidateProfile & {
     id: string;
     avatarUrl: string;
@@ -380,6 +382,7 @@ export type MobileSyncSnapshot = {
   trackerRecruiterContacts: RecruiterContactRow[];
   trackerColdEmails: ColdEmailRow[];
   trackerActivityLogs: ActivityLogRow[];
+  sourceActivity?: { records: number; emailsSent: number; contactsAdded: number; messagesSent: number; messagesShared: number } | null;
   homeMetrics: {
     totalApplications: number;
     todayApplied: number;
@@ -437,6 +440,7 @@ export type MobileSyncSnapshot = {
   outreachContacts: LiveOutreachContact[];
   messageThread: ReturnType<typeof buildMessageThread>;
   services: LiveServiceCard[];
+  serviceCatalogConfigured?: boolean;
   pricingContent: PremiumScreenContent;
   successStories: LiveSuccessStory[];
   activePlanId: string | null;
@@ -481,7 +485,7 @@ const seedSuccessStories: SuccessStoryRow[] = [
 
 function requireSupabase() {
   if (!supabase) {
-    throw new Error("Supabase is not configured for the mobile app.");
+    throw new Error("Database API is not configured for the mobile app.");
   }
 
   return supabase;
@@ -492,234 +496,8 @@ function getSnapshotCacheKey(userId: string) {
 }
 
 async function ensurePreviewUserRecords(sessionUser?: SessionUser | null) {
-  const client = requireSupabase();
-  const activeUser = resolveActiveUser(sessionUser);
-
-  try {
-    const { error: categoryError } = await client
-      .from("job_categories")
-      .upsert(seedCategoryNames.map((name) => ({ name })), { onConflict: "name" });
-    if (categoryError) throw categoryError;
-  } catch (e: any) {
-    console.warn("Seeding job_categories failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { error: serviceError } = await client.from("services").upsert(seedServices, { onConflict: "id" });
-    if (serviceError) throw serviceError;
-  } catch (e: any) {
-    console.warn("Seeding services failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { error: planError } = await client.from("pricing_plans").upsert(seedPricingPlans, { onConflict: "id" });
-    if (planError) throw planError;
-  } catch (e: any) {
-    console.warn("Seeding pricing_plans failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { error: successStoriesError } = await client.from("success_stories").upsert(seedSuccessStories, { onConflict: "id" });
-    if (successStoriesError) throw successStoriesError;
-  } catch (e: any) {
-    console.warn("Seeding success_stories failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const profilePayload = {
-      id: activeUser.id,
-      full_name: activeUser.fullName,
-      headline: activeUser.headline,
-      location: activeUser.location,
-      email: activeUser.email,
-      avatar_url: activeUser.avatarUrl,
-      weekly_goal: activeUser.weeklyGoal,
-      subscription_plan: activeUser.subscriptionPlan,
-      role: "client",
-      account_status: "active",
-    };
-    const { error: profileError } = await client.from("profiles").upsert([profilePayload], { onConflict: "id" });
-    if (profileError) throw profileError;
-  } catch (e: any) {
-    console.warn("Seeding profile failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { error: systemSettingsError } = await client
-      .from("system_settings")
-      .upsert([{ id: 1, maintenance_mode: false, push_notifications_enabled: true, dark_mode_override: false }], { onConflict: "id" });
-    if (systemSettingsError) throw systemSettingsError;
-  } catch (e: any) {
-    console.warn("Seeding system_settings failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { error: subscriptionError } = await client
-      .from("user_subscriptions")
-      .upsert([{ user_id: activeUser.id, plan_id: activeUser.subscriptionPlan, status: "active" }], { onConflict: "user_id" });
-    if (subscriptionError) throw subscriptionError;
-  } catch (e: any) {
-    console.warn("Seeding user_subscriptions failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { error: resumeError } = await client
-      .from("resume_scores")
-      .upsert([{ user_id: activeUser.id, score: 97, suggestions: [], notes: "Live preview score" }], { onConflict: "user_id" });
-    if (resumeError) throw resumeError;
-  } catch (e: any) {
-    console.warn("Seeding resume_scores failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const seedJobs = [
-      {
-        id: "job_resume_lead",
-        title: "Sr. Frontend Engineer",
-        company: "Stripe",
-        location: "Geelong",
-        salary: "$165k/yr",
-        job_type: "Full-time",
-        posted_at: "5h ago",
-        match_score: 98,
-        tags: ["React", "Remote"],
-        description: "Build polished candidate-facing experiences across the premium 9Jobs workflow.",
-      },
-      {
-        id: "job_growth_specialist",
-        title: "Product Designer",
-        company: "Figma",
-        location: "Sydney",
-        salary: "$145k/yr",
-        job_type: "Full-time",
-        posted_at: "2d ago",
-        match_score: 94,
-        tags: ["Design", "Systems"],
-        description: "Shape the systems and product surfaces used by thousands of design-led teams.",
-      },
-      {
-        id: "job_interview_coach",
-        title: "DX Engineer",
-        company: "Vercel",
-        location: "Perth",
-        salary: "$155k/yr",
-        job_type: "Remote",
-        posted_at: "1d ago",
-        match_score: 91,
-        tags: ["Developer Experience", "Remote"],
-        description: "Improve developer workflows and platform adoption across global engineering teams.",
-      },
-      {
-        id: "job_pipeline_growth",
-        title: "Job Search Growth Specialist",
-        company: "Greenline Talent",
-        location: "Melbourne",
-        salary: "$140k/yr",
-        job_type: "Full-time",
-        posted_at: "5h ago",
-        match_score: 88,
-        tags: ["Pipeline", "Recruiting"],
-        description: "Support high-output job-search operations with strong follow-up and funnel tracking.",
-      },
-    ];
-
-    const { error: jobsError } = await client.from("jobs").upsert(seedJobs, { onConflict: "id" });
-    if (jobsError) throw jobsError;
-  } catch (e: any) {
-    console.warn("Seeding jobs failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { data: existingApplications, error: applicationsError } = await client
-      .from("applications")
-      .select("id")
-      .eq("user_id", activeUser.id);
-    if (applicationsError) throw applicationsError;
-
-    if (!existingApplications || existingApplications.length === 0) {
-      const { error } = await client.from("applications").insert([
-        { user_id: activeUser.id, client_id: activeUser.id, job_id: "job_resume_lead", status: "applied", current_stage: "applied", application_date: new Date().toISOString(), applied_at: new Date().toISOString(), company_name: "Stripe", job_title: "Sr. Frontend Engineer", job_location: "Remote", is_active: true },
-        { user_id: activeUser.id, client_id: activeUser.id, job_id: "job_growth_specialist", status: "interview_scheduled", current_stage: "interview_scheduled", application_date: new Date().toISOString(), applied_at: new Date().toISOString(), company_name: "Figma", job_title: "Product Designer", job_location: "SF", is_active: true },
-        { user_id: activeUser.id, client_id: activeUser.id, job_id: "job_interview_coach", status: "offer_received", current_stage: "offer_received", application_date: new Date().toISOString(), applied_at: new Date().toISOString(), company_name: "Vercel", job_title: "DX Engineer", job_location: "Remote", offer_received_at: new Date().toISOString(), is_active: true },
-      ]);
-      if (error) throw error;
-    }
-  } catch (e: any) {
-    console.warn("Seeding applications failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    const { data: existingSavedJobs, error: savedJobsError } = await client
-      .from("saved_jobs")
-      .select("job_id")
-      .eq("user_id", activeUser.id);
-    if (savedJobsError) throw savedJobsError;
-
-    if (!existingSavedJobs || existingSavedJobs.length === 0) {
-      const { error } = await client.from("saved_jobs").insert([
-        { user_id: activeUser.id, job_id: "job_pipeline_growth" },
-      ]);
-      if (error) throw error;
-    }
-  } catch (e: any) {
-    console.warn("Seeding saved_jobs failed (likely due to RLS):", e.message || e);
-  }
-
-  try {
-    let existingMessages;
-    try {
-      const { data, error } = await client
-        .from("messages")
-        .select("id")
-        .eq("conversation_id", activeUser.id);
-      if (error) throw error;
-      existingMessages = data;
-    } catch (e: any) {
-      const { data, error } = await client
-        .from("messages")
-        .select("id")
-        .or(`sender_id.eq.${activeUser.id},recipient_id.eq.${activeUser.id}`);
-      if (error) throw error;
-      existingMessages = data;
-    }
-
-    if (!existingMessages || existingMessages.length === 0) {
-      try {
-        const { error: convError } = await client.from("conversations").upsert([
-          {
-            id: activeUser.id,
-            client_id: activeUser.id,
-            status: "open",
-            type: "support",
-          }
-        ], { onConflict: "id" });
-        if (convError) throw convError;
-
-        const { error } = await client.from("messages").insert([
-          {
-            conversation_id: activeUser.id,
-            sender_id: "admin",
-            sender_role: "admin",
-            recipient_id: activeUser.id,
-            text: "Welcome to the live 9Jobs preview. This thread is synced with the admin panel.",
-            status: "delivered",
-          },
-        ]);
-        if (error) throw error;
-      } catch (newSchemaErr: any) {
-        const { error } = await client.from("messages").insert([
-          {
-            sender_id: "admin",
-            recipient_id: activeUser.id,
-            content: "Welcome to the live 9Jobs preview. This thread is synced with the admin panel.",
-          },
-        ]);
-        if (error) throw error;
-      }
-    }
-  } catch (e: any) {
-    console.warn("Seeding messages failed (likely due to RLS):", e.message || e);
-  }
+  // Profiles are created by the server; never seed demo records into live Neon.
+  await getBackendAuthToken(resolveActiveUser(sessionUser));
 }
 
 function mapProfile(profile: ProfileRow, activePlanId: string | null): MobileSyncSnapshot["profile"] {
@@ -857,7 +635,10 @@ function mapServices(services: ServiceRow[]): LiveServiceCard[] {
     "success-stories",
   ];
 
-  const activeServices = services
+  // An unconfigured catalog must not hide the app's existing service navigation.
+  // A configured catalog, including explicitly disabled entries, remains authoritative.
+  const catalog = services.length === 0 ? seedServices : services;
+  const activeServices = catalog
     .filter((service) => service.visibility !== false && service.status === "active")
     .map((service) => {
       const override = metadata[service.id];
@@ -890,6 +671,16 @@ function mapServices(services: ServiceRow[]): LiveServiceCard[] {
   });
 
   return activeServices;
+}
+
+export function selectServiceCatalog(snapshot: Pick<MobileSyncSnapshot, "services" | "serviceCatalogConfigured">): LiveServiceCard[] {
+  // Older cached snapshots may contain only the always-added pricing link.
+  // Repair that public navigation without clearing any cached client data.
+  if (snapshot.serviceCatalogConfigured !== true &&
+      !snapshot.services?.some(service => service.id !== "pricing")) {
+    return mapServices([]);
+  }
+  return snapshot.services;
 }
 
 function mapSuccessStories(stories: SuccessStoryRow[]): LiveSuccessStory[] {
@@ -991,6 +782,7 @@ function buildSnapshotFromSource({
   notificationRows,
   activityLogRows,
   coverLetterRow,
+  sourceActivity,
 }: {
   activeUser: ReturnType<typeof resolveActiveUser>;
   profileRow?: ProfileRow | null;
@@ -1013,6 +805,7 @@ function buildSnapshotFromSource({
   notificationRows: NotificationRow[];
   activityLogRows: ActivityLogRow[];
   coverLetterRow?: { user_id: string; content: string } | null;
+  sourceActivity?: MobileSyncSnapshot["sourceActivity"];
 }): MobileSyncSnapshot {
   const categoriesById = Object.fromEntries(
     categoriesRows.map((category) => [category.id, category.name]),
@@ -1091,6 +884,7 @@ function buildSnapshotFromSource({
     trackerRecruiterContacts: recruiterContactsRows,
     trackerColdEmails: coldEmailsRows,
     trackerActivityLogs: activityLogRows,
+    sourceActivity: sourceActivity ?? null,
     homeMetrics: buildUserHomeMetrics(
       rawApplications,
       resumeScore,
@@ -1125,6 +919,7 @@ function buildSnapshotFromSource({
     })),
     messageThread: buildMessageThread(messages, profile.fullName),
     services: mapServices(servicesRows),
+    serviceCatalogConfigured: servicesRows.length > 0,
     pricingContent: buildPricingScreenContent(plansRows, activePlanId),
     successStories: mapSuccessStories(successStoriesRows),
     activePlanId,
@@ -1199,7 +994,7 @@ export function clearInMemoryTokenCache() {
   clearBackendAuthTokenCache();
 }
 
-async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiveUser>, backendUrl?: string) {
+async function ensureBackendAuthToken(activeUser: SessionUser, backendUrl?: string) {
   const resolvedBackendUrl = backendUrl || process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
   if (!resolvedBackendUrl) {
     return null;
@@ -1212,8 +1007,11 @@ async function ensureBackendAuthToken(activeUser: ReturnType<typeof resolveActiv
 
 export async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
   const activeUser = resolveActiveUser(sessionUser);
+  const realAccount = activeUser.id !== previewMobileUser.id;
+  const usable = (value: MobileSyncSnapshot | null) => value?.profile?.id === activeUser.id &&
+    (!realAccount || value.cacheContext?.backendUrl === resolveBackendUrl());
 
-  if (inMemoryStore?.profile?.id === activeUser.id) {
+  if (usable(inMemoryStore)) {
     return inMemoryStore;
   }
 
@@ -1243,7 +1041,7 @@ export async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Pr
       (await AsyncStorage.getItem(storageKeys.snapshotCache));
     if (cached) {
       const parsed = JSON.parse(cached);
-      if (parsed?.profile?.id === activeUser.id) {
+      if (usable(parsed)) {
         inMemoryStore = parsed;
       }
       if (inMemoryStore && !Array.isArray(inMemoryStore.notifications)) {
@@ -1277,6 +1075,17 @@ export async function getLocalSyncSnapshot(sessionUser?: SessionUser | null): Pr
     }
   } catch (err) {
     console.error("Failed to read from AsyncStorage cache:", err);
+  }
+
+  if (realAccount) {
+    // A failed connection must never fabricate applications, interviews or offers for a real account.
+    inMemoryStore = buildSnapshotFromSource({ activeUser, profileRow:buildFallbackProfileRow(activeUser),
+      jobsRows:[], applicationsRows:[], savedJobsRows:[], categoriesRows:[], messagesRows:[],
+      servicesRows:seedServices as any, plansRows:seedPricingPlans as any, successStoriesRows:seedSuccessStories,
+      interviewsRows:[], followUpsRows:[], recruiterContactsRows:[], coldEmailsRows:[], clientScoresRows:[],
+      notificationRows:[], activityLogRows:[] });
+    inMemoryStore.cacheContext = {backendUrl:resolveBackendUrl(),source:"empty"};
+    return inMemoryStore;
   }
 
   const activePlanId = "free";
@@ -1485,10 +1294,11 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
     try {
       const backendSnapshot = await fetchBackendSnapshot(activeUser);
       if (backendSnapshot) {
+        const sheetJobs = await fetchAuthorizedSheetJobs(activeUser.id);
         const snapshot = buildSnapshotFromSource({
           activeUser,
           profileRow: (backendSnapshot.profile as ProfileRow | null) ?? null,
-          jobsRows: (backendSnapshot.jobs as JobRow[]) ?? [],
+          jobsRows: [...sheetJobs, ...((backendSnapshot.jobs as JobRow[]) ?? [])],
           applicationsRows: (backendSnapshot.applications as ApplicationRow[]) ?? [],
           savedJobsRows: (backendSnapshot.savedJobs as SavedJobRow[]) ?? [],
           categoriesRows: (backendSnapshot.categories as CategoryRow[]) ?? [],
@@ -1507,8 +1317,10 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
           notificationRows: (backendSnapshot.notifications as NotificationRow[]) ?? [],
           activityLogRows: (backendSnapshot.activityLogs as ActivityLogRow[]) ?? [],
           coverLetterRow: backendSnapshot.coverLetter ?? null,
+          sourceActivity: backendSnapshot.sourceActivity ?? null,
         });
 
+        snapshot.cacheContext = {backendUrl:resolveBackendUrl(),source:"server"};
         snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
         ensureSupportThreadHasMessages(snapshot, activeUser.id);
 
@@ -1647,6 +1459,7 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       coverLetterRow: (coverLetterResult.data as { user_id: string; content: string } | null) ?? null,
     });
 
+    snapshot.cacheContext = {backendUrl:resolveBackendUrl(),source:"backend-api"};
     snapshot.messages = await applySeenStatusToMessages(snapshot.messages);
     ensureSupportThreadHasMessages(snapshot, activeUser.id);
 

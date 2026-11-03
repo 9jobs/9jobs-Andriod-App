@@ -89,5 +89,5 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.text,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
 });

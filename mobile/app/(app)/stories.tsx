@@ -122,14 +122,14 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   heroCard: {
     borderRadius: radii.lg,
     backgroundColor: colors.dark,
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     letterSpacing: 0.5,
     marginTop: 4,
-  },
+   fontFamily: "Inter_600SemiBold" },
   heroStats: {
     gap: 2,
     flex: 1,
@@ -165,13 +165,13 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: "800",
     lineHeight: 30,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   heroSmall: {
     fontSize: 12,
     color: colors.darkMuted,
     fontWeight: "500",
     marginBottom: 8,
-  },
+   fontFamily: "Inter_500Medium" },
   storyStack: {
     gap: spacing.md,
   },
@@ -203,12 +203,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   storyRole: {
     fontSize: 12,
     color: colors.mutedText,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   timeBadge: {
     borderRadius: radii.pill,
     backgroundColor: colors.softAccent,
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     color: colors.accentDark,
-  },
+   fontFamily: "Inter_600SemiBold" },
   quote: {
     fontSize: 14,
     color: "#4F524A",
@@ -228,10 +228,10 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 2,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   stars: {
     color: colors.accentDark,
     fontSize: 16,
     letterSpacing: 2,
-  },
+   fontFamily: "Inter_400Regular" },
 });

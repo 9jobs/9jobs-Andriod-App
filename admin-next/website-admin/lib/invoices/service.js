@@ -9,11 +9,12 @@ import { getStripeClient } from '@/lib/billing/stripe';
 import { getHostedCheckoutCustomerCaptureConfig } from '@/lib/billing/checkout';
 import { BILLING_PLAN_TYPES, BILLING_STATES } from '@/lib/billing/constants';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getNeonRecordClient } from '@/lib/storage/neon-client';
 
 async function getLatestInvoiceNumber() {
-  if (process.env.DATABASE_PROVIDER === 'supabase') {
+  if (['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER)) {
     // Fetch only the newest invoice row instead of loading every stored record.
-    const { data, error } = await getSupabaseServerClient()
+    const { data, error } = await (process.env.DATABASE_PROVIDER === 'neon' ? getNeonRecordClient() : getSupabaseServerClient())
       .from('website_admin_records')
       .select('payload')
       .eq('model', 'Invoice')

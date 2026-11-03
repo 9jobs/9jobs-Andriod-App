@@ -2,13 +2,15 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./lib/supabase";
-import { previewAdminCredentials, resolveAdminAccess, validatePreviewAdminLogin } from "./lib/adminAuth";
+import { previewAdminCredentials, resolveAdminAccess, requestAdminPasswordToken } from "./lib/adminAuth";
 import { calculateTrackerMetrics } from "./lib/trackerMetrics";
+import { PlatformCredentialsPanel } from "./components/PlatformCredentialsPanel";
 import { parseHiringManagersCsv } from "./lib/hiringManagers";
 import { io } from "socket.io-client";
 
 let adminSocket: any = null;
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || (process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://backend-theta-ten-27.vercel.app");
+const sheetIntegrationEnabled = process.env.NEXT_PUBLIC_SHEET_INTEGRATION_ENABLED === "true";
 let adminSocketSupportPromise: Promise<boolean> | null = null;
 let adminSocketSupportLogged = false;
 const previewTrackerClient = {
@@ -790,7 +792,7 @@ export default function App() {
 
   // Clerk hooks
   const { isLoaded: userLoaded, isSignedIn, user } = useUser();
-  const { signOut: clerkSignOut } = useAuth();
+  const { signOut: clerkSignOut, getToken: getClerkToken } = useAuth();
   const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
 
   // Auth state
@@ -865,6 +867,9 @@ export default function App() {
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
+  const sheetSearchRef = useRef(searchQuery);
+  sheetSearchRef.current = searchQuery;
+  const sheetJobsRequestRef = useRef(0);
   const [filterType, setFilterType] = useState("all");
   const [trackerMetricFilter, setTrackerMetricFilter] = useState("all");
 
@@ -971,7 +976,7 @@ export default function App() {
         const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
         const decoded = JSON.parse(atob(normalizedPayload));
         const expiresAtMs = Number(decoded?.exp || 0) * 1000;
-        if (expiresAtMs > Date.now() + 30_000) {
+        if (expiresAtMs > Date.now() + 30_000 && (!sheetIntegrationEnabled || isSignedIn || decoded.sheet_verified === true)) {
           return existingToken;
         }
       } catch (error) {
@@ -986,7 +991,7 @@ export default function App() {
       try {
         const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getClerkToken()}` },
           body: JSON.stringify({
             email: clerkAdminEmail,
             userId: user.id,
@@ -1006,41 +1011,10 @@ export default function App() {
       }
     }
 
-    const savedPreviewAuth = localStorage.getItem("admin_preview_authenticated") === "true";
-    const canRestorePreviewToken = isPreviewAuthenticated || savedPreviewAuth || isAdmin === true;
-
-    if (!canRestorePreviewToken) {
-      return null;
-    }
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: previewAdminCredentials.email,
-          password: previewAdminCredentials.password,
-          role: "admin",
-        }),
-      });
-
-      if (!res.ok) {
-        localStorage.removeItem("admin_auth_token");
-        return null;
-      }
-
-      const data = await res.json();
-      if (data?.token) {
-        localStorage.setItem("admin_auth_token", data.token);
-        if (!isPreviewAuthenticated && savedPreviewAuth) {
-          setIsPreviewAuthenticated(true);
-        }
-        return data.token as string;
-      }
-    } catch (error) {
-      console.warn("[Admin Auth] Failed to restore admin token:", error);
-    }
-
+    // Expired password sessions require entry in the existing login form.
+    // A local boolean cannot authenticate, and no stored password is replayed.
+    localStorage.removeItem("admin_preview_authenticated");
+    setIsPreviewAuthenticated(false);
     return null;
   };
 
@@ -1074,7 +1048,7 @@ export default function App() {
         try {
           const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getClerkToken()}` },
             body: JSON.stringify({
               email: user.primaryEmailAddress?.emailAddress || "admin@9jobs.app",
               userId: user.id,
@@ -1165,6 +1139,12 @@ export default function App() {
       fetchData();
     }
   }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (!sheetIntegrationEnabled || !isAdmin || activeTab !== "jobs") return;
+    const timer = setTimeout(() => { void fetchJobs().catch((error) => showError(error.message)); }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, isAdmin, activeTab]);
 
   useEffect(() => {
     if (isAdmin && (activeTab === "job_tracker" || activeTab === "hiring_managers") && selectedTrackerClientId) {
@@ -1338,30 +1318,9 @@ export default function App() {
     setAuthLoading(true);
     setAuthError("");
     try {
-      if (validatePreviewAdminLogin(emailInput, passwordInput)) {
-        // Exchange credentials for JWT token on backend
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: emailInput,
-              password: passwordInput,
-              role: "admin",
-            }),
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            localStorage.setItem("admin_auth_token", data.token);
-            console.log("[Admin Auth] Backend JWT token obtained.");
-          } else {
-            console.warn("[Admin Auth] Backend token endpoint returned error, starting in direct DB fallback.");
-          }
-        } catch (fetchErr) {
-          console.warn("[Admin Auth] Backend server not reachable, starting in direct DB fallback:", fetchErr);
-        }
-
+      const passwordToken = await requestAdminPasswordToken(emailInput,passwordInput,BACKEND_URL).catch(()=>null);
+      if (passwordToken) {
+        localStorage.setItem("admin_auth_token",passwordToken);
         localStorage.setItem("admin_preview_authenticated", "true");
         setIsPreviewAuthenticated(true);
         setIsAdmin(true);
@@ -1698,6 +1657,13 @@ export default function App() {
 
         const payload = await response.json();
         if (payload?.stats) {
+          if (sheetIntegrationEnabled) {
+            const privateToken = isSignedIn ? await getClerkToken() : token;
+            const response = await fetch(`${BACKEND_URL}/api/admin/sheet-sync/status`, { headers: { Authorization: `Bearer ${privateToken}` } });
+            if (!response.ok) throw new Error("Private sheet statistics could not be loaded");
+            const source = await response.json();
+            payload.stats.jobsCount += source.snapshot?.record_count || 0;
+          }
           setStats(payload.stats);
           return;
         }
@@ -1893,6 +1859,8 @@ export default function App() {
   };
 
   const fetchJobs = async () => {
+    const requestId = ++sheetJobsRequestRef.current;
+    const sourceQuery = sheetSearchRef.current;
     try {
       const token = await ensureAdminToken();
       if (token && BACKEND_URL) {
@@ -1907,11 +1875,27 @@ export default function App() {
         }
 
         const payload = await response.json();
-        setJobs((payload?.jobs || []) as any[]);
+        let sourceJobs: any[] = [];
+        if (sheetIntegrationEnabled) {
+          const privateToken = isSignedIn ? await getClerkToken() : token;
+          const sourceResponse = await fetch(`${BACKEND_URL}/api/admin/sheet-sync/records?q=${encodeURIComponent(sourceQuery)}&limit=200`, {
+            headers: { Authorization: `Bearer ${privateToken}` },
+          });
+          if (!sourceResponse.ok) throw new Error("Private sheet records could not be loaded");
+          const source = await sourceResponse.json();
+          sourceJobs = source.jobs || [];
+        }
+        if (!sheetIntegrationEnabled || requestId === sheetJobsRequestRef.current) {
+          setJobs([...sourceJobs, ...(payload?.jobs || [])] as any[]);
+        }
         return;
       }
     } catch (backendError) {
       console.warn("fetchJobs backend load failed, falling back to direct Supabase query:", backendError);
+      if (sheetIntegrationEnabled) {
+        if (requestId !== sheetJobsRequestRef.current) return;
+        throw backendError;
+      }
     }
 
     const { data: jobsData, error: jobsError } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
@@ -5386,6 +5370,8 @@ export default function App() {
 
         {/* Client Information Tab Content */}
         {activeTab === "client_information" && (
+          <div>
+          <PlatformCredentialsPanel backendUrl={BACKEND_URL} getToken={ensureAdminToken}/>
           <div className="card">
             <div className="controls-row">
               <div className="search-input-wrapper">
@@ -5475,6 +5461,7 @@ export default function App() {
                 </tbody>
               </table>
             </div>
+          </div>
           </div>
         )}
 

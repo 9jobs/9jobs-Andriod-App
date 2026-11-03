@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "main": "api/server.cjs",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "app-build": "node scripts/clean-static-admin.cjs && npm run build && node scripts/prepare-static-admin.cjs && npm --prefix website-admin ci --include=dev && npm --prefix website-admin run build",
     "start": "next start",

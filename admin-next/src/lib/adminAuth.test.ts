@@ -4,7 +4,7 @@ import {
   isMissingAdminsTableError,
   previewAdminCredentials,
   resolveAdminAccess,
-  validatePreviewAdminLogin,
+  requestAdminPasswordToken,
 } from "./adminAuth";
 
 describe("isMissingAdminsTableError", () => {
@@ -66,25 +66,20 @@ describe("resolveAdminAccess", () => {
   });
 });
 
-describe("validatePreviewAdminLogin", () => {
-  it("accepts the fixed 9Jobs preview credentials", () => {
-    expect(
-      validatePreviewAdminLogin(
-        previewAdminCredentials.email,
-        previewAdminCredentials.password,
-      ),
-    ).toBe(true);
+describe("server-only password authentication", () => {
+  it("ships no default password", () => {
+    expect(previewAdminCredentials.password).toBe("");
   });
 
-  it("rejects a different email", () => {
-    expect(
-      validatePreviewAdminLogin("admin@example.com", previewAdminCredentials.password),
-    ).toBe(false);
+  it("requires server confirmation of admin role", async () => {
+    const rejected=(async()=>({ok:false})) as unknown as typeof fetch;
+    expect(await requestAdminPasswordToken("admin@example.invalid","fixture-password","http://127.0.0.1",rejected)).toBeNull();
+    const client=(async()=>({ok:true,json:async()=>({token:"client-token",user:{role:"client"}})})) as unknown as typeof fetch;
+    expect(await requestAdminPasswordToken("admin@example.invalid","fixture-password","http://127.0.0.1",client)).toBeNull();
   });
 
-  it("rejects a different password", () => {
-    expect(
-      validatePreviewAdminLogin(previewAdminCredentials.email, "wrong-password"),
-    ).toBe(false);
+  it("uses the existing endpoint and returns a confirmed admin token", async () => {
+    const confirmed=(async(url:unknown,options:RequestInit)=>{expect(String(url)).toBe("http://127.0.0.1/api/auth/token");expect(options.method).toBe("POST");return{ok:true,json:async()=>({token:"admin-token",user:{role:"admin"}})};}) as unknown as typeof fetch;
+    expect(await requestAdminPasswordToken("admin@example.invalid","fixture-password","http://127.0.0.1",confirmed)).toBe("admin-token");
   });
 });

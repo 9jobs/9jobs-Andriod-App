@@ -110,4 +110,4 @@ ClientInfoSchema.index({ 'billing.stripeCustomerId': 1 });
 ClientInfoSchema.index({ 'billing.stripeSubscriptionId': 1 });
 
 const mongoModel = mongoose.models.ClientInfo || mongoose.model('ClientInfo', ClientInfoSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('ClientInfo') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('ClientInfo') : mongoModel;

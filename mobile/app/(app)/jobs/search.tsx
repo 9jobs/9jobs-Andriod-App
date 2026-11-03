@@ -1,3 +1,4 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import { useEffect } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -9,72 +10,12 @@ import { AppIcon } from "@/components/ui/AppIcon";
 import { useJobsQuery, useToggleSaveMutation } from "@/features/jobs/hooks";
 import { useJobFilters } from "@/features/jobs/useJobFilters";
 import { filterJobs } from "@/features/jobs/filterJobs";
-import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
+import { searchAppSections } from "@/lib/navigation/home-search-destination";
+import { AppSearchResults } from "@/components/ui/AppSearchResults";
 import { colors, spacing, typography } from "@/theme";
 
 const categories = ["All", "Career Growth", "AI Resume", "Outreach", "Interview", "Remote"] as const;
 const locations = ["Australia", "Remote", "Sydney", "Melbourne", "Brisbane", "Perth", "Geelong", "Adelaide", "Canberra", "Hobart", "Darwin"] as const;
-
-function getShortcutInfo(query: string) {
-  if (!query) return null;
-  const q = query.trim().toLowerCase();
-  
-  if (q === "about" || q === "about us" || q === "aboutus") {
-    return {
-      label: "About Us",
-      pathname: "/(app)/about" as const,
-      icon: "info" as const,
-    };
-  }
-  
-  const dest = resolveHomeSearchDestination(query);
-  if (!dest) return null;
-  
-  if (dest.pathname === "/(app)/jobs/search") {
-    return null;
-  }
-  
-  let label = "";
-  let icon: "tracker" | "resume" | "mail" | "mic" | "story" | "spark" | "settings" | "info" = "tracker";
-  
-  if (dest.pathname === "/(app)/tracker-details") {
-    label = `Job Tracker (${dest.params?.filter || "Filtered"})`;
-    icon = "tracker";
-  } else if (dest.pathname === "/(app)/tracker") {
-    label = "Job Tracker";
-    icon = "tracker";
-  } else if (dest.pathname === "/(app)/resume") {
-    label = "Resume AI";
-    icon = "resume";
-  } else if (dest.pathname === "/(app)/outreach") {
-    label = "Hiring Manager Outreach";
-    icon = "mail";
-  } else if (dest.pathname === "/(app)/interview") {
-    label = "Interview Prep";
-    icon = "mic";
-  } else if (dest.pathname === "/(app)/stories") {
-    label = "Success Stories";
-    icon = "story";
-  } else if (dest.pathname === "/(app)/pricing") {
-    label = "Pricing Plans";
-    icon = "spark";
-  } else if (dest.pathname === "/(app)/services") {
-    label = "All Services";
-    icon = "settings";
-  } else if (dest.pathname === "/(app)/about") {
-    label = "About Us";
-    icon = "info";
-  }
-  
-  if (!label) return null;
-  
-  return {
-    label,
-    pathname: dest.pathname,
-    params: dest.params,
-    icon,
-  };
-}
 
 export default function SearchScreen() {
   const params = useLocalSearchParams<{ query?: string }>();
@@ -82,14 +23,15 @@ export default function SearchScreen() {
   const { data: jobs = [] } = useJobsQuery();
   const toggleSave = useToggleSaveMutation();
 
+  const setQuery = filters.setQuery;
   useEffect(() => {
-    if (typeof params.query === "string" && params.query !== filters.query) {
-      filters.setQuery(params.query);
+    if (typeof params.query === "string") {
+      setQuery(params.query);
     }
-  }, [filters, params.query]);
+  }, [setQuery, params.query]);
 
   const filteredJobs = filterJobs(jobs, filters);
-  const shortcut = getShortcutInfo(filters.query);
+  const appResults = searchAppSections(filters.query);
 
   return (
     <PremiumScaffold
@@ -103,19 +45,14 @@ export default function SearchScreen() {
         placeholder="Search jobs, skills, companies"
         placeholderTextColor={colors.mutedText}
         style={styles.search}
-        onSubmitEditing={() => {
-          if (shortcut) {
-            router.push({
-              pathname: shortcut.pathname as any,
-              params: shortcut.params,
-            });
-          }
-        }}
+        onSubmitEditing={() => { if (appResults.length === 1) router.push(appResults[0].destination as never); }}
+        accessibilityLabel="Search jobs and app sections"
         returnKeyType="search"
       />
+      <AppSearchResults query={filters.query} />
       <View style={styles.filterBlock}>
         <Text style={styles.label}>Category</Text>
-        <ScrollView
+        <SmoothScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           nestedScrollEnabled={true}
@@ -129,11 +66,11 @@ export default function SearchScreen() {
               onPress={() => filters.setCategory(category)}
             />
           ))}
-        </ScrollView>
+        </SmoothScrollView>
       </View>
       <View style={styles.filterBlock}>
         <Text style={styles.label}>Location</Text>
-        <ScrollView
+        <SmoothScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           nestedScrollEnabled={true}
@@ -147,34 +84,14 @@ export default function SearchScreen() {
               onPress={() => filters.setLocation(location)}
             />
           ))}
-        </ScrollView>
+        </SmoothScrollView>
       </View>
       <Pill
         label={filters.onlySaved ? "Saved only: on" : "Saved only: off"}
         selected={filters.onlySaved}
         onPress={filters.toggleOnlySaved}
       />
-      
-      {shortcut && (
-        <AnimatedPressable
-          style={styles.shortcutCard}
-          onPress={() =>
-            router.push({
-              pathname: shortcut.pathname as any,
-              params: shortcut.params,
-            })
-          }
-        >
-          <AppIcon name={shortcut.icon} size={24} color={colors.text} />
-          <View style={styles.shortcutTextContainer}>
-            <Text style={styles.shortcutTitle}>Go to {shortcut.label}</Text>
-            <Text style={styles.shortcutSubtitle}>
-              Tap to open this section of the app
-            </Text>
-          </View>
-          <Text style={styles.shortcutArrow}>→</Text>
-        </AnimatedPressable>
-      )}
+
 
       <View style={styles.results}>
         {filteredJobs.length > 0 ? (
@@ -186,7 +103,7 @@ export default function SearchScreen() {
               onToggleSave={() => toggleSave.mutate(job.id)}
             />
           ))
-        ) : (
+        ) : appResults.length === 0 ? (
           <View style={styles.noResultsContainer}>
             <AppIcon name="search" size={48} color={colors.mutedText} />
             <Text style={styles.noResultsTitle}>No roles found</Text>
@@ -200,7 +117,7 @@ export default function SearchScreen() {
               <Text style={styles.resetButtonText}>Reset Filters</Text>
             </AnimatedPressable>
           </View>
-        )}
+        ) : null}
       </View>
     </PremiumScaffold>
   );
@@ -246,16 +163,16 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 16,
     color: colors.text,
-  },
+   fontFamily: "Inter_400Regular" },
   shortcutSubtitle: {
     ...typography.label,
     fontWeight: "400",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   shortcutArrow: {
     fontSize: 20,
     color: colors.mutedText,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   noResultsContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -274,14 +191,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     marginTop: spacing.xs,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   noResultsSubtitle: {
     ...typography.body,
     color: colors.mutedText,
     textAlign: "center",
     fontSize: 14,
     lineHeight: 20,
-  },
+   fontFamily: "Inter_400Regular" },
   resetButton: {
     backgroundColor: colors.text,
     paddingHorizontal: spacing.lg,
@@ -293,7 +210,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.surface,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   results: {
     gap: spacing.md,
   },

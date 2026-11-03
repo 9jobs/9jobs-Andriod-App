@@ -1,4 +1,5 @@
-import { Pool } from "pg";
+import { createDatabasePool, isNeonDatabase } from "../lib/database";
+import { mutateNeonMessage } from "./neonChat";
 import { supabase, hasNewSchema } from "../lib/supabase";
 import { Server } from "socket.io";
 import {
@@ -43,10 +44,7 @@ function hasUsableDatabaseUrl() {
 }
 
 function createPool() {
-  return new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
+  return createDatabasePool();
 }
 
 type PostgresChatSchema = {
@@ -234,7 +232,7 @@ async function getPostgresMessages(conversationId: string) {
           recipient_id,
           message_type,
           text,
-          content,
+          text as content,
           attachment_url,
           attachment_name,
           attachment_mime_type,
@@ -628,7 +626,7 @@ export async function sendMessage(
   const botInputText = trimmedText || attachmentName || (resolvedMessageType === "image" ? "image attachment" : "attachment");
 
   try {
-    const isNew = await hasNewSchema();
+    const isNew = isNeonDatabase() ? false : await hasNewSchema();
     let activeConversation: any = null;
 
     if (isNew) {
@@ -710,7 +708,7 @@ export async function sendMessage(
     }
 
     // 3. Save messages in local DB
-    const localMsg = await insertLocalMessage({
+    const newMessage = {
       conversation_id: conversationId,
       sender_id: senderId,
       sender_role: senderRole,
@@ -725,7 +723,10 @@ export async function sendMessage(
       status: "sent",
       is_automated: false,
       sender_type: senderRole,
-    });
+    };
+    const localMsg = isNeonDatabase()
+      ? { ...newMessage, id: clientMessageId, created_at: new Date().toISOString() }
+      : await insertLocalMessage(newMessage);
 
     let savedMessage: any = {
       ...localMsg,
@@ -736,10 +737,10 @@ export async function sendMessage(
     const botMessageId = "bot_" + Math.random().toString(36).substring(2) + "_" + Date.now();
 
     if (willTriggerBot) {
-      const localBotMsg = await insertLocalMessage({
+      const newBotMessage = {
         conversation_id: conversationId,
         sender_id: "bot",
-        sender_role: "admin",
+        sender_role: "admin" as const,
         recipient_id: conversationId,
         message_type: "text",
         text: botReply,
@@ -747,7 +748,10 @@ export async function sendMessage(
         status: "delivered",
         is_automated: true,
         sender_type: "bot",
-      });
+      };
+      const localBotMsg = isNeonDatabase()
+        ? { ...newBotMessage, id: botMessageId, created_at: new Date().toISOString() }
+        : await insertLocalMessage(newBotMessage);
 
       savedBotMsg = {
         ...localBotMsg,
@@ -916,12 +920,13 @@ export async function sendMessage(
         }
       }
     } catch (err: any) {
+      if (isNeonDatabase()) throw err;
       console.warn("[Message Service] Supabase insert threw exception:", err.message);
     }
 
     // 6. Update conversation unread counts and last message fields
     let updatedConversation = activeConversation;
-    const localConv = await getLocalConversation(conversationId);
+    const localConv = isNeonDatabase() ? null : await getLocalConversation(conversationId);
     if (localConv) {
       updatedConversation = {
         ...updatedConversation,
@@ -991,6 +996,7 @@ export async function sendMessage(
         }
       }
     } catch (err: any) {
+      if (isNeonDatabase()) throw err;
       console.warn("[Message Service] Supabase conversation update failed:", err.message);
     }
 
@@ -1319,6 +1325,14 @@ export async function deleteMessage(
   console.log(`[Message Service] deleteMessage: sender=${senderId} (${role}), message=${messageId}, conversation=${conversationId}`);
 
   try {
+    if (isNeonDatabase()) {
+      const result = await mutateNeonMessage({ senderId, role, conversationId, messageId });
+      if (result.success) {
+        ioInstance?.to(`conversation:${conversationId}`).emit("message_deleted", { messageId, conversationId });
+        ioInstance?.to("admins").emit("message_deleted", { messageId, conversationId });
+      }
+      return result;
+    }
     const isNew = await hasNewSchema();
     let supabaseDeleted = false;
     let localDeleted = false;
@@ -1395,6 +1409,15 @@ export async function updateMessage(
   }
 
   try {
+    if (isNeonDatabase()) {
+      if (trimmedText.length > 5000) return { success: false, error: "Message is too long" };
+      const result = await mutateNeonMessage({ senderId, role, conversationId, messageId, text: trimmedText });
+      if (result.success) {
+        ioInstance?.to(`conversation:${conversationId}`).emit("message_updated", result.message);
+        ioInstance?.to("admins").emit("message_updated", result.message);
+      }
+      return result;
+    }
     const isNew = await hasNewSchema();
     let supabaseUpdated = false;
     let localUpdated = false;
@@ -1510,6 +1533,31 @@ export async function clearConversation(
   console.log(`[Message Service] clearConversation: sender=${senderId} (${role}), conversation=${targetConversationId}`);
 
   try {
+    if (isNeonDatabase()) {
+      if (role === "client" && targetConversationId !== senderId) return { success: false, error: "Unauthorized access" };
+      await ensurePostgresConversation(targetConversationId);
+      const pool = createPool();
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query("delete from messages where conversation_id=$1", [targetConversationId]);
+        await client.query(`update conversations set client_unread_count=0,admin_unread_count=0,
+          chatbot_enabled=true,status='open',last_message_id=null,last_message_text=null,
+          last_message_at=null,last_message_sender_id=null where id=$1`, [targetConversationId]);
+        if (options.includeWelcomeMessage) {
+          await client.query(`with welcome as (
+            insert into messages(conversation_id,sender_id,sender_role,recipient_id,text,is_automated,sender_type)
+            values($1,'bot','admin',$1,$2,true,'bot') returning *
+          ) update conversations set last_message_id=welcome.id,last_message_text=welcome.text,
+            last_message_at=welcome.created_at,last_message_sender_id='bot',client_unread_count=1
+            from welcome where conversations.id=$1`, [targetConversationId, DEFAULT_SUPPORT_WELCOME_MESSAGE]);
+        }
+        await client.query("commit");
+      } catch (error) { await client.query("rollback"); throw error; }
+      finally { client.release(); await pool.end(); }
+      ioInstance?.to(`conversation:${targetConversationId}`).emit("chat_cleared", { conversationId: targetConversationId });
+      return { success: true };
+    }
     const isNew = await hasNewSchema();
     const includeWelcomeMessage = options.includeWelcomeMessage === true;
 
@@ -1673,6 +1721,15 @@ export async function deleteConversation(
   console.log(`[Message Service] deleteConversation: sender=${senderId} (${role}), conversation=${conversationId}`);
 
   try {
+    if (isNeonDatabase()) {
+      if (role === "client" && conversationId !== senderId) return { success: false, error: "Unauthorized access" };
+      const pool = createPool();
+      try { await pool.query("delete from conversations where id=$1", [conversationId]); }
+      finally { await pool.end(); }
+      ioInstance?.to(`conversation:${conversationId}`).emit("conversation_deleted", { conversationId });
+      ioInstance?.to("admins").emit("conversation_deleted", { conversationId });
+      return { success: true };
+    }
     const isNew = await hasNewSchema();
 
     await deleteLocalConversation(conversationId);
@@ -1717,6 +1774,7 @@ export async function deleteConversation(
 }
 
 export async function getConversationsList(): Promise<any[]> {
+  if (isNeonDatabase()) return getPostgresConversations();
   const isNew = await hasNewSchema();
   const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
   let supabaseConvs: any[] = [];
@@ -1836,6 +1894,14 @@ export async function getConversationsList(): Promise<any[]> {
 }
 
 export async function getMessagesHistory(conversationId: string): Promise<any[]> {
+  if (isNeonDatabase()) {
+    const messages = await getPostgresMessages(conversationId);
+    return messages.map((message: any) => ({
+      ...message,
+      content: message.text || "",
+      direction: message.sender_role === "client" ? "outgoing" : "incoming",
+    }));
+  }
   const isNew = await hasNewSchema();
   const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
   let supabaseMsgs: any[] = [];
@@ -2013,6 +2079,7 @@ export async function getMessagesHistory(conversationId: string): Promise<any[]>
 }
 
 export async function getConversationDetails(id: string): Promise<any> {
+  if (isNeonDatabase()) return getPostgresConversation(id);
   const isNew = await hasNewSchema();
   const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
   let supabaseConv: any = null;

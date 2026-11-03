@@ -29,7 +29,7 @@ export function ScreenBackground() {
       pointerEvents="none"
       accessible={false}
       importantForAccessibility="no-hide-descendants"
-      style={StyleSheet.absoluteFill}
+      style={[StyleSheet.absoluteFill, { opacity: 0.055 }]}
     >
       <SubtleMeshWave animated={shouldAnimate} />
       <FloatingParticlesBackground

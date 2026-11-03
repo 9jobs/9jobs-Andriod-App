@@ -16,7 +16,7 @@ export type Job = {
   jobLink?: string;
   category: JobCategory;
   postedAt: string;
-  matchScore: number;
+  matchScore: number | null;
   tags: string[];
   description: string;
   isSaved: boolean;

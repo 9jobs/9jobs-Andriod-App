@@ -17,4 +17,4 @@ const AdminUserSchema = new mongoose.Schema(
 );
 
 const mongoModel = mongoose.models.AdminUser || mongoose.model('AdminUser', AdminUserSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('AdminUser') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('AdminUser') : mongoModel;

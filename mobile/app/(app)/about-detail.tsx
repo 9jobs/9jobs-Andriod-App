@@ -103,12 +103,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 20,
     fontWeight: "500",
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   backText: {
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   heroCard: {
     borderRadius: 22,
     padding: 18,
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 28,
     lineHeight: 32,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   subtitle: {
     ...typography.body,
     color: colors.darkMuted,
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   sectionBody: {
     ...typography.body,
     color: colors.mutedText,
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: colors.mutedText,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   emptyCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   emptyBody: {
     ...typography.body,
     color: colors.mutedText,

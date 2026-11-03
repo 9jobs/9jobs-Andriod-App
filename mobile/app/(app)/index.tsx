@@ -1,7 +1,10 @@
+import { FigmaAsset } from "@/components/ui/FigmaAsset";
+import { HomeMetricCard } from "@/components/ui/HomeMetricCard";
+import { AppSearchResults } from "@/components/ui/AppSearchResults";
+import Svg, { Circle, Path } from "react-native-svg";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, View, Image, TextInput } from "react-native";
+import { Pressable, StyleSheet, Text, View, TextInput } from "react-native";
 import { router } from "expo-router";
-import Svg, { Path } from "react-native-svg";
 import { AppIcon } from "@/components/ui/AppIcon";
 import { Screen } from "@/components/ui/Screen";
 import { colors, radii, spacing } from "@/theme";
@@ -13,7 +16,6 @@ import { AnimatedPressable } from "@/components/motion/AnimatedPressable";
 import { FadeInView } from "@/components/motion/FadeInView";
 import { CardFloatingParticles } from "@/components/motion/card-floating-particles";
 import { RocketLaunchGlow } from "@/components/motion/rocket-launch-glow";
-import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
 import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
 import { TestBannerAd } from "@/components/ads/TestBannerAd";
 
@@ -27,7 +29,6 @@ export default function HomeScreen() {
   const jobFilters = useJobFilters();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const hasUnreadNotifications = notifications?.some((item) => item.unread) ?? false;
   useScreenPerf("/(app)", Boolean(profile && metrics && notifications && trackerInterviews && rawApplications), {
     screen: "home",
   });
@@ -77,10 +78,10 @@ export default function HomeScreen() {
     const now = new Date();
     const target = new Date(nextInterview.interview_date);
     const diffMs = target.getTime() - now.getTime();
-    
+
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
+
     if (diffDays > 0) {
       return `${diffDays}d ${diffHours}h left`;
     } else if (diffHours > 0) {
@@ -139,123 +140,91 @@ export default function HomeScreen() {
               {profile?.fullName ?? user?.fullName ?? "Test User"}
             </Text>
           </View>
-          <View style={styles.headerRight}>
-            <AnimatedPressable
-              style={styles.bellButton}
-              onPress={() => traceNavigation("/(app)/notifications", "home.notifications", () => router.push("/(app)/notifications" as never))}
-              scaleTo={0.95}
-            >
-              <AppIcon name="bell" size={22} color={colors.text} />
-              {hasUnreadNotifications ? <View style={styles.bellDot} /> : null}
-            </AnimatedPressable>
-            <Image
-              source={{
-                uri: profile?.avatarUrl ?? "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80",
-              }}
-              style={styles.avatarImage}
-            />
-          </View>
         </View>
       </FadeInView>
 
       {/* 2. Search Bar Row */}
-      <FadeInView type="fade-up" delay={50}>
+      <FadeInView type="fade" delay={40}>
         <View style={styles.searchRow}>
-          <Pressable style={styles.searchInputContainer} onPress={openSearchScreen}>
-            <AppIcon name="search" size={20} color={colors.mutedText} />
+          <View style={styles.searchInputContainer}>
+            <AppIcon name="search" size={22} color={colors.text} />
             <TextInput
               value={searchQuery}
-              editable={false}
-              pointerEvents="none"
+              onChangeText={setSearchQuery}
+              onSubmitEditing={openSearchScreen}
+              returnKeyType="search"
+              accessibilityLabel="Search jobs and app sections"
               placeholder="Search jobs, companies..."
               placeholderTextColor={colors.subtleText}
               style={styles.searchInput}
             />
-          </Pressable>
+          </View>
           <AnimatedPressable
             style={styles.filterButton}
             onPress={openSearchScreen}
             scaleTo={0.94}
           >
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-              <Path
-                d="M4 6H20L14 12V18L10 20V12L4 6Z"
-                stroke={colors.accent}
-                strokeWidth={2.2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+            <Svg width={23} height={23} viewBox="0 0 24 24" fill="none">
+              <Path d="M3 6h18M3 12h18M3 18h18" stroke={colors.accent} strokeWidth={1.8} strokeLinecap="round" />
+              <Circle cx="9" cy="6" r="2.2" fill={colors.dark} stroke={colors.accent} strokeWidth={1.8} />
+              <Circle cx="16" cy="12" r="2.2" fill={colors.dark} stroke={colors.accent} strokeWidth={1.8} />
+              <Circle cx="11" cy="18" r="2.2" fill={colors.dark} stroke={colors.accent} strokeWidth={1.8} />
             </Svg>
           </AnimatedPressable>
         </View>
       </FadeInView>
 
       {/* 3. Stat Cards Row */}
+      <AppSearchResults query={searchQuery} onSelect={() => setSearchQuery("")} />
       <FadeInView type="fade-up" delay={100}>
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{String(metrics?.totalApplications ?? 0)}</Text>
-            <Text style={styles.statLabel}>Applications</Text>
-            <Text style={styles.statDelta}>+{metrics?.todayApplied ?? 0}</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{String(metrics?.interviewing ?? 0)}</Text>
-            <Text style={styles.statLabel}>Interviews</Text>
-            <Text style={styles.statDelta}>Live</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{String(metrics?.offers ?? 0)}</Text>
-            <Text style={styles.statLabel}>Offers</Text>
-            <Text style={styles.statDelta}>Live</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{String(metrics?.resumeScore ?? 0)}</Text>
-            <Text style={styles.statLabel}>Resume Score</Text>
-            <Text style={[styles.statDelta, { color: "#22C55E" }]}>Live</Text>
-          </View>
+          <HomeMetricCard label="Applications" value={metrics?.totalApplications ?? 0} delta={metrics?.todayApplied ?? 0} icon="Home-imgContainer2" tone="green" onPress={() => router.push("/(app)/tracker")} />
+          <HomeMetricCard label="Interviews" value={metrics?.interviewing ?? 0} icon="Home-imgContainer3" tone="purple" onPress={() => router.push("/(app)/upcoming-interview")} />
+          <HomeMetricCard label="Offers" value={metrics?.offers ?? 0} icon="Home-imgContainer4" tone="gold" onPress={() => router.push({pathname:"/(app)/tracker-details", params:{filter:"Offers"}} as never)} />
+          <HomeMetricCard label="Resume Score" value={metrics?.resumeScore ?? 0} icon="Home-imgContainer5" tone="lime" onPress={() => router.push("/(app)/resume")} />
         </View>
       </FadeInView>
 
       {/* 4. Quick Action Grid Row */}
-      <FadeInView type="fade-up" delay={150}>
+      <FadeInView type="fade-left" delay={80}>
         <View style={styles.quickActionRow}>
           <AnimatedPressable
             style={styles.quickActionCard}
             onPress={() => traceNavigation("/(app)/resume", "home.resume", () => router.push("/(app)/resume" as never))}
             scaleTo={0.96}
           >
-            <AppIcon name="resume" size={24} color={colors.accent} />
-            <Text style={styles.quickActionLabel}>Resume AI</Text>
+            <View style={styles.actionIcon}><FigmaAsset name="Home-imgContainer6" /></View>
+            <View style={styles.actionCopy}><Text style={styles.quickActionLabel}>Resume AI</Text><Text style={styles.actionSubtitle}>Smart tuning</Text></View>
           </AnimatedPressable>
           <AnimatedPressable
             style={styles.quickActionCard}
             onPress={() => traceNavigation("/(app)/outreach", "home.outreach", () => router.push("/(app)/outreach" as never))}
             scaleTo={0.96}
           >
-            <AppIcon name="mail" size={24} color={colors.accent} />
-            <Text style={styles.quickActionLabel}>Outreach</Text>
+            <View style={styles.actionIcon}><FigmaAsset name="Home-imgContainer7" /></View>
+            <View style={styles.actionCopy}><Text style={styles.quickActionLabel}>Outreach</Text><Text style={styles.actionSubtitle}>Direct inbox</Text></View>
           </AnimatedPressable>
           <AnimatedPressable
             style={styles.quickActionCard}
             onPress={() => traceNavigation("/(app)/interview", "home.interview", () => router.push("/(app)/interview" as never))}
             scaleTo={0.96}
           >
-            <AppIcon name="mic" size={24} color={colors.accent} />
-            <Text style={styles.quickActionLabel}>Interview</Text>
+            <View style={styles.actionIcon}><FigmaAsset name="Home-imgContainer8" /></View>
+            <View style={styles.actionCopy}><Text style={styles.quickActionLabel}>Interview</Text><Text style={styles.actionSubtitle}>Mock prep</Text></View>
           </AnimatedPressable>
           <AnimatedPressable
             style={styles.quickActionCard}
             onPress={() => traceNavigation("/(app)/services", "home.services", () => router.push("/(app)/services" as never))}
             scaleTo={0.96}
           >
-            <AppIcon name="grid" size={24} color={colors.accent} />
-            <Text style={styles.quickActionLabel}>Services</Text>
+            <View style={styles.actionIcon}><FigmaAsset name="Home-imgContainer9" /></View>
+            <View style={styles.actionCopy}><Text style={styles.quickActionLabel}>Services</Text><Text style={styles.actionSubtitle}>Full suite</Text></View>
           </AnimatedPressable>
         </View>
       </FadeInView>
 
       {/* 5. Pro Tip Hero Card with Star Twinkle Background */}
-      <FadeInView type="fade-up" delay={180}>
+      <FadeInView type="fade-right" delay={60}>
         <View style={styles.heroCardContainer}>
           {/* Background Twinkling Sparks */}
           <CardFloatingParticles />
@@ -276,7 +245,7 @@ export default function HomeScreen() {
             <Text style={styles.heroButtonText}>Activate Hiring Manager Outreach →</Text>
           </AnimatedPressable>
 
-          <RocketLaunchGlow />
+          <View pointerEvents="none" style={styles.preservedRocket}><RocketLaunchGlow /></View>
         </View>
       </FadeInView>
 
@@ -284,20 +253,20 @@ export default function HomeScreen() {
       <FadeInView type="fade-up" delay={200}>
         <View style={styles.highlightsContainer}>
           {/* Interview Countdown Section */}
-          <AnimatedPressable 
-            style={styles.highlightCard} 
+          <AnimatedPressable
+            style={styles.highlightCard}
             onPress={() => router.push("/(app)/upcoming-interview" as never)}
             scaleTo={0.98}
           >
             <View style={styles.highlightHeader}>
               <View style={styles.highlightIconWrap}>
-                <AppIcon name="mic" size={20} color={colors.accentDark} />
+                <FigmaAsset name="Home-imgContainer10" />
               </View>
               <View style={styles.highlightTitleWrap}>
                 <Text style={styles.highlightTitle}>Upcoming Interview</Text>
                 <Text numberOfLines={1} style={styles.highlightSubtitle}>
-                  {nextInterview 
-                    ? `${nextInterview.interview_round || "Round"} · ${nextInterview.interview_type || "Interview"}` 
+                  {nextInterview
+                    ? `${nextInterview.interview_round || "Round"} · ${nextInterview.interview_type || "Interview"}`
                     : "No interviews scheduled yet"}
                 </Text>
               </View>
@@ -315,8 +284,8 @@ export default function HomeScreen() {
           </AnimatedPressable>
 
           {/* Weekly Progress Section */}
-          <AnimatedPressable 
-            style={styles.highlightCard} 
+          <AnimatedPressable
+            style={styles.highlightCard}
             onPress={() => router.push("/(app)/weekly-progress" as never)}
             scaleTo={0.98}
           >
@@ -348,46 +317,48 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screenContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: 12,
     paddingBottom: 100,
-    gap: spacing.lg,
+    gap: 20,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginTop: spacing.xs,
+    alignItems: "center",
+    marginTop: 0,
   },
   headerLeft: {
-    gap: 4,
+    gap: 0,
     flex: 1,
     minWidth: 0,
     paddingRight: spacing.md,
   },
   greetingText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.mutedText,
-    fontWeight: "500",
-  },
+    fontWeight: "400",
+
+    lineHeight: 18,
+   fontFamily: "Inter_400Regular" },
   userNameText: {
     fontSize: 26,
-    fontWeight: "800",
+    fontWeight: "700",
     color: colors.text,
-    letterSpacing: -0.5,
-    lineHeight: 31,
+    letterSpacing: -0.7,
+    lineHeight: 34,
     flexShrink: 1,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingTop: 2,
+    gap: 4,
+    paddingTop: 0,
   },
   bellButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "rgba(23, 24, 22, 0.05)",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
@@ -399,7 +370,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: colors.accent,
+    backgroundColor: "#BA1A1A",
     borderWidth: 1.5,
     borderColor: colors.background,
   },
@@ -412,88 +383,130 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 2,
+    marginTop: 0,
   },
   searchInputContainer: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(23, 24, 22, 0.04)",
-    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
     paddingHorizontal: 16,
-    height: 48,
-    gap: 10,
-  },
+    height: 50,
+    gap: 8,
+  borderWidth: 1,
+borderColor: colors.border,},
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     color: colors.text,
     paddingVertical: 0,
-  },
+   fontFamily: "Inter_400Regular" },
   filterButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: colors.dark,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 12,
-  },
+    marginLeft: 8,
+  borderWidth: 1,
+borderColor: colors.softAccent,},
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 8,
+    gap: 12,
+
+    flexWrap: "wrap",
   },
   statCard: {
-    flex: 1,
+    flex: undefined,
     backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 12,
+    borderRadius: 18,
+    padding: 14,
     alignItems: "flex-start",
-    gap: 4,
+    gap: 3,
+
+    width: "48%",
+    flexGrow: 1,
+    minHeight: 126,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#1B1C1B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.025,
+    shadowRadius: 8,
+    elevation: 1,
   },
   statValue: {
-    fontSize: 20,
-    fontWeight: "800",
+    fontSize: 26,
+    fontWeight: "700",
     color: colors.text,
+
+    lineHeight: 32,
+    marginTop: 12,
+    fontFamily: "PlusJakartaSans_700Bold",
+    letterSpacing: -0.7,
   },
   statLabel: {
-    fontSize: 10,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "500",
     color: colors.mutedText,
-  },
+
+    lineHeight: 18,
+   fontFamily: "Inter_500Medium" },
   statDelta: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
-    color: "#22C55E",
-    marginTop: 2,
-  },
+    color: colors.accentDark,
+    marginTop: 0,
+
+    position: "absolute",
+    top: 19,
+    right: 14,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 20,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    lineHeight: 14,
+   fontFamily: "Inter_600SemiBold" },
   quickActionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 8,
+    gap: 12,
+
+    flexWrap: "wrap",
   },
   quickActionCard: {
-    flex: 1,
-    backgroundColor: colors.dark,
-    borderRadius: 20,
-    aspectRatio: 1.05,
+    flex: undefined,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    aspectRatio: undefined,
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
+    justifyContent: "flex-start",
+    gap: 10,
+
+    flexGrow: 1,
+    width: "48%",
+    minHeight: 72,
+    padding: 12,
+    flexDirection: "row",
+  borderWidth: 1,
+borderColor: colors.border,},
   quickActionLabel: {
-    color: colors.surface,
-    fontSize: 11,
-    fontWeight: "700",
-  },
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+
+    flexShrink: 1,
+   fontFamily: "Inter_600SemiBold" },
   heroCardContainer: {
     backgroundColor: colors.dark,
-    borderRadius: radii.xl,
+    borderRadius: 16,
     padding: 24,
     position: "relative",
     overflow: "hidden",
-    gap: 12,
+    gap: 8,
   },
   heroSpark: {
     position: "absolute",
@@ -508,42 +521,50 @@ const styles = StyleSheet.create({
   },
   heroBadgeContainer: {
     alignSelf: "flex-start",
-    backgroundColor: "rgba(163, 230, 53, 0.2)",
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    backgroundColor: colors.accent,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
     borderRadius: 12,
   },
   heroBadgeText: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "800",
-  },
+    color: colors.dark,
+    fontSize: 10,
+    fontWeight: "700",
+   fontFamily: "Inter_600SemiBold" },
   heroTitleText: {
-    color: colors.surface,
-    fontSize: 22,
-    fontWeight: "800",
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
     letterSpacing: -0.4,
-    paddingRight: 110,
-  },
+    paddingRight: 80,
+
+    lineHeight: 26,
+   fontFamily: "PlusJakartaSans_700Bold" },
   heroSubtitleText: {
-    color: colors.darkMuted,
-    fontSize: 14,
+    color: "#CFD0CB",
+    fontSize: 13,
     lineHeight: 20,
-    paddingRight: 110,
-  },
+    paddingRight: 80,
+   fontFamily: "Inter_400Regular" },
   heroButton: {
     backgroundColor: colors.accent,
     borderRadius: radii.pill,
     paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 6,
+    marginTop: 8,
+
+    minHeight: 64,
+    paddingHorizontal: 20,
   },
   heroButtonText: {
     color: colors.dark,
-    fontSize: 16,
-    fontWeight: "800",
-  },
+    fontSize: 14,
+    fontWeight: "600",
+
+    lineHeight: 22,
+    textAlign: "center",
+   fontFamily: "Inter_600SemiBold" },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -554,12 +575,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   sectionAction: {
     fontSize: 13,
     fontWeight: "700",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   jobStack: {
     gap: spacing.md,
   },
@@ -588,7 +609,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     fontWeight: "800",
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   cardCopy: {
     flex: 1,
     gap: 2,
@@ -597,12 +618,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   jobSubtitle: {
     color: colors.mutedText,
     fontSize: 13,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   matchBadge: {
     backgroundColor: colors.softAccent,
     borderRadius: 12,
@@ -613,7 +634,7 @@ const styles = StyleSheet.create({
     color: colors.accentDark,
     fontSize: 11,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   cardBottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -623,12 +644,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     fontWeight: "800",
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   salaryPeriod: {
     color: colors.mutedText,
     fontSize: 13,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   applyButton: {
     backgroundColor: colors.dark,
     borderRadius: radii.pill,
@@ -641,7 +662,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 13,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   appliedButton: {
     backgroundColor: "transparent",
     borderWidth: 1.5,
@@ -652,13 +673,13 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
   },
   highlightsContainer: {
-    gap: spacing.md,
+    gap: 24,
   },
   highlightCard: {
     backgroundColor: colors.surface,
-    borderRadius: radii.md,
+    borderRadius: 16,
     padding: 16,
-    borderWidth: 1,
+    borderWidth: 0,
     borderColor: colors.border,
     gap: 12,
   },
@@ -671,7 +692,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(13, 206, 6, 0.08)",
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -682,13 +703,15 @@ const styles = StyleSheet.create({
   highlightTitle: {
     color: colors.text,
     fontSize: 15,
-    fontWeight: "700",
-  },
+    fontWeight: "600",
+   fontFamily: "Inter_600SemiBold" },
   highlightSubtitle: {
     color: colors.mutedText,
     fontSize: 12,
     fontWeight: "500",
-  },
+
+    lineHeight: 18,
+   fontFamily: "Inter_500Medium" },
   countdownBadge: {
     backgroundColor: colors.softAccent,
     borderRadius: radii.sm,
@@ -699,13 +722,18 @@ const styles = StyleSheet.create({
     color: colors.accentDark,
     fontSize: 11,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   highlightPlaceholderText: {
-    color: colors.subtleText,
+    color: colors.mutedText,
     fontSize: 12,
-    fontStyle: "italic",
-    paddingLeft: 48,
-  },
+    fontStyle: "normal",
+    paddingLeft: 8,
+
+    padding: 8,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 8,
+    lineHeight: 18,
+   fontFamily: "Inter_400Regular" },
   progressHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -717,9 +745,14 @@ const styles = StyleSheet.create({
   },
   progressPercentText: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: "800",
-  },
+
+    backgroundColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+   fontFamily: "Inter_600SemiBold" },
   progressBarContainer: {
     height: 8,
     backgroundColor: "rgba(23, 24, 22, 0.05)",
@@ -729,7 +762,21 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: colors.accentDark,
+    backgroundColor: colors.accent,
     borderRadius: 4,
+  },
+
+  statIcon: {width: 30, height: 30, borderRadius: 9, backgroundColor: colors.surfaceMuted, alignItems: "center", justifyContent: "center"},
+  actionIcon: {width: 34, height: 34, borderRadius: 17, backgroundColor: "transparent", alignItems: "center", justifyContent: "center"},
+  actionCopy: {flex: 1, gap: 2},
+  actionSubtitle: {fontSize: 11, lineHeight: 16, color: colors.mutedText, fontFamily: "Inter_400Regular" },
+  preservedRocket: {
+    position: "absolute",
+    right: -12,
+    top: -16,
+    width: 140,
+    height: 140,
+    opacity: 0.85,
+    transform: [{ scale: 0.65 }],
   },
 });

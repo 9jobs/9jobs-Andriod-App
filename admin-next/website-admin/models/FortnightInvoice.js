@@ -63,4 +63,4 @@ const FortnightInvoiceSchema = new mongoose.Schema(
 );
 
 const mongoModel = mongoose.models.FortnightInvoice || mongoose.model('FortnightInvoice', FortnightInvoiceSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('FortnightInvoice') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('FortnightInvoice') : mongoModel;

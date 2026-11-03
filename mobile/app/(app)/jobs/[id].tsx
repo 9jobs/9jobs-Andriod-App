@@ -34,7 +34,7 @@ export default function JobDetailScreen() {
   return (
     <PremiumScaffold
       title={job.title}
-      subtitle={`${job.company} • ${job.location}`}
+      subtitle={`${job.company} ï¿½ ${job.location}`}
       kicker="JOB DETAIL"
       hero={
         <DarkHeroCard>
@@ -49,7 +49,7 @@ export default function JobDetailScreen() {
       <SoftPanel>
         <Text style={styles.score}>{job.matchScore}</Text>
         <Text style={styles.meta}>
-          {job.company} • {job.location}
+          {job.company} ï¿½ {job.location}
         </Text>
         <Text style={styles.salary}>{job.salary}</Text>
       </SoftPanel>
@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 32,
     lineHeight: 36,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   meta: {
     ...typography.body,
     color: colors.mutedText,

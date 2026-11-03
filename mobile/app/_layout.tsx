@@ -1,6 +1,9 @@
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AppProviders } from "@/providers/AppProviders";
+import { useFonts } from "expo-font";
+import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
+import { PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold } from "@expo-google-fonts/plus-jakarta-sans";
 
 function normalizeHref(href: any) {
   if (typeof href === "string") {
@@ -42,6 +45,12 @@ try {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular, Inter_500Medium, Inter_600SemiBold,
+    PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold,
+  });
+  if (!fontsLoaded && !fontError) return null;
+
   return (
     <AppProviders>
       <StatusBar style="dark" />

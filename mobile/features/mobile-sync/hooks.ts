@@ -63,7 +63,9 @@ export function usePreviewSyncQuery<TData = MobileSyncSnapshot>(
     queryKey: options?.queryKey ?? [...queryKeys.previewSync, user?.id ?? "preview-user"],
     queryFn: () => fetchMobileSyncSnapshot(user),
     retry: 1,
-    refetchInterval: shouldEnableLiveTransport ? false : 15000,
+    refetchInterval: shouldEnableLiveTransport
+      ? (process.env.EXPO_PUBLIC_SHEET_INTEGRATION_ENABLED === "true" ? 60000 : false)
+      : 15000,
     staleTime: 120_000,
     refetchOnMount: false,
     refetchOnReconnect: true,

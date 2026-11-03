@@ -1,3 +1,4 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
@@ -64,7 +65,7 @@ export default function WeeklyProgressScreen() {
       <Text style={styles.sectionTitle}>Applications Submitted This Week</Text>
 
       {weeklyProgress.appliedList.length > 0 ? (
-        <ScrollView
+        <SmoothScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -94,7 +95,7 @@ export default function WeeklyProgressScreen() {
               </View>
             );
           })}
-        </ScrollView>
+        </SmoothScrollView>
       ) : (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
@@ -144,7 +145,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -163,7 +164,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.4,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   progressSummaryBox: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -176,7 +177,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   progressBarContainer: {
     height: 8,
     backgroundColor: "rgba(23, 24, 22, 0.05)",
@@ -193,12 +194,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     textAlign: "right",
-  },
+   fontFamily: "Inter_600SemiBold" },
   sectionTitle: {
     color: colors.text,
     fontSize: 15,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   scroll: {
     flex: 1,
   },
@@ -234,12 +235,12 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   appCompany: {
     color: colors.mutedText,
     fontSize: 12,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   appStatusBadge: {
     backgroundColor: colors.softAccent,
     borderRadius: 10,
@@ -251,7 +252,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     textTransform: "capitalize",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -274,11 +275,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyStateSubtext: {
     color: colors.mutedText,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 20,
-  },
+   fontFamily: "Inter_400Regular" },
 });

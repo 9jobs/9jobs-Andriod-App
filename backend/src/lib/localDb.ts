@@ -3,11 +3,15 @@ import path from "path";
 import { execSync } from "child_process";
 
 const SEED_FILE = path.resolve(__dirname, "../../local_db.json");
-const DB_FILE = process.env.VERCEL || __dirname.includes("/var/task")
+const DB_FILE = process.env.LOCAL_DATABASE_MODE==="isolated-e2e" ? path.resolve(__dirname,"../../../.work/localhost-e2e/local_db.json") : process.env.VERCEL || __dirname.includes("/var/task")
   ? "/tmp/local_db.json"
   : SEED_FILE;
 
 function ensureLocalDbFile() {
+  if(process.env.LOCAL_DATABASE_MODE==="isolated-e2e" && !fs.existsSync(DB_FILE)){
+    fs.mkdirSync(path.dirname(DB_FILE),{recursive:true});
+    fs.writeFileSync(DB_FILE,JSON.stringify({messages:[],conversations:[],recruiter_contacts:[],interview_prep_sessions:[],interview_prep_responses:[],success_stories:[],profiles:[],candidate_questionnaires:[]}));
+  }
   if (DB_FILE !== SEED_FILE && !fs.existsSync(DB_FILE)) {
     try {
       if (fs.existsSync(SEED_FILE)) {

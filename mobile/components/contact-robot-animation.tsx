@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     fontStyle: "italic",
     letterSpacing: 0.7,
-  },
+   fontFamily: "Inter_600SemiBold" },
   robot: {
     position: "absolute",
     right: 24,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 11,
     fontWeight: "900",
-  },
+   fontFamily: "Inter_600SemiBold" },
   arm: {
     position: "absolute",
     left: -3,

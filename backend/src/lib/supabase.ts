@@ -1,8 +1,11 @@
+import "./env";
+import { isNeonDatabase } from "./database";
+import { handleNeonRest } from "./neonRest";
 import { createClient } from "@supabase/supabase-js";
 import dns from "node:dns/promises";
 import dotenv from "dotenv";
 
-dotenv.config();
+if(process.env.LOCAL_DATABASE_MODE!=="isolated-e2e")dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL || "https://hzpzpdjmmuoesxhmdiqn.supabase.co";
 const supabaseKey =
@@ -15,6 +18,16 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      if (isNeonDatabase() && new URL(request.url).pathname.startsWith("/rest/v1/")) {
+        return handleNeonRest(request);
+      }
+      if(process.env.LOCAL_DATABASE_MODE==="isolated-e2e")throw new Error("External Supabase auth/storage is disabled during localhost testing");
+      return fetch(request);
+    },
+  },
   auth: {
     persistSession: false,
   },
@@ -57,6 +70,9 @@ async function lookupHostnameWithTimeout(hostname: string, label: string) {
 }
 
 export async function canReachSupabaseUpstream() {
+  // Legacy callers use this check before database queries. On Neon, do not
+  // depend on the retired Supabase API hostname to access database records.
+  if (isNeonDatabase()) return canReachDatabaseUpstream();
   const now = Date.now();
   if (supabaseReachabilityState && now - supabaseReachabilityState.checkedAt < SUPABASE_REACHABILITY_TTL_MS) {
     return supabaseReachabilityState.reachable;

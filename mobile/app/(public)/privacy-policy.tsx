@@ -194,13 +194,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     letterSpacing: -1.4,
     fontWeight: "800",
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   updated: {
     ...typography.title,
     color: colors.mutedText,
     fontSize: 16,
     lineHeight: 22,
-  },
+   fontFamily: "Inter_400Regular" },
   section: {
     gap: spacing.sm,
   },
@@ -209,14 +209,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 22,
     lineHeight: 28,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   paragraph: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 16,
     lineHeight: 24,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   bullet: {
     ...typography.body,
     color: colors.mutedText,
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     textAlign: "justify",
     flex: 1,
-  },
+   fontFamily: "Inter_400Regular" },
   bulletRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -237,9 +237,9 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     width: 12,
     textAlign: "center",
-  },
+   fontFamily: "Inter_400Regular" },
   bulletHeading: {
     color: colors.text,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
 });

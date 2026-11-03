@@ -1,3 +1,4 @@
+import { FadeInView } from "@/components/motion/FadeInView";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -258,7 +259,7 @@ export function AboutPremiumScreen({
         </View>
       </LinearGradient>
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-up" style={styles.aboutPanel}>
         <SectionHeading title="Who We Are" />
         <Text style={styles.aboutSectionBody}>
           9Jobs is Australia's premier candidate-centric job search support agency, dedicated to bridging the gap between ambitious job seekers and top hiring teams across every state and territory in Australia. Founded by industry veterans with deep expertise in Australian recruitment systems, HR technology, and ATS platforms, 9Jobs operates as a strategic co-pilot for candidates navigating the competitive local market. Our multi-disciplinary team consists of certified resume strategists, ATS optimization experts, senior talent acquisition advisors, and dedicated application managers. We remove the stress and friction from job hunting by offering end-to-end support: from rewriting ATS-compliant resumes and polishing LinkedIn profiles, to submitting targeted applications on your behalf and organizing your interview pipeline. Whether you are an experienced professional, a skilled migrant transitioning into the Australian workforce, or a career switcher looking for your next big step, 9Jobs provides personalized, high-touch support designed around real career outcomes.
@@ -289,9 +290,9 @@ export function AboutPremiumScreen({
             To become Australia's most trusted and innovative job search accelerator, recognized for transforming candidate outcomes through technology, human empathy, and market-leading expertise. We envision an employment landscape where every professional has access to transparent, professional guidance that accurately highlights their potential to hiring teams.
           </Text>
         </View>
-      </View>
+      </FadeInView>
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-left" style={styles.aboutPanel}>
         <SectionHeading title="What We Do" />
         <View style={styles.serviceList}>
           {aboutServicePillars.map((pillar) => (
@@ -318,7 +319,7 @@ export function AboutPremiumScreen({
             </Pressable>
           ))}
         </View>
-      </View>
+      </FadeInView>
 
       <PrimaryButton
         label="View Our Services"
@@ -326,7 +327,7 @@ export function AboutPremiumScreen({
         style={styles.servicesButton}
       />
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-right" style={styles.aboutPanel}>
         <SectionHeading title="Why Choose 9Jobs?" />
         <View style={styles.whyGrid}>
           {aboutWhyChooseItems.map((item) => (
@@ -362,9 +363,9 @@ export function AboutPremiumScreen({
           </Text>
           <Text style={styles.quoteAuthor}>9Jobs Team</Text>
         </LinearGradient>
-      </View>
+      </FadeInView>
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-up" style={styles.aboutPanel}>
         <SectionHeading title="Our Story" />
         <Text style={styles.aboutSectionBody}>
           Connecting skilled people with companies that need them. 9Jobs was created for candidates who know they can contribute, but need a sharper way to present skills, choose the right roles, and stay consistent through applications.
@@ -375,9 +376,9 @@ export function AboutPremiumScreen({
             9jobs, also known as 9 Jobs, helps professionals across Australia improve resumes, optimize LinkedIn profiles and secure interviews. Our journey began with a simple observation: thousands of highly skilled candidates in Australia were missing out on interviews not because of a lack of talent, but because traditional hiring systems filter out applications using rigid automated algorithms. 9Jobs was established to level the playing field and give candidates a clear competitive advantage. Over the years, 9Jobs has transformed into a comprehensive national job search accelerator empowering candidates across Sydney, Melbourne, Brisbane, Perth, Adelaide, Canberra, Hobart, Darwin, and regional centers to showcase their true value, connect with leading recruiters, and secure rewarding job offers in technical and non-technical fields alike. We remove the invisible barriers between talent and opportunity.
           </Text>
         </View>
-      </View>
+      </FadeInView>
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-left" style={styles.aboutPanel}>
         <SectionHeading title="Role Coverage" />
         <Text style={styles.aboutSectionBody}>
           Built for technical and non-technical career paths. For IT professionals, we focus on technical clarity. For non-IT professionals, we translate experience into outcomes hiring teams can quickly understand.
@@ -416,10 +417,10 @@ export function AboutPremiumScreen({
             </Pressable>
           ))}
         </View>
-      </View>
+      </FadeInView>
 
       {marketSection?.items?.length ? (
-        <View style={styles.aboutPanel}>
+        <FadeInView type="fade-right" style={styles.aboutPanel}>
           <SectionHeading title="Cities We Cover" />
           <View style={styles.marketList}>
             {marketSection.items.map((item) => (
@@ -444,10 +445,10 @@ export function AboutPremiumScreen({
               </Pressable>
             ))}
           </View>
-        </View>
+        </FadeInView>
       ) : null}
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-up" style={styles.aboutPanel}>
         <SectionHeading title="Contact & Australia Support" />
         <View style={styles.contactCard}>
           <Text style={styles.contactCompany}>9Jobs - Job Search, Resume Writing & Career Support Australia</Text>
@@ -464,9 +465,9 @@ export function AboutPremiumScreen({
             <Text style={styles.contactText}>Email: 9jobsapplicationservice@gmail.com</Text>
           </View>
         </View>
-      </View>
+      </FadeInView>
 
-      <View style={styles.aboutPanel}>
+      <FadeInView type="fade-left" style={styles.aboutPanel}>
         <SectionHeading title="Frequently Asked Questions" />
         <View style={styles.faqList}>
           {FAQ_ITEMS.map((item, index) => {
@@ -486,7 +487,7 @@ export function AboutPremiumScreen({
             );
           })}
         </View>
-      </View>
+      </FadeInView>
 
       <LinearGradient
         colors={["#090A08", "#10110E", "#181913"]}
@@ -655,13 +656,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 20,
     fontWeight: "500",
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   aboutTopTitle: {
     fontSize: 14,
     lineHeight: 18,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   aboutHero: {
     borderRadius: 22,
     padding: 18,
@@ -693,20 +694,20 @@ const styles = StyleSheet.create({
     color: colors.accent,
     letterSpacing: 0.8,
     fontSize: 10,
-  },
+   fontFamily: "Inter_400Regular" },
   aboutHeroTitle: {
     fontSize: 22,
     lineHeight: 25,
     fontWeight: "800",
     color: colors.surface,
     maxWidth: 220,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   aboutHeroBody: {
     fontSize: 11.5,
     lineHeight: 17,
     color: colors.darkMuted,
     maxWidth: 230,
-  },
+   fontFamily: "Inter_400Regular" },
   aboutMetricRow: {
     flexDirection: "row",
     gap: 10,
@@ -734,13 +735,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "800",
     color: colors.surface,
-  },
+   fontFamily: "Inter_600SemiBold" },
   aboutMetricLabel: {
     fontSize: 10,
     lineHeight: 13,
     fontWeight: "500",
     color: colors.darkMuted,
-  },
+   fontFamily: "Inter_500Medium" },
   aboutPanel: {
     backgroundColor: colors.surface,
     borderRadius: 22,
@@ -764,13 +765,13 @@ const styles = StyleSheet.create({
     lineHeight: 29,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   aboutSectionBody: {
     fontSize: 12,
     lineHeight: 19,
     color: colors.mutedText,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   infoCard: {
     borderRadius: 18,
     padding: 14,
@@ -784,13 +785,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   infoBody: {
     fontSize: 11.5,
     lineHeight: 17,
     color: colors.mutedText,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   missionCard: {
     padding: 16,
     borderRadius: 18,
@@ -818,13 +819,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   missionBody: {
     fontSize: 11.5,
     lineHeight: 18,
     color: colors.mutedText,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   serviceList: {
     gap: 0,
   },
@@ -862,19 +863,19 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   serviceBody: {
     fontSize: 10.5,
     lineHeight: 15,
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   serviceArrow: {
     fontSize: 15,
     lineHeight: 18,
     fontWeight: "700",
     color: colors.subtleText,
     marginLeft: 8,
-  },
+   fontFamily: "Inter_600SemiBold" },
   servicesButton: {
     width: "100%",
     minHeight: 52,
@@ -910,12 +911,12 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   whyBody: {
     fontSize: 10.5,
     lineHeight: 15,
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   quoteHero: {
     marginTop: 6,
     borderRadius: 18,
@@ -934,19 +935,19 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontWeight: "800",
     color: colors.accent,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   quoteText: {
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "700",
     color: colors.surface,
-  },
+   fontFamily: "Inter_600SemiBold" },
   quoteAuthor: {
     fontSize: 10.5,
     lineHeight: 14,
     fontWeight: "600",
     color: colors.darkMuted,
-  },
+   fontFamily: "Inter_600SemiBold" },
   marketList: {
     gap: 8,
   },
@@ -986,18 +987,18 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   cityBody: {
     fontSize: 10,
     lineHeight: 14,
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   cityArrow: {
     fontSize: 14,
     lineHeight: 16,
     fontWeight: "700",
     color: colors.subtleText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   bottomCta: {
     borderRadius: 18,
     padding: 18,
@@ -1009,12 +1010,12 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     fontWeight: "800",
     color: colors.surface,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   bottomCtaBody: {
     fontSize: 12,
     lineHeight: 18,
     color: colors.darkMuted,
-  },
+   fontFamily: "Inter_400Regular" },
   bottomCtaButton: {
     minHeight: 46,
     marginTop: 6,
@@ -1027,7 +1028,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.text,
     marginBottom: 8,
-  },
+   fontFamily: "Inter_600SemiBold" },
   contactCard: {
     padding: 14,
     borderRadius: 16,
@@ -1042,13 +1043,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   contactDesc: {
     fontSize: 11,
     lineHeight: 16,
     color: colors.mutedText,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   contactDivider: {
     height: 1,
     backgroundColor: colors.border,
@@ -1065,7 +1066,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: "600",
     flex: 1,
-  },
+   fontFamily: "Inter_600SemiBold" },
   faqList: {
     gap: 10,
   },
@@ -1093,7 +1094,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   faqToggle: {
     width: 24,
     textAlign: "center",
@@ -1101,11 +1102,11 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: "700",
     color: colors.accentDark,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   faqAnswer: {
     fontSize: 11,
     lineHeight: 17,
     color: colors.mutedText,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
 });

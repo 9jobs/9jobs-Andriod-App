@@ -1,5 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getBackendAuthToken } from "@/lib/data/backend-auth-token";
+import { getBackendAuthToken, resolveBackendUrl } from "@/lib/data/backend-auth-token";
 import type { SessionUser } from "@/types/auth";
 import { startTrackedRequest } from "@/lib/perf/livePerf";
 
@@ -79,24 +78,47 @@ export function setInterviewPrepScreenActive(userId: string, active: boolean) {
 }
 
 async function ensureBackendToken(sessionUser?: SessionUser | null) {
-  const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
-  let token = await AsyncStorage.getItem("auth_token");
-
-  if (!token && sessionUser) {
-    token = await getBackendAuthToken(sessionUser, {
-      backendUrl,
-      label: "interview.auth.token",
-    });
-    if (token) {
-      await AsyncStorage.setItem("auth_token", token);
-    }
-  }
-
-  if (!token) {
-    throw new Error("Client auth token missing");
-  }
+  const backendUrl = resolveBackendUrl();
+  if (!sessionUser) throw new Error("Please sign in to use Interview Preparation.");
+  const token = await getBackendAuthToken(sessionUser, { backendUrl, label: "interview.auth.token" });
 
   return { backendUrl, token };
+}
+
+async function requestInterviewEndpoint(
+  sessionUser: SessionUser | null | undefined,
+  endpoint: string,
+  label: string,
+  init?: RequestInit,
+) {
+  const { backendUrl, token } = await ensureBackendToken(sessionUser);
+  const request = async (authToken: string, attempt: number) => {
+    const tracker = startTrackedRequest(label, { user_id: sessionUser!.id, url: `${backendUrl}${endpoint}`, attempt });
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${authToken}`);
+    try {
+      const response = await fetch(`${backendUrl}${endpoint}`, { ...init, headers });
+      tracker.finish({ status: response.status, user_id: sessionUser!.id, payload_bytes: Number(response.headers?.get?.("content-length") || 0) });
+      return response;
+    } catch (error) {
+      tracker.finish({ status: 0, user_id: sessionUser!.id });
+      throw error;
+    }
+  };
+
+  const response = await request(token, 1);
+  if (response.status !== 401) return response;
+
+  // Renew once; concurrent requests reuse the same token exchange.
+  const renewedToken = await getBackendAuthToken(sessionUser!, {
+    backendUrl,
+    label: "interview.auth.refresh",
+    forceRefresh: true,
+    rejectedToken: token,
+  });
+  const retry = await request(renewedToken, 2);
+  if (retry.status === 401) throw new Error("Your session could not be renewed. Please sign out and sign in again.");
+  return retry;
 }
 
 export async function fetchInterviewPrepSession(
@@ -119,22 +141,7 @@ export async function fetchInterviewPrepSession(
   }
 
   const requestPromise = (async () => {
-    const { backendUrl, token } = await ensureBackendToken(sessionUser);
-    const tracker = startTrackedRequest("interview.session", {
-      user_id: sessionUser?.id ?? "unknown",
-      url: `${backendUrl}/api/interview-prep/session`,
-    });
-    const res = await fetch(`${backendUrl}/api/interview-prep/session`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    tracker.finish({
-      status: res.status,
-      user_id: sessionUser?.id ?? "unknown",
-      payload_bytes: Number(res.headers?.get?.("content-length") || 0),
-    });
+    const res = await requestInterviewEndpoint(sessionUser, "/api/interview-prep/session", "interview.session");
     if (!res.ok) {
       throw new Error(`Interview prep session failed with HTTP ${res.status}`);
     }
@@ -151,27 +158,17 @@ export async function fetchInterviewPrepSession(
 }
 
 export async function requestInterviewPrepAnswer(sessionUser?: SessionUser | null, transcript = "") {
-  const { backendUrl, token } = await ensureBackendToken(sessionUser);
-  const tracker = startTrackedRequest("interview.answer", {
-    user_id: sessionUser?.id ?? "unknown",
-    url: `${backendUrl}/api/interview-prep/respond`,
-  });
-  const res = await fetch(`${backendUrl}/api/interview-prep/respond`, {
+  const res = await requestInterviewEndpoint(sessionUser, "/api/interview-prep/respond", "interview.answer", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ transcript }),
   });
 
-  tracker.finish({
-    status: res.status,
-    user_id: sessionUser?.id ?? "unknown",
-    payload_bytes: Number(res.headers?.get?.("content-length") || 0),
-  });
   if (!res.ok) {
-    throw new Error(`Interview answer failed with HTTP ${res.status}`);
+    const failure = await res.json().catch(() => null);
+    throw new Error(failure?.error || `Interview answer failed with HTTP ${res.status}`);
   }
 
   const payload = await res.json();
@@ -182,27 +179,14 @@ export async function requestInterviewPrepAnswer(sessionUser?: SessionUser | nul
 }
 
 export async function navigateInterviewPrep(sessionUser?: SessionUser | null, direction: "prev" | "next" = "next") {
-  const { backendUrl, token } = await ensureBackendToken(sessionUser);
-  const tracker = startTrackedRequest("interview.navigate", {
-    user_id: sessionUser?.id ?? "unknown",
-    url: `${backendUrl}/api/interview-prep/navigate`,
-    direction,
-  });
-  const res = await fetch(`${backendUrl}/api/interview-prep/navigate`, {
+  const res = await requestInterviewEndpoint(sessionUser, "/api/interview-prep/navigate", "interview.navigate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ direction }),
   });
 
-  tracker.finish({
-    status: res.status,
-    user_id: sessionUser?.id ?? "unknown",
-    payload_bytes: Number(res.headers?.get?.("content-length") || 0),
-    direction,
-  });
   if (!res.ok) {
     throw new Error(`Interview navigation failed with HTTP ${res.status}`);
   }

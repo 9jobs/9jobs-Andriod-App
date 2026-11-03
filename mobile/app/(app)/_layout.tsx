@@ -1,3 +1,4 @@
+import { FigmaAsset, type FigmaAssetName } from "@/components/ui/FigmaAsset";
 import { ActivityIndicator, InteractionManager, StyleSheet, View } from "react-native";
 import type { ColorValue } from "react-native";
 import { Redirect, Tabs } from "expo-router";
@@ -111,10 +112,10 @@ export default function AppLayout() {
       tabBarActiveTintColor: colors.text,
       tabBarInactiveTintColor: colors.mutedText,
       tabBarStyle: {
-        position: "absolute" as const,
-        left: 14,
-        right: 14,
-        bottom: insets.bottom > 0 ? insets.bottom + 4 : 10,
+        position: "relative" as const,
+        left: 0,
+        right: 0,
+        bottom: 0,
         backgroundColor: "transparent",
         borderTopWidth: 0,
         borderRadius: 0,
@@ -126,22 +127,22 @@ export default function AppLayout() {
         elevation: 0,
         shadowOpacity: 0,
         shadowColor: "transparent",
-        height: 72,
-        paddingTop: 6,
-        paddingBottom: 8,
+        height: 56 + insets.bottom,
+        paddingTop: 4,
+        paddingBottom: Math.max(insets.bottom, 4),
         paddingHorizontal: 8,
       },
       tabBarItemStyle: {
-        height: 56,
+        height: 48,
         alignItems: "center" as const,
         justifyContent: "center" as const,
       },
       tabBarLabelStyle: {
         ...typography.label,
-        fontSize: 9,
+        fontSize: 10,
         marginTop: 0,
         lineHeight: 12,
-      },
+       fontFamily: "Inter_400Regular" },
       tabBarBackground: () => <View style={styles.tabBarBackground} />,
     }),
     [themeVersion, insets.bottom],
@@ -180,15 +181,6 @@ export default function AppLayout() {
             markNavigationTap("/(app)", "tab.home");
             markNavigationDispatch("/(app)", { navigation_type: "tab" });
           },
-        }}
-      />
-      <Tabs.Screen
-        name="about"
-        options={{
-          title: "About",
-          tabBarIcon: ({ color, focused }) => (
-            <TabGlyph name="info" color={color} focused={focused} />
-          ),
         }}
       />
       <Tabs.Screen
@@ -251,6 +243,15 @@ export default function AppLayout() {
           },
         }}
       />
+      <Tabs.Screen
+        name="about"
+        options={{
+          title: "About",
+          tabBarIcon: ({ color, focused }) => (
+            <TabGlyph name="info" color={color} focused={focused} />
+          ),
+        }}
+      />
       <Tabs.Screen name="jobs/search" options={{ href: null }} />
       <Tabs.Screen name="saved" options={{ href: null }} />
       <Tabs.Screen name="jobs/[id]" options={{ href: null, tabBarStyle: { display: "none" } }} />
@@ -298,7 +299,7 @@ function TabGlyph({
 
   return (
     <Animated.View style={[styles.iconWrap, focused && styles.iconWrapActive, animatedStyle]}>
-      <AppIcon name={name} color={focused ? colors.text : color} />
+      <FigmaAsset name={({ home: "Home-imgMargin1", info: "Home-imgMargin2", grid: "Home-imgMargin3", tracker: "Home-imgMargin4", mail: "Home-imgMargin5", profile: "Home-imgMargin6" } as Record<typeof name, FigmaAssetName>)[name]} />
       {focused ? <Animated.View entering={FadeIn.duration(140)} style={styles.indicator} /> : null}
     </Animated.View>
   );
@@ -306,23 +307,23 @@ function TabGlyph({
 
 const styles = StyleSheet.create({
   iconWrap: {
-    width: 40,
-    height: 40,
+    width: 28,
+    height: 28,
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     gap: 2,
   },
   iconWrapActive: {
-    backgroundColor: "rgba(163, 230, 53, 0.16)",
+    backgroundColor: "transparent",
   },
   indicator: {
     position: "absolute",
-    bottom: 2,
-    width: 6,
+    bottom: -19,
+    width: 4,
     height: 6,
     borderRadius: 999,
-    backgroundColor: colors.accentDark,
+    backgroundColor: colors.accent,
   },
   tabBarBackground: {
     position: "absolute",

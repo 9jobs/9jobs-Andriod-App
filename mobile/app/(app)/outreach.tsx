@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { Screen } from "@/components/ui/Screen";
+import { AppIcon } from "@/components/ui/AppIcon";
 import { PrimaryButton } from "@/components/ui/PrimaryButton";
 import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
@@ -66,10 +67,14 @@ export default function OutreachScreen() {
           <View key={contact.id} style={styles.contactCard}>
             <View style={styles.contactTop}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{contact.name.trim().charAt(0).toUpperCase() || "H"}</Text>
+                {contact.name.trim().match(/[\p{L}\p{N}]/u) ? (
+                  <Text style={styles.avatarText}>{contact.name.trim().match(/[\p{L}\p{N}]/u)![0].toUpperCase()}</Text>
+                ) : (
+                  <AppIcon name="profile" size={22} color={colors.text} decorated={false} />
+                )}
               </View>
               <View style={styles.contactCopy}>
-                <Text style={styles.contactName}>{contact.name}</Text>
+                <Text style={styles.contactName}>{/[\p{L}\p{N}]/u.test(contact.name) ? contact.name : "Hiring Manager"}</Text>
                 <Text style={styles.contactRole}>{contact.position || contact.email || "Hiring Manager"}</Text>
               </View>
               <View style={styles.onlineDot} />
@@ -171,13 +176,13 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 24,
     lineHeight: 30,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   heroCard: {
     width: "100%",
     aspectRatio: 1208 / 613,
@@ -233,7 +238,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
     textAlignVertical: "center",
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricSubtitleMask: {
     position: "absolute",
     right: "7%",
@@ -250,7 +255,7 @@ const styles = StyleSheet.create({
     lineHeight: 10,
     fontWeight: "700",
     textAlign: "center",
-  },
+   fontFamily: "Inter_600SemiBold" },
   heroCopyMask: {
     position: "absolute",
     left: 0,
@@ -269,7 +274,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 15,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   heroCopyAccent: {
     color: colors.accent,
   },
@@ -279,7 +284,7 @@ const styles = StyleSheet.create({
     fontSize: 8.5,
     lineHeight: 11,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   heroTopRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -302,7 +307,7 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 9,
     letterSpacing: 0.8,
-  },
+   fontFamily: "Inter_400Regular" },
   liveStatus: {
     flexDirection: "row",
     alignItems: "center",
@@ -325,7 +330,7 @@ const styles = StyleSheet.create({
     color: colors.darkMuted,
     fontSize: 10,
     letterSpacing: 1,
-  },
+   fontFamily: "Inter_400Regular" },
   pipelineRow: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -374,7 +379,7 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 10,
     lineHeight: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   stageSubtitle: {
     ...typography.label,
     color: colors.darkMuted,
@@ -382,7 +387,7 @@ const styles = StyleSheet.create({
     fontSize: 7,
     lineHeight: 9,
     textAlign: "center",
-  },
+   fontFamily: "Inter_400Regular" },
   connector: {
     flex: 1,
     height: 42,
@@ -412,7 +417,7 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 12,
     lineHeight: 15,
-  },
+   fontFamily: "Inter_400Regular" },
   heroAccent: {
     color: colors.accent,
   },
@@ -420,7 +425,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.darkMuted,
     fontSize: 7,
-  },
+   fontFamily: "Inter_400Regular" },
   metricPill: {
     width: 112,
     minHeight: 46,
@@ -443,20 +448,20 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 10,
     lineHeight: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   metricSubtitle: {
     ...typography.label,
     color: colors.darkMuted,
     fontSize: 6,
     lineHeight: 8,
-  },
+   fontFamily: "Inter_400Regular" },
   metricArrow: {
     position: "absolute",
     right: 7,
     color: colors.darkMuted,
     fontSize: 18,
     lineHeight: 28,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -515,7 +520,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.mutedText,
     fontSize: 14,
-  },
+   fontFamily: "Inter_400Regular" },
   onlineDot: {
     width: 8,
     height: 8,

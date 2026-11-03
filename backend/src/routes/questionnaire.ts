@@ -1,7 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
 import express, { Router, Response } from "express";
-import { Pool } from "pg";
+import { createQuestionnairePool as createDatabasePool } from "../lib/questionnaireDatabase";
+import { readStoredQuestionnaires, saveStoredQuestionnaire } from "../services/questionnaireStore";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import {
   getLocalCandidateQuestionnaire,
@@ -10,8 +11,14 @@ import {
   upsertLocalProfile,
 } from "../lib/localDb";
 import { canReachSupabaseUpstream, getSupabaseReachabilityState, supabase } from "../lib/supabase";
+import { usesDatabaseDocuments, documentPath, ownsDocumentPath, storeDocument, hasDocument,
+  DOCUMENT_TYPES, signDocumentDownload, verifyDocumentDownload, withDocumentDatabase } from "../services/questionnaireDocuments";
 
 const router = Router();
+router.use("/mobile/questionnaire", (_req, res, next) => {
+  res.setHeader("x-9jobs-resume-storage", usesDatabaseDocuments() ? "neon-v1" : "legacy");
+  next();
+});
 const DOCUMENT_BUCKET = "candidate-documents";
 const MAX_DOCUMENT_SIZE = 12 * 1024 * 1024;
 const LOCAL_UPLOADS_DIR = path.resolve(__dirname, "../../local_uploads");
@@ -77,15 +84,23 @@ function buildLocalPreviewQuestionnaire(userId: string) {
 }
 
 function getBaseUrl(req: AuthenticatedRequest) {
-  return `${req.protocol}://${req.get("host") || "127.0.0.1:3000"}`;
+  const protocol = process.env.VERCEL ? "https" : req.protocol;
+  return `${protocol}://${req.get("host") || "127.0.0.1:3000"}`;
 }
+
+function isServerlessRuntime() {
+  return Boolean(process.env.VERCEL) || __dirname.includes("/var/task");
+}
+const STORAGE_UNAVAILABLE = "Document storage is temporarily unavailable. Your questionnaire has not been submitted. Please try again after 9Jobs support restores storage.";
 
 function buildLocalUploadPath(userId: string, documentType: "resume" | "visa", fileName: string) {
   return `${sanitizeFileName(userId)}/${documentType}/${Date.now()}-${sanitizeFileName(fileName)}`;
 }
 
 function buildLocalUploadFilePath(storagePath: string) {
-  return path.join(LOCAL_UPLOADS_DIR, storagePath);
+  const destination = path.resolve(LOCAL_UPLOADS_DIR, storagePath);
+  if (!destination.startsWith(LOCAL_UPLOADS_DIR + path.sep)) throw new Error("Invalid document path");
+  return destination;
 }
 
 async function createLocalQuestionnaireBody(userId: string) {
@@ -127,7 +142,7 @@ async function ensureQuestionnaireSchema() {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString || connectionString.includes("[YOUR_DB_PASSWORD]")) return;
 
-    const pool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+    const pool = createDatabasePool();
     try {
       await pool.query(`
         create table if not exists candidate_questionnaires (
@@ -192,8 +207,14 @@ async function ensureDocumentBucket() {
   if (error && !/already exists/i.test(error.message || "")) throw error;
 }
 
-async function createDownloadUrl(path: string) {
+async function createDownloadUrl(path: string, req: AuthenticatedRequest) {
   if (!path) return "";
+  if (usesDatabaseDocuments()) {
+    const exists = await withDocumentDatabase(async pool => Boolean((await pool.query(
+      "select 1 from questionnaire_documents where storage_path=$1", [path])).rowCount));
+    if (exists) return `${getBaseUrl(req)}/api/mobile/questionnaire/document?token=${encodeURIComponent(signDocumentDownload(path))}`;
+    if (process.env.LOCAL_DATABASE_MODE === "isolated-e2e") return "";
+  }
   const { data, error } = await supabase.storage.from(DOCUMENT_BUCKET).createSignedUrl(path, 60 * 60);
   if (error) return "";
   return data?.signedUrl || "";
@@ -236,6 +257,12 @@ router.get("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedReq
   const requestStartedAt = Date.now();
 
   try {
+    if (usesDatabaseDocuments()) {
+      const data = (await readStoredQuestionnaires(userId))[0];
+      return res.json({ completed: Boolean(data?.completed_at), questionnaire: data ? {
+        ...data, enhanced_resume_url: await createDownloadUrl(data.enhanced_resume_path || "", req),
+      } : null });
+    }
     const reachabilityStartedAt = Date.now();
     const supabaseReachable = await canReachSupabaseUpstream();
     const reachabilityMs = Date.now() - reachabilityStartedAt;
@@ -274,7 +301,7 @@ router.get("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedReq
     const signedUrlStartedAt = Date.now();
     const questionnaire = data ? {
       ...data,
-      enhanced_resume_url: await createDownloadUrl(data.enhanced_resume_path || ""),
+      enhanced_resume_url: await createDownloadUrl(data.enhanced_resume_path || "", req),
     } : null;
     const signedUrlMs = Date.now() - signedUrlStartedAt;
     const body = { completed: Boolean(data?.completed_at), questionnaire };
@@ -310,8 +337,15 @@ router.post("/mobile/questionnaire/upload-url", authMiddleware, async (req: Auth
   if (fileSize > MAX_DOCUMENT_SIZE) return res.status(413).json({ error: "Document must be smaller than 12 MB" });
 
   try {
+    if (usesDatabaseDocuments()) {
+      if (!DOCUMENT_TYPES.has(mimeType)) return res.status(400).json({ error: "Please select a PDF, DOC, DOCX, JPG or PNG document." });
+      return res.json({ storagePath: documentPath(userId, documentType, fileName),
+        uploadMode: "local-inline", uploadUrl: `${getBaseUrl(req)}/api/mobile/questionnaire/local-upload`, mimeType });
+    }
     const supabaseReachable = await canReachSupabaseUpstream();
     if (!supabaseReachable) {
+      // A serverless filesystem cannot durably store a candidate's documents.
+      if (isServerlessRuntime()) return res.status(503).json({ error: STORAGE_UNAVAILABLE });
       const storagePath = buildLocalUploadPath(userId, documentType as "resume" | "visa", fileName);
       return res.json({
         storagePath,
@@ -335,10 +369,11 @@ router.post("/mobile/questionnaire/upload-url", authMiddleware, async (req: Auth
 });
 
 router.post("/mobile/questionnaire/local-upload", authMiddleware, express.raw({ type: "*/*", limit: "12mb" }), async (req: AuthenticatedRequest, res: Response) => {
+  if (isServerlessRuntime() && !usesDatabaseDocuments()) return res.status(503).json({ error: STORAGE_UNAVAILABLE });
   const userId = req.user?.userId;
   const storagePath = String(req.headers["x-9jobs-storage-path"] || "").trim();
   if (!userId) return res.status(400).json({ error: "Missing authenticated user" });
-  if (!storagePath || !storagePath.startsWith(`${sanitizeFileName(userId)}/`)) {
+  if (!ownsDocumentPath(userId, storagePath)) {
     return res.status(400).json({ error: "Invalid document path" });
   }
   if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
@@ -346,14 +381,38 @@ router.post("/mobile/questionnaire/local-upload", authMiddleware, express.raw({ 
   }
 
   try {
+    if (usesDatabaseDocuments()) {
+      const mimeType = String(req.headers["content-type"] || "").split(";")[0];
+      if (!DOCUMENT_TYPES.has(mimeType)) return res.status(400).json({ error: "Unsupported document type" });
+      await storeDocument(userId, storagePath, mimeType, req.body);
+      return res.json({ success: true, storagePath });
+    }
     const destination = buildLocalUploadFilePath(storagePath);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.writeFile(destination, req.body);
     return res.json({ success: true, storagePath });
   } catch (error: any) {
     console.error("[Questionnaire] local document upload failed:", error);
-    return res.status(500).json({ error: error.message || "Could not store local document" });
+    return res.status(503).json({ error: "Could not save your document. Please try again; your questionnaire has not been submitted." });
   }
+});
+
+// Short-lived, single-document capability issued only by authenticated questionnaire reads.
+router.get("/mobile/questionnaire/document", async (req: AuthenticatedRequest, res: Response) => {
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  let storagePath: string;
+  try { storagePath = verifyDocumentDownload(String(req.query.token || "")); }
+  catch { return res.status(403).json({ error: "Invalid or expired document link" }); }
+  try {
+    const document = await withDocumentDatabase(async pool => (await pool.query(
+      "select mime_type,content from questionnaire_documents where storage_path=$1", [storagePath])).rows[0]);
+    if (!document) return res.status(404).json({ error: "Document not found" });
+    res.setHeader("Content-Type", document.mime_type);
+    res.setHeader("Content-Disposition", `attachment; filename="${storagePath.split("/").pop()}"`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(document.content);
+  } catch { return res.status(503).json({ error: "Document storage is temporarily unavailable" }); }
 });
 
 router.post("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
@@ -392,8 +451,16 @@ router.post("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRe
   }
 
   try {
+    if (usesDatabaseDocuments()) {
+      const resumeExists = await hasDocument(userId, row.resume_path, "resume");
+      const visaExists = !row.visa_path || await hasDocument(userId, row.visa_path, "visa");
+      if (!resumeExists || !visaExists) return res.status(400).json({ error: "Please upload your documents before saving the questionnaire." });
+      const questionnaire = await saveStoredQuestionnaire(userId, req.user?.email || "", row);
+      return res.json({ success: true, questionnaire });
+    }
     const supabaseReachable = await canReachSupabaseUpstream();
     if (!supabaseReachable) {
+      if (isServerlessRuntime()) return res.status(503).json({ error: STORAGE_UNAVAILABLE });
       const questionnaire = await upsertLocalCandidateQuestionnaire({
         ...row,
         enhanced_resume_path: "",
@@ -449,6 +516,15 @@ router.post("/mobile/questionnaire", authMiddleware, async (req: AuthenticatedRe
 router.get("/admin/questionnaires", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdmin(req, res)) return;
   try {
+    if (usesDatabaseDocuments()) {
+      const rows = await readStoredQuestionnaires();
+      const questionnaires = await Promise.all(rows.map(async item => ({ ...item,
+        resume_url: await createDownloadUrl(item.resume_path || "", req),
+        visa_url: await createDownloadUrl(item.visa_path || "", req),
+        enhanced_resume_url: await createDownloadUrl(item.enhanced_resume_path || "", req),
+      })));
+      return res.json({ questionnaires });
+    }
     const supabaseReachable = await canReachSupabaseUpstream();
     if (!supabaseReachable) {
       const questionnaires = await getLocalCandidateQuestionnaires();
@@ -464,9 +540,9 @@ router.get("/admin/questionnaires", authMiddleware, async (req: AuthenticatedReq
 
     const questionnaires = await Promise.all((data || []).map(async (item: any) => ({
       ...item,
-      resume_url: await createDownloadUrl(item.resume_path || ""),
-      visa_url: await createDownloadUrl(item.visa_path || ""),
-      enhanced_resume_url: await createDownloadUrl(item.enhanced_resume_path || ""),
+      resume_url: await createDownloadUrl(item.resume_path || "", req),
+      visa_url: await createDownloadUrl(item.visa_path || "", req),
+      enhanced_resume_url: await createDownloadUrl(item.enhanced_resume_path || "", req),
     })));
     return res.json({ questionnaires });
   } catch (error: any) {

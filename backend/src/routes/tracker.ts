@@ -1,5 +1,6 @@
 import express, { Router, Response } from "express";
 import { Pool } from "pg";
+import { createDatabasePool, isNeonDatabase } from "../lib/database";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import {
   deleteLocalRecruiterContact,
@@ -15,6 +16,9 @@ import {
 } from "../lib/localDb";
 import { canReachDatabaseUpstream, canReachSupabaseUpstream, supabase } from "../lib/supabase";
 import { getMessagesHistory } from "../services/messageService";
+import { hydrateVerifiedProfiles } from "../services/verifiedAccount";
+import { sheetDb, sheetEnabled } from "../services/sheetStore";
+import { readSheetActivity } from "../services/sheetApplications";
 
 const router = Router();
 const SUCCESS_STORY_BUCKET = "assets";
@@ -552,10 +556,7 @@ async function runOptionalSnapshotSingleQuery<T>(
 }
 
 function createPool() {
-  return new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
+  return createDatabasePool();
 }
 
 async function insertTrackerActivityLog(input: {
@@ -581,7 +582,7 @@ async function insertTrackerActivityLog(input: {
     metadata: input.metadata ?? {},
   };
 
-  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
     const { error } = await supabase.from("activity_logs").insert([row]);
     if (error) {
       throw error;
@@ -768,7 +769,7 @@ async function syncQuickUpdateReminder(application: any, patch: Record<string, u
     return;
   }
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
     return;
   }
 
@@ -2168,7 +2169,7 @@ router.get("/admin/dashboard", authMiddleware, async (req: AuthenticatedRequest,
       runOptionalSnapshotListQuery("applications", async () => supabase.from("applications").select("id")),
       runOptionalSnapshotListQuery("messages", async () => supabase.from("messages").select("id")),
       runOptionalSnapshotListQuery("user_subscriptions", async () =>
-        supabase.from("user_subscriptions").select("id, user_id, status").eq("status", "active"),
+        supabase.from("user_subscriptions").select("user_id, status").eq("status", "active"),
       ),
     ]);
 
@@ -2278,7 +2279,7 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
     let previousApplication: any = null;
     const performedBy = req.user?.email || req.user?.userId || "admin";
 
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       if (normalizedProfile?.id) {
         const { error: profileError } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
         if (profileError) throw profileError;
@@ -2397,6 +2398,7 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
 });
 
 router.post("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (String((req.body?.job || req.body)?.id || "").startsWith("sheet:")) return res.status(403).json({ error: "Imported sheet records are read-only" });
   if (!ensureAdminRole(req, res)) {
     return;
   }
@@ -2407,7 +2409,7 @@ router.post("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedRequ
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { error: jobError } = await supabase.from("jobs").upsert([normalizedJob], { onConflict: "id" });
       if (jobError) {
         if (!canRetryJobWithoutLink(jobError)) {
@@ -2448,7 +2450,7 @@ router.post("/admin/tracker/scores", authMiddleware, async (req: AuthenticatedRe
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const query = normalizedScore.id
         ? supabase.from("client_scores").update({
             client_id: normalizedScore.client_id,
@@ -2824,6 +2826,7 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
   }
 
   try {
+    const verifiedProfiles = async(rows:any[]) => sheetEnabled() ? hydrateVerifiedProfiles(rows,sheetDb()) : rows;
     const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.AWS_REGION);
     const { data: profilesData, error } = await supabase
       .from("profiles")
@@ -2839,9 +2842,9 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
     const supabaseProfiles = (profilesData || []) as any[];
     if (isServerlessRuntime && supabaseProfiles.length > 0) {
       return res.json({
-        profiles: supabaseProfiles.sort((left, right) =>
+        profiles: await verifiedProfiles(supabaseProfiles.sort((left, right) =>
           String(right.updated_at || right.created_at || "").localeCompare(String(left.updated_at || left.created_at || "")),
-        ),
+        )),
       });
     }
 
@@ -2864,9 +2867,9 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
     }
 
     return res.json({
-      profiles: Array.from(mergedProfiles.values()).sort((left, right) =>
+      profiles: await verifiedProfiles(Array.from(mergedProfiles.values()).sort((left, right) =>
         String(right.updated_at || right.created_at || "").localeCompare(String(left.updated_at || left.created_at || "")),
-      ),
+      )),
     });
   } catch (err: any) {
     console.error("[Tracker Route] GET /admin/personal-info failed:", err);
@@ -2885,7 +2888,7 @@ router.post("/admin/personal-info", authMiddleware, async (req: AuthenticatedReq
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { error } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
       if (error) throw error;
     }
@@ -2894,7 +2897,7 @@ router.post("/admin/personal-info", authMiddleware, async (req: AuthenticatedReq
     return res.json({
       success: true,
       profile: savedProfile,
-      mode: process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "local_preview",
+      mode: (isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY) ? "supabase" : "local_preview",
     });
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/personal-info failed:", err);
@@ -2913,7 +2916,7 @@ router.delete("/admin/personal-info/:id", authMiddleware, async (req: Authentica
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const deleteQueries = [
         supabase.from("messages").delete().or(`conversation_id.eq.${profileId},sender_id.eq.${profileId},recipient_id.eq.${profileId}`),
         supabase.from("conversations").delete().or(`id.eq.${profileId},client_id.eq.${profileId}`),
@@ -2967,7 +2970,7 @@ router.post("/mobile/profile", authMiddleware, async (req: AuthenticatedRequest,
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { error } = await supabase.from("profiles").upsert([normalizedProfile], { onConflict: "id" });
       if (error) throw error;
     }
@@ -2976,7 +2979,7 @@ router.post("/mobile/profile", authMiddleware, async (req: AuthenticatedRequest,
     return res.json({
       success: true,
       profile: savedProfile,
-      mode: process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "local_preview",
+      mode: (isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY) ? "supabase" : "local_preview",
     });
   } catch (err: any) {
     console.error("[Tracker Route] POST /mobile/profile failed:", err);
@@ -3020,7 +3023,7 @@ router.delete("/admin/tracker/saved-jobs", authMiddleware, async (req: Authentic
       return res.json({ success: true });
     }
 
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({
         error:
           "Backend write credentials are missing. Set SUPABASE_SERVICE_ROLE_KEY or a real DATABASE_URL in backend/.env to delete tracker records without RLS errors.",
@@ -3222,6 +3225,7 @@ router.post("/mobile/saved-jobs/toggle", authMiddleware, async (req: Authenticat
 });
 
 router.post("/mobile/tracker/applications", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (String(req.body?.jobId || "").startsWith("sheet:")) return res.status(403).json({ error: "Imported sheet records are read-only" });
   const requester = req.user;
   const requestedJobId = String(req.body?.jobId || "").trim();
   const requestedStatus = String(req.body?.status || "applied").trim().toLowerCase();
@@ -3255,7 +3259,7 @@ router.post("/mobile/tracker/applications", authMiddleware, async (req: Authenti
   };
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const existingApplicationId = await findLatestSupabaseApplicationId(userId, requestedJobId);
 
       const query = existingApplicationId
@@ -3329,7 +3333,7 @@ router.post("/admin/tracker/contacts", authMiddleware, async (req: Authenticated
 
   try {
     const performedBy = req.user?.email || req.user?.userId || "admin";
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       try {
         if (singleContact) {
           let previousContact: any = null;
@@ -3631,6 +3635,7 @@ router.get("/admin/tracker/jobs", authMiddleware, async (req: AuthenticatedReque
 });
 
 router.delete("/admin/tracker/jobs/:id", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  if (String(req.params.id).startsWith("sheet:")) return res.status(403).json({ error: "Imported sheet records are read-only" });
   if (!ensureAdminRole(req, res)) {
     return;
   }
@@ -3679,7 +3684,7 @@ router.get("/admin/tracker/contacts", authMiddleware, async (req: AuthenticatedR
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       try {
         const query = clientId
           ? supabase.from("recruiter_contacts").select("*").eq("client_id", clientId).order("contact_date", { ascending: false })
@@ -3718,7 +3723,7 @@ router.delete("/admin/tracker/contacts/:id", authMiddleware, async (req: Authent
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       try {
         const { error } = await supabase.from("recruiter_contacts").delete().eq("id", contactId);
         if (error) throw error;
@@ -3836,7 +3841,7 @@ router.get("/admin/tracker/follow-ups", authMiddleware, async (req: Authenticate
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
 
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for follow-up sync." });
     }
 
@@ -3864,7 +3869,7 @@ router.post("/admin/tracker/follow-ups", authMiddleware, async (req: Authenticat
   }
 
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for follow-up sync." });
     }
 
@@ -3892,7 +3897,7 @@ router.delete("/admin/tracker/follow-ups/:id", authMiddleware, async (req: Authe
   }
 
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for follow-up sync." });
     }
 
@@ -3914,7 +3919,7 @@ router.get("/admin/tracker/cold-emails", authMiddleware, async (req: Authenticat
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId : undefined;
 
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for cold email sync." });
     }
 
@@ -3943,7 +3948,7 @@ router.post("/admin/tracker/cold-emails", authMiddleware, async (req: Authentica
   }
 
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for cold email sync." });
     }
 
@@ -3976,7 +3981,7 @@ router.delete("/admin/tracker/cold-emails/:id", authMiddleware, async (req: Auth
   }
 
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!(isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       return res.status(500).json({ error: "SUPABASE_SERVICE_ROLE_KEY is required for cold email sync." });
     }
 
@@ -4001,7 +4006,7 @@ router.get("/admin/success-stories", authMiddleware, async (req: AuthenticatedRe
       return res.json({ success: true, stories });
     }
 
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { data, error } = await supabase
         .from("success_stories")
         .select("*")
@@ -4041,7 +4046,7 @@ router.post("/admin/success-stories", authMiddleware, async (req: AuthenticatedR
       return res.json({ success: true, story });
     }
 
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { data, error } = await supabase
         .from("success_stories")
         .upsert([{ ...normalizedStory, updated_at: new Date().toISOString() }], { onConflict: "id" })
@@ -4076,7 +4081,7 @@ router.delete("/admin/success-stories/:id", authMiddleware, async (req: Authenti
       return res.json({ success: true });
     }
 
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { error } = await supabase.from("success_stories").delete().eq("id", String(req.params.id));
       if (!error) {
         return res.json({ success: true });
@@ -4367,7 +4372,7 @@ router.post("/mobile/resumes/analyze", authMiddleware, async (req: Authenticated
   try {
     const extractedResumeText = await extractResumeText(fileBytes, mimeType);
     const analysis = await analyzeResumeWithGemini(base64, mimeType, extractedResumeText);
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       await ensurePublicAssetBucket();
     }
 
@@ -4464,7 +4469,7 @@ router.post("/mobile/resumes/upload-url", authMiddleware, async (req: Authentica
   }
 
   try {
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       await ensurePublicAssetBucket();
     }
     const storagePath = `resumes/${sanitizeAttachmentName(requester.userId)}/${Date.now()}-${fileName}`;
@@ -4498,6 +4503,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
     const canUsePostgresFallback = hasUsableDatabaseUrl() && databaseReachable;
 
     if (!supabaseReachable) {
+      if (isNeonDatabase()) return res.status(503).json({ error: "Database is temporarily unavailable" });
       const responseBody = await buildLocalSnapshotResponse(targetUserId, requester?.email || "");
       const responseDuration = Date.now() - requestStartedAt;
       res.setHeader("x-9jobs-snapshot-ms", String(responseDuration));
@@ -4666,7 +4672,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       ),
     ]);
 
-    const localProfile = await getLocalProfile(targetUserId);
+    const localProfile = isNeonDatabase() ? null : await getLocalProfile(targetUserId);
     const resolvedProfile = localProfile
       ? { ...(profileResult.data || {}), ...localProfile }
       : profileResult.data;
@@ -4761,11 +4767,13 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       });
     }
 
+    const sourceActivity = sheetEnabled() ? await readSheetActivity(targetUserId, sheetDb()) : null;
     const responseBody = {
       userId: targetUserId,
       profile: resolvedProfile,
       jobs: Array.from(canonicalJobsByRole.values()),
-      applications: canonicalApplications,
+      applications: [...canonicalApplications, ...(sourceActivity?.applications ?? [])],
+      sourceActivity: sourceActivity?.sourceActivity ?? null,
       savedJobs: savedJobsResult.data ?? [],
       categories: categoriesResult.data ?? [],
       messages: messagesResult.data ?? [],
@@ -4777,8 +4785,8 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       systemSettings: systemSettingsResult.data,
       interviews: interviewsResult.data ?? [],
       followUps: followUpsResult.data ?? [],
-      recruiterContacts: recruiterContactsResult.data ?? [],
-      coldEmails: coldEmailsResult.data ?? [],
+      recruiterContacts: [...(recruiterContactsResult.data ?? []), ...(sourceActivity?.recruiterContacts ?? [])],
+      coldEmails: [...(coldEmailsResult.data ?? []), ...(sourceActivity?.coldEmails ?? [])],
       clientScores: clientScoresResult.data ?? [],
       notifications: notificationsResult.data ?? [],
       coverLetter: coverLetterResult.data,

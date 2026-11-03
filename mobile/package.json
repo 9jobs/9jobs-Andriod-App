@@ -4,6 +4,8 @@
   "main": "index.ts",
   "dependencies": {
     "@clerk/expo": "^3.7.0",
+    "@expo-google-fonts/inter": "^0.4.2",
+    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo/metro-runtime": "~57.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.110.0",
@@ -53,13 +55,14 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "build:web": "expo export --platform web",
     "postinstall": "node ./scripts/patch-react-native-screens-fabric.js",
     "dev": "expo start",
     "start": "expo start",
     "android": "powershell -ExecutionPolicy Bypass -File ./scripts/open-9jobs-app.ps1",
     "android:app": "powershell -ExecutionPolicy Bypass -File ./scripts/open-9jobs-app.ps1",
     "android:native": "expo run:android",
-    "phone": "cmd /c .\\node_modules\\.bin\\expo.cmd start --dev-client --host lan --port 8091 --clear",
+    "phone": "node ../backend/scripts/start-localhost-phone.cjs",
     "phone:usb": "powershell -ExecutionPolicy Bypass -File ./scripts/start-9jobs-phone-usb.ps1",
     "ios": "expo run:ios",
     "web": "expo start --web",

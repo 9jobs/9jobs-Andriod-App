@@ -1,4 +1,4 @@
-import { resolveHomeSearchDestination } from "@/lib/navigation/home-search-destination";
+import { resolveHomeSearchDestination, searchAppSections } from "@/lib/navigation/home-search-destination";
 
 describe("resolveHomeSearchDestination", () => {
   it.each([
@@ -41,5 +41,25 @@ describe("resolveHomeSearchDestination", () => {
       pathname: "/(app)/jobs/search",
       params: { query: "Automation Engineer" },
     });
+  });
+});
+
+describe("app-wide section search", () => {
+  it.each([
+    ["Application", "Applied"], ["Applied job", "Applied"], ["applications today", "Applications Today"],
+    ["recuirter contacted", "Recruiter Contacted"], ["recruiter", "Recruiter Contacted"],
+    ["hired", "Hired"], ["shortlist", "Shortlisted"], ["rejected", "Rejected"],
+    ["find rejected jobs", "Rejected"], ["email", "Cold Emails Sent"],
+  ])("finds the correct tracker section for %s", (query, filter) => {
+    expect(searchAppSections(query)).toEqual(expect.arrayContaining([expect.objectContaining({ destination: { pathname: "/(app)/tracker-details", params: { filter } } })]));
+  });
+  it("shows multiple useful results and partial matches", () => {
+    expect(searchAppSections("email").map(item => item.destination.pathname)).toEqual(expect.arrayContaining(["/(app)/outreach", "/(app)/tracker-details"]));
+    expect(searchAppSections("pric")[0].destination.pathname).toBe("/(app)/pricing");
+    expect(searchAppSections("applic").length).toBeGreaterThan(1);
+  });
+  it("does not confuse ordinary job/company queries or blanks with sections", () => {
+    expect(searchAppSections("Automation Engineer")).toEqual([]);
+    expect(searchAppSections("   ")).toEqual([]);
   });
 });

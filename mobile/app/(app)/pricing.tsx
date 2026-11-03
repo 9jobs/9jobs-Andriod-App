@@ -1,121 +1,18 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
-import { colors, radii, shadows, spacing, typography } from "@/theme";
+import { colors, spacing, typography } from "@/theme";
 
-const weeklySupportPlans = [
-  {
-    id: "trial",
-    title: "Trial",
-    description:
-      "Try 9Jobs for 2 days. Day 1 includes LinkedIn and resume optimization, and Day 2 shows you our job application support services.",
-    price: "$50",
-    cadence: "/ 2 days",
-    features: [
-      "Day 1 LinkedIn optimization",
-      "Day 1 resume optimization",
-      "Day 2 job apply services overview",
-      "2-day support window",
-    ],
-    accent: "light" as const,
-    badge: null,
-    secondaryCta: "Get a schedule",
-  },
-  {
-    id: "non-it",
-    title: "Non-IT",
-    description:
-      "After the trial, continue with weekly support for non-IT candidates who want structured job application help and accountability.",
-    price: "$200",
-    cadence: "/ week",
-    features: [
-      "Weekly plan for non-IT roles",
-      "Application tracking",
-      "Job application support",
-      "Follow-up support",
-      "Weekly accountability",
-    ],
-    accent: "light" as const,
-    badge: "Popular",
-    secondaryCta: "Get a schedule",
-  },
-  {
-    id: "it",
-    title: "IT",
-    description:
-      "After the trial, continue with weekly support for IT candidates who want premium tech-focused job application help.",
-    price: "$250",
-    cadence: "/ week",
-    features: [
-      "Weekly plan for IT roles",
-      "Tech-focused application support",
-      "ATS keyword targeting",
-      "Interview prep support",
-      "Weekly accountability",
-    ],
-    accent: "dark" as const,
-    badge: null,
-    secondaryCta: "Get a schedule",
-  },
-];
-
-const optimizationPlans = [
-  {
-    id: "resume-makeover",
-    title: "Resume Makeover",
-    description:
-      "Professional resume redesign tailored for ATS systems to get you noticed.",
-    price: "$49",
-    cadence: "/ one-time",
-    features: [
-      "Resume redesign (ATS-friendly)",
-      "Optimized formatting & structure",
-      "Grammar & wording improvements",
-      "Industry-specific keyword optimization",
-      "Achievement-focused content",
-      "PDF delivery (ATS + Recruiter friendly)",
-    ],
-    accent: "dark" as const,
-    badge: null,
-    secondaryCta: "Get started",
-  },
-  {
-    id: "resume-linkedin-seek",
-    title: "Resume + LinkedIn + SEEK Optimisation",
-    description:
-      "Complete professional branding to boost your Resume, LinkedIn and SEEK profile visibility.",
-    price: "$89",
-    cadence: "/ one-time",
-    features: [
-      "Everything in Resume Makeover",
-      "LinkedIn profile optimization",
-      "SEEK profile optimization",
-      "Headline & About section rewrite",
-      "Experience & skills enhancement",
-      "ATS & search keyword targeting",
-      "Profile visibility improvements",
-      "PDF delivery + profile guides",
-    ],
-    accent: "light" as const,
-    badge: "Most Popular",
-    secondaryCta: "Get started",
-  },
-];
+import { weeklySupportPlans, optimizationPlans, type PricingPlan } from "@/lib/data/pricing-plans";
 
 export default function PricingScreen() {
   const params = useLocalSearchParams<{ payment_status?: string; session_id?: string }>();
   const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
   const [verifiedSessionId, setVerifiedSessionId] = useState<string | null>(null);
-  const [amounts, setAmounts] = useState<Record<string, string>>(() => {
-    const allPlans = [...weeklySupportPlans, ...optimizationPlans];
-    return Object.fromEntries(
-      allPlans.map((plan) => [plan.id, plan.price.replace(/[^\d.]/g, "")]),
-    );
-  });
 
   useEffect(() => {
     if (params.payment_status !== "success" || !params.session_id || verifiedSessionId === params.session_id) {
@@ -137,7 +34,7 @@ export default function PricingScreen() {
 
         setVerifiedSessionId(String(params.session_id));
         if (payload.session?.payment_status === "paid") {
-          Alert.alert("Payment successful", "Stripe test payment was completed successfully for this plan.");
+          Alert.alert("Payment successful", "Your payment was completed successfully for this plan.");
         } else {
           Alert.alert("Payment pending", "The checkout returned, but Stripe has not marked the payment as paid yet.");
         }
@@ -155,13 +52,6 @@ export default function PricingScreen() {
     };
   }, [params.payment_status, params.session_id, verifiedSessionId]);
 
-  function updateAmount(planId: string, value: string) {
-    setAmounts((current) => ({
-      ...current,
-      [planId]: value.replace(/[^\d.]/g, ""),
-    }));
-  }
-
   async function handlePayNow(plan: {
     id: string;
   }) {
@@ -172,13 +62,11 @@ export default function PricingScreen() {
     try {
       setPendingPlanId(plan.id);
       const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
-      const amount = amounts[plan.id] || "";
       const response = await fetch(`${backendUrl}/api/payments/checkout-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planId: plan.id,
-          amount,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -223,30 +111,30 @@ export default function PricingScreen() {
   return (
     <Screen contentStyle={styles.screenContent}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.eyebrow}>WEEKLY SUPPORT</Text>
-        <Text style={styles.title}>Choose your 9Jobs support plan</Text>
+        <Text style={styles.eyebrow}>PRICING PLANS</Text>
+        <Text style={styles.title}>Choose Your Plan</Text>
         <Text style={styles.subtitle}>
-          Weekly support plans for candidates who want structured job application help and accountability.
+          Flexible support for every stage of your Australian job search.
         </Text>
       </View>
 
       <View style={styles.cardStack}>
         {weeklySupportPlans.map((plan) => (
-          <PricingCard key={plan.title} plan={plan} amountValue={amounts[plan.id] ?? ""} onAmountChange={updateAmount} onPayNow={handlePayNow} isPaying={pendingPlanId === plan.id} />
+          <PricingCard key={plan.title} plan={plan} onPayNow={handlePayNow} isPaying={pendingPlanId === plan.id} />
         ))}
       </View>
 
       <View style={styles.sectionHeader}>
-        <Text style={styles.eyebrow}>ONE-TIME UPGRADES</Text>
+        <Text style={styles.eyebrow}>One-Time Packages · Premium upgrades</Text>
         <Text style={styles.title}>Resume & Profile Optimization</Text>
         <Text style={styles.subtitle}>
-          One-time professional upgrades for job seekers who do not need weekly support.
+          One-time professional upgrades for job seekers who don’t need weekly support.
         </Text>
       </View>
 
       <View style={styles.cardStack}>
         {optimizationPlans.map((plan) => (
-          <PricingCard key={plan.title} plan={plan} amountValue={amounts[plan.id] ?? ""} onAmountChange={updateAmount} onPayNow={handlePayNow} isPaying={pendingPlanId === plan.id} />
+          <PricingCard key={plan.title} plan={plan} onPayNow={handlePayNow} isPaying={pendingPlanId === plan.id} />
         ))}
       </View>
     </Screen>
@@ -255,24 +143,10 @@ export default function PricingScreen() {
 
 function PricingCard({
   plan,
-  amountValue,
-  onAmountChange,
   onPayNow,
   isPaying,
 }: {
-  plan: {
-    id: string;
-    title: string;
-    description: string;
-    price: string;
-    cadence: string;
-    features: string[];
-    accent: "light" | "dark";
-    badge: string | null;
-    secondaryCta: string;
-  };
-  amountValue: string;
-  onAmountChange: (planId: string, value: string) => void;
+  plan: PricingPlan;
   onPayNow: (plan: { id: string }) => Promise<void>;
   isPaying: boolean;
 }) {
@@ -296,22 +170,14 @@ function PricingCard({
         {plan.description}
       </Text>
 
+      {plan.highlights?.map((highlight) => (
+        <Text key={highlight} style={[styles.planDescription, isDark && styles.planDescriptionDark]}>{highlight}</Text>
+      ))}
       <View style={styles.priceRow}>
         <Text style={[styles.price, isDark && styles.priceDark]}>{plan.price}</Text>
-        <Text style={[styles.cadence, isDark && styles.cadenceDark]}>{plan.cadence}</Text>
+        <Text style={[styles.gstLabel, isDark && styles.cadenceDark]}>+ 10% GST</Text>
       </View>
-
-      <View style={styles.amountEditor}>
-        <Text style={[styles.amountLabel, isDark && styles.amountLabelDark]}>Editable payment amount (USD)</Text>
-        <TextInput
-          value={amountValue}
-          onChangeText={(value) => onAmountChange(plan.id, value)}
-          keyboardType="decimal-pad"
-          placeholder="Enter amount"
-          placeholderTextColor={isDark ? colors.darkMuted : colors.subtleText}
-          style={[styles.amountInput, isDark && styles.amountInputDark]}
-        />
-      </View>
+      <Text style={[styles.cadence, isDark && styles.cadenceDark]}>{plan.cadence}</Text>
 
       <View style={styles.featureList}>
         {plan.features.map((feature) => (
@@ -325,6 +191,9 @@ function PricingCard({
       <View style={styles.buttonStack}>
         <Pressable
           style={[styles.primaryButton, isDark && styles.primaryButtonAccent]}
+          accessibilityLabel={`Pay for ${plan.title}`}
+          accessibilityRole="button"
+          disabled={isPaying}
           onPress={() => void onPayNow({ id: plan.id })}
         >
           <Text style={[styles.primaryButtonText, isDark && styles.primaryButtonTextDark]}>
@@ -341,7 +210,7 @@ function PricingCard({
           </Svg>
         </Pressable>
 
-        <Pressable
+        {plan.secondaryCta ? <Pressable
           style={[styles.secondaryButton, isDark && styles.secondaryButtonDark]}
           onPress={() => router.push("/(app)/contact")}
         >
@@ -357,7 +226,7 @@ function PricingCard({
               strokeLinejoin="round"
             />
           </Svg>
-        </Pressable>
+        </Pressable> : null}
       </View>
     </View>
   );
@@ -376,14 +245,14 @@ const styles = StyleSheet.create({
     color: colors.accent,
     letterSpacing: 1.2,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
     lineHeight: 34,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   subtitle: {
     ...typography.body,
     color: colors.mutedText,
@@ -417,13 +286,13 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.dark,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   planTitle: {
     ...typography.display,
     color: colors.text,
     fontSize: 24,
     lineHeight: 30,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   planTitleDark: {
     color: colors.surface,
   },
@@ -438,13 +307,14 @@ const styles = StyleSheet.create({
   priceRow: {
     flexDirection: "row",
     alignItems: "flex-end",
+    flexWrap: "wrap",
     gap: 6,
   },
   price: {
     ...typography.display,
     color: colors.text,
     fontSize: 34,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   priceDark: {
     color: colors.surface,
   },
@@ -453,39 +323,18 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontWeight: "700",
     paddingBottom: 4,
-  },
+   fontFamily: "Inter_600SemiBold" },
   cadenceDark: {
     color: colors.darkMuted,
   },
   featureList: {
     gap: spacing.sm,
   },
-  amountEditor: {
-    gap: 8,
-  },
-  amountLabel: {
+  gstLabel: {
     ...typography.label,
-    color: colors.mutedText,
-    fontWeight: "700",
-  },
-  amountLabelDark: {
-    color: colors.darkMuted,
-  },
-  amountInput: {
-    minHeight: 46,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: 14,
-    backgroundColor: colors.background,
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  amountInputDark: {
-    backgroundColor: "#12130F",
-    borderColor: "#343A2C",
-    color: colors.surface,
+    color: colors.accentDark,
+    paddingBottom: 5,
+    fontSize: 11,
   },
   featureRow: {
     flexDirection: "row",
@@ -497,7 +346,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     marginTop: -1,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   checkDark: {
     color: colors.accent,
   },
@@ -507,7 +356,7 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 22,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   featureTextDark: {
     color: colors.surface,
   },
@@ -533,7 +382,7 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 15,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   primaryButtonTextDark: {
     color: colors.dark,
   },
@@ -555,7 +404,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   secondaryButtonTextDark: {
     color: colors.surface,
   },

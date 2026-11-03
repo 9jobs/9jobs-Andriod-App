@@ -1,204 +1,37 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
 import jwt from "jsonwebtoken";
-import { canReachSupabaseUpstream, supabase } from "../lib/supabase";
+import { timingSafeEqual } from "node:crypto";
+import { verifyClerkSession } from "../middleware/sheetIdentity";
+import { lookupVerifiedAccount, persistVerifiedAccount } from "../services/verifiedAccount";
+import { sheetDb } from "../services/sheetStore";
 
-
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret-9jobs-chat-key-2026";
-const router = Router();
-
-// Local credentials duplicated for runtime decoupling
-const ADMIN_EMAIL = "9jobsapplicationservice@gmail.com";
-const ADMIN_PASSWORD = "Akash@#1234";
-
-async function persistAuthenticatedProfile(payload: {
-  userId: string;
-  email: string;
-  fullName: string;
-  phoneNumber?: string;
-  role: "admin" | "client";
-}) {
-  const profileRow = {
-    id: payload.userId,
-    email: payload.email,
-    full_name: payload.fullName,
-    phone_number: payload.phoneNumber || "",
-    role: payload.role,
-    account_status: "active",
-    subscription_plan: payload.role === "admin" ? "internal" : "free",
-  };
-
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .upsert([profileRow], { onConflict: "id" });
-
-  if (profileError) {
-    throw profileError;
-  }
-
-  if (payload.role === "admin") {
-    const { error: adminError } = await supabase
-      .from("admins")
-      .upsert([{ email: payload.email }], { onConflict: "email" });
-
-    if (adminError) {
-      throw adminError;
-    }
-  }
+function equal(a:string,b:string) { const x=Buffer.from(a),y=Buffer.from(b); return x.length===y.length && timingSafeEqual(x,y); }
+export function createAuthRouter(database = sheetDb) {
+ const router = Router();
+ router.post("/token", async(req,res)=>{
+  const secret=process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) return res.status(503).json({error:"Authentication is not configured"});
+  try {
+   const session=req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1];
+   let user:{userId:string;role:string;email:string;fullName:string};
+   if (session) {
+    const principal=await verifyClerkSession(session);
+    const account=await lookupVerifiedAccount(principal.userId);
+    await persistVerifiedAccount(account,database(),principal.role);
+    user={...account,role:principal.role};
+   } else {
+    // Preserve password-admin login using server-side configuration only.
+    const email=String(req.body?.email || "").trim().toLowerCase();
+    const expectedEmail=process.env.ADMIN_LOGIN_EMAIL?.trim().toLowerCase();
+    const password=process.env.ADMIN_LOGIN_PASSWORD;
+    if (!expectedEmail || !password || !email || !equal(email,expectedEmail) || !equal(String(req.body?.password || ""),password)) return res.status(401).json({error:"Verified login required"});
+    user={userId:"admin",role:"admin",email:expectedEmail,fullName:"9Jobs Administrator"};
+   }
+   const token=jwt.sign({...user,identity_verified:true,auth_method:session?"clerk":"password"},secret,{algorithm:"HS256",issuer:"9jobs-backend",audience:"9jobs-api",expiresIn:"1h"});
+   res.setHeader("Cache-Control","no-store");
+   return res.json({token,user});
+  } catch {return res.status(401).json({error:"Verified account login required"});}
+ });
+ return router;
 }
-
-router.post("/token", async (req: Request, res: Response) => {
-  const { email, password, fullName, role, userId, phoneNumber } = req.body;
-  const requestStartedAt = Date.now();
-  const supabaseReachable = await canReachSupabaseUpstream();
-
-  console.log(`[Auth Route] /token request: email=${email}, role=${role}`);
-
-  if (role === "admin" || role === "staff") {
-    if (userId && email) {
-      const normalizedEmail = String(email).trim().toLowerCase();
-      const isKnownAdmin = normalizedEmail === ADMIN_EMAIL.toLowerCase();
-
-      if (isKnownAdmin) {
-        const persistStartedAt = Date.now();
-        if (supabaseReachable) {
-          try {
-            await persistAuthenticatedProfile({
-              userId: String(userId),
-              email: normalizedEmail,
-              fullName: "9Jobs Administrator",
-              phoneNumber,
-              role: "admin",
-            });
-          } catch (persistError) {
-            console.warn("[Auth Route] Warning: failed to persist Clerk admin profile:", persistError);
-          }
-        } else {
-          console.warn("[Auth Route] Skipping Clerk admin profile persistence because Supabase is unreachable.");
-        }
-        const persistMs = Date.now() - persistStartedAt;
-
-        const signStartedAt = Date.now();
-        const token = jwt.sign(
-          {
-            userId: String(userId),
-            role: "admin",
-            email: normalizedEmail,
-          },
-          JWT_SECRET,
-          { expiresIn: "30d" }
-        );
-        const signMs = Date.now() - signStartedAt;
-
-        console.log(`[Auth Route] Success: Clerk-backed admin token generated for ${normalizedEmail}`);
-        res.setHeader("x-9jobs-auth-persist-ms", String(persistMs));
-        res.setHeader("x-9jobs-auth-sign-ms", String(signMs));
-        res.setHeader("x-9jobs-auth-total-ms", String(Date.now() - requestStartedAt));
-        return res.json({
-          token,
-          user: {
-            userId: String(userId),
-            role: "admin",
-            email: normalizedEmail,
-          },
-        });
-      }
-    }
-
-    // Admin password check
-    if (
-      email?.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase() &&
-      password === ADMIN_PASSWORD
-    ) {
-      const persistStartedAt = Date.now();
-      if (supabaseReachable) {
-        try {
-          await persistAuthenticatedProfile({
-            userId: "admin",
-            email: ADMIN_EMAIL,
-            fullName: "9Jobs Administrator",
-            phoneNumber,
-            role: "admin",
-          });
-        } catch (persistError) {
-          console.warn("[Auth Route] Warning: failed to persist password admin profile:", persistError);
-        }
-      } else {
-        console.warn("[Auth Route] Skipping password admin profile persistence because Supabase is unreachable.");
-      }
-      const persistMs = Date.now() - persistStartedAt;
-
-      const signStartedAt = Date.now();
-      const token = jwt.sign(
-        {
-          userId: "admin",
-          role: "admin",
-          email: ADMIN_EMAIL,
-        },
-        JWT_SECRET,
-        { expiresIn: "30d" }
-      );
-      const signMs = Date.now() - signStartedAt;
-      console.log(`[Auth Route] Success: Admin token generated`);
-      res.setHeader("x-9jobs-auth-persist-ms", String(persistMs));
-      res.setHeader("x-9jobs-auth-sign-ms", String(signMs));
-      res.setHeader("x-9jobs-auth-total-ms", String(Date.now() - requestStartedAt));
-      return res.json({ token, user: { userId: "admin", role: "admin", email: ADMIN_EMAIL } });
-    }
-
-    console.warn(`[Auth Route] Failed: Invalid admin credentials`);
-    return res.status(401).json({ error: "Invalid admin credentials" });
-  } else {
-    // Client demo token generation (or Clerk login verification)
-    const clientUserId = userId || "preview-user-9jobs";
-    const clientEmail =
-      email || (clientUserId === "preview-user-9jobs" ? "preview-user-9jobs@9jobs.app" : "candidate@9jobs.app");
-    const clientFullName = fullName || "9Jobs Candidate";
-
-    const persistStartedAt = Date.now();
-    if (supabaseReachable) {
-      try {
-        await persistAuthenticatedProfile({
-          userId: clientUserId,
-          email: clientEmail,
-          fullName: clientFullName,
-          phoneNumber,
-          role: "client",
-        });
-      } catch (persistError) {
-        console.warn(`[Auth Route] Warning: failed to persist client profile for ${clientUserId}:`, persistError);
-      }
-    } else {
-      console.warn(`[Auth Route] Skipping client profile persistence for ${clientUserId} because Supabase is unreachable.`);
-    }
-    const persistMs = Date.now() - persistStartedAt;
-
-    const signStartedAt = Date.now();
-    const token = jwt.sign(
-      {
-        userId: clientUserId,
-        role: "client",
-        email: clientEmail,
-        fullName: clientFullName,
-      },
-      JWT_SECRET,
-      { expiresIn: "30d" }
-    );
-    const signMs = Date.now() - signStartedAt;
-
-    console.log(`[Auth Route] Success: Client token generated for ${clientUserId}`);
-    res.setHeader("x-9jobs-auth-persist-ms", String(persistMs));
-    res.setHeader("x-9jobs-auth-sign-ms", String(signMs));
-    res.setHeader("x-9jobs-auth-total-ms", String(Date.now() - requestStartedAt));
-    return res.json({
-      token,
-      user: {
-        userId: clientUserId,
-        role: "client",
-        email: clientEmail,
-        fullName: clientFullName,
-      },
-    });
-  }
-});
-
-export default router;
+export default createAuthRouter();

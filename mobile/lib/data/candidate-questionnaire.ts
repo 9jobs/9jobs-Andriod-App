@@ -3,9 +3,11 @@ import { getBackendAuthToken } from "@/lib/data/backend-auth-token";
 import { normalizeBackendError } from "@/lib/network/backend-errors";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
+import { Platform } from "react-native";
 import { startTrackedRequest } from "@/lib/perf/livePerf";
+import { resolveBackendUrl } from "@/lib/data/backend-auth-token";
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "http://10.0.2.2:3000";
+const BACKEND_URL = resolveBackendUrl();
 const QUESTIONNAIRE_CACHE_PREFIX = "candidate_questionnaire_cache";
 
 export type QuestionnaireDocument = {
@@ -73,6 +75,33 @@ async function getBackendToken(user: SessionUser) {
   });
 }
 
+async function authorizedRequest(user: SessionUser, url: string, init: RequestInit = {}, timeoutMs = 30000) {
+  let token = await getBackendToken(user);
+  const request = (value: string) => {
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${value}`);
+    return fetchWithTimeout(url, { ...init, headers }, timeoutMs);
+  };
+  let response = await request(token);
+  if (response.status === 401) {
+    token = await getBackendAuthToken(user, { backendUrl: BACKEND_URL,
+      forceRefresh: true, rejectedToken: token, label: "questionnaire.auth.refresh" });
+    response = await request(token);
+  }
+  return response;
+}
+
+export async function saveQuestionnaireDraft(userId: string, value: unknown) {
+  await AsyncStorage.setItem(`candidate_questionnaire_draft:${userId}`, JSON.stringify(value));
+}
+export async function loadQuestionnaireDraft(userId: string) {
+  const value = await AsyncStorage.getItem(`candidate_questionnaire_draft:${userId}`);
+  return value ? JSON.parse(value) : null;
+}
+export async function clearQuestionnaireDraft(userId: string) {
+  await AsyncStorage.removeItem(`candidate_questionnaire_draft:${userId}`);
+}
+
 export async function fetchCandidateQuestionnaireStatus(user: SessionUser) {
   const questionnaire = await fetchCandidateQuestionnaire(user);
   return Boolean(questionnaire?.completed_at);
@@ -85,15 +114,13 @@ export async function fetchCandidateQuestionnaire(user: SessionUser) {
   }
 
   const requestPromise = (async () => {
-    const token = await getBackendToken(user);
     const tracker = startTrackedRequest("questionnaire.fetch", {
       user_id: user.id,
       url: `${BACKEND_URL}/api/mobile/questionnaire`,
     });
-    const response = await fetchWithTimeout(
+    const response = await authorizedRequest(user,
       `${BACKEND_URL}/api/mobile/questionnaire`,
       {
-        headers: { Authorization: `Bearer ${token}` },
       },
       QUESTIONNAIRE_STATUS_TIMEOUT_MS,
     );
@@ -138,13 +165,12 @@ export async function uploadQuestionnaireDocument(
     throw new Error("Document must be smaller than 12 MB.");
   }
 
-  const token = await getBackendToken(user);
   const mimeType = normalizeDocumentMimeType(file.name, file.mimeType);
 
   try {
-    const prepareResponse = await fetch(`${BACKEND_URL}/api/mobile/questionnaire/upload-url`, {
+    const prepareResponse = await authorizedRequest(user, `${BACKEND_URL}/api/mobile/questionnaire/upload-url`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ documentType, fileName: file.name, mimeType, fileSize: file.size || 0 }),
     });
     const prepared = await prepareResponse.json().catch(() => null);
@@ -152,15 +178,15 @@ export async function uploadQuestionnaireDocument(
       throw new Error(prepared?.error || "Could not prepare document upload.");
     }
 
-    const source = await fetch(file.uri);
-    if (!source.ok) throw new Error("Could not read the selected document.");
     if (prepared?.uploadMode === "local-inline" && prepared?.uploadUrl) {
+      const source = await fetch(file.uri);
+      if (!source.ok) throw new Error("Could not read the selected document.");
       const sourceBlob = await source.blob();
       const normalizedBlob = sourceBlob.type === mimeType ? sourceBlob : new Blob([sourceBlob], { type: mimeType });
-      const uploadResponse = await fetch(String(prepared.uploadUrl), {
+      // Use the authenticated backend origin; HTTP redirects can strip Authorization.
+      const uploadResponse = await authorizedRequest(user, `${BACKEND_URL}/api/mobile/questionnaire/local-upload`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
           "Content-Type": mimeType,
           "x-9jobs-storage-path": String(prepared.storagePath),
         },
@@ -171,16 +197,23 @@ export async function uploadQuestionnaireDocument(
         throw new Error(uploadPayload?.message || uploadPayload?.error || `Document upload failed with HTTP ${uploadResponse.status}.`);
       }
     } else {
-      const sourceBlob = await source.blob();
-      const normalizedBlob = sourceBlob.type === mimeType ? sourceBlob : new Blob([sourceBlob], { type: mimeType });
+      if (!prepared.signedUrl) throw new Error("The server did not provide a document upload URL.");
       const uploadBody = new FormData();
       uploadBody.append("cacheControl", "3600");
-      uploadBody.append("", normalizedBlob);
-      const upload = await fetch(String(prepared.signedUrl), {
+      if (Platform.OS === "web") {
+        const source = await fetch(file.uri);
+        if (!source.ok) throw new Error("Could not read the selected document.");
+        const blob = await source.blob();
+        uploadBody.append("", blob, file.name);
+      } else {
+        // React Native streams a picker URI; converting it to a new Blob can fail on phones.
+        uploadBody.append("", { uri: file.uri, name: file.name, type: mimeType } as unknown as Blob);
+      }
+      const upload = await fetchWithTimeout(String(prepared.signedUrl), {
         method: "PUT",
         headers: { "x-upsert": "false" },
         body: uploadBody,
-      });
+      }, 60000);
       if (!upload.ok) {
         const uploadError = await upload.json().catch(() => null);
         throw new Error(uploadError?.message || uploadError?.error || `Document upload failed with HTTP ${upload.status}.`);
@@ -193,15 +226,16 @@ export async function uploadQuestionnaireDocument(
 }
 
 export async function submitCandidateQuestionnaire(user: SessionUser, input: CandidateQuestionnaireInput) {
-  const token = await getBackendToken(user);
   try {
-    const response = await fetch(`${BACKEND_URL}/api/mobile/questionnaire`, {
+    const response = await authorizedRequest(user, `${BACKEND_URL}/api/mobile/questionnaire`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || `Questionnaire submission failed with HTTP ${response.status}`);
+    if (!payload?.success || !payload?.questionnaire?.completed_at) throw new Error("The server did not confirm that your questionnaire was saved.");
+    await AsyncStorage.setItem(`${QUESTIONNAIRE_CACHE_PREFIX}:${user.id}`, JSON.stringify(payload.questionnaire));
     return payload;
   } catch (error) {
     throw normalizeBackendError(error, BACKEND_URL, "Could not save your questionnaire.");

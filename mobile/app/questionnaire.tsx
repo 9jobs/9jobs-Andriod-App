@@ -1,3 +1,4 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import { useEffect, useMemo, useState, useRef, memo, useCallback } from "react";
 import {
   ActivityIndicator,
@@ -29,6 +30,9 @@ import { useSession } from "@/providers/SessionProvider";
 import {
   submitCandidateQuestionnaire,
   uploadQuestionnaireDocument,
+  saveQuestionnaireDraft,
+  loadQuestionnaireDraft,
+  clearQuestionnaireDraft,
   type QuestionnaireDocument,
 } from "@/lib/data/candidate-questionnaire";
 import { colors, radii, spacing, typography } from "@/theme";
@@ -84,6 +88,7 @@ export default function CandidateQuestionnaireScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resume, setResume] = useState<QuestionnaireDocument | null>(null);
   const [visa, setVisa] = useState<QuestionnaireDocument | null>(null);
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const [form, setForm] = useState<FormState>({
     fullName: user?.fullName || "",
     contactNumber: user?.phoneNumber || "",
@@ -98,6 +103,28 @@ export default function CandidateQuestionnaireScreen() {
     preferredRoles: "",
     visaType: "",
   });
+
+  useEffect(() => {
+    let active = true;
+    if (!user) return;
+    setDraftLoaded(false);
+    void loadQuestionnaireDraft(user.id).then((draft) => {
+      if (!active || !draft?.form) return;
+      setForm((current) => ({ ...current, ...draft.form }));
+      setResume(draft.resume ?? null);
+      setVisa(draft.visa ?? null);
+      setStep(Math.max(0, Math.min(STEPS.length - 1, Number(draft.step) || 0)));
+    }).catch(() => {}).finally(() => { if (active) setDraftLoaded(true); });
+    return () => { active = false; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user || !draftLoaded || isSubmittingRef.current) return;
+    const timer = setTimeout(() => {
+      void saveQuestionnaireDraft(user.id, { form, resume, visa, step }).catch(() => {});
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [user?.id, draftLoaded, form, resume, visa, step]);
 
   const currentStep = STEPS[step];
   const progress = `${((step + 1) / STEPS.length) * 100}%` as `${number}%`;
@@ -237,6 +264,7 @@ export default function CandidateQuestionnaireScreen() {
       isSubmittingRef.current = true;
       setIsSubmitting(true);
       setError("");
+      await saveQuestionnaireDraft(activeUser.id, { form, resume, visa, step });
       const uploadedResume = await uploadQuestionnaireDocument(activeUser, "resume", resume);
       const uploadedVisa = visa ? await uploadQuestionnaireDocument(activeUser, "visa", visa) : { path: "", name: "" };
       await submitCandidateQuestionnaire(activeUser, {
@@ -258,6 +286,7 @@ export default function CandidateQuestionnaireScreen() {
         visaName: uploadedVisa.name,
       });
       await setOnboardingComplete();
+      await clearQuestionnaireDraft(activeUser.id).catch(() => {});
       router.replace("/(app)");
     } catch (submissionError) {
       isSubmittingRef.current = false;
@@ -282,7 +311,7 @@ export default function CandidateQuestionnaireScreen() {
         <View style={styles.stepChip}><Text style={styles.stepChipText}>{step + 1} / {STEPS.length}</Text></View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
+      <SmoothScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic">
         <View style={styles.brandRow}><View style={styles.brandDot} /><Text style={styles.brandText}>9JOBS CAREER SETUP</Text></View>
         {step === 0 ? <CareerPassportVisual name={form.fullName} /> : null}
         <Animated.Text entering={FadeInUp.duration(220)} key={`${currentStep.key}-title`} style={styles.title}>{currentStep.title}</Animated.Text>
@@ -347,10 +376,10 @@ export default function CandidateQuestionnaireScreen() {
           </Animated.View>
         )}
 
-        {error ? <Text selectable style={styles.error}>{error}</Text> : null}
-      </ScrollView>
+      </SmoothScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) + spacing.sm }]}>
+        {error ? <Text accessibilityRole="alert" selectable style={styles.error}>{error}</Text> : null}
         <Pressable style={[styles.continueButton, (!canContinue || isSubmitting) && styles.continueDisabled]} onPress={() => void handleContinue()} disabled={isSubmitting}>
           {isSubmitting ? <ActivityIndicator color={colors.dark} /> : <Text style={styles.continueText}>{step === STEPS.length - 1 ? "Save & Start" : "Continue"}</Text>}
         </Pressable>
@@ -564,55 +593,55 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: spacing.lg, paddingTop: spacing.md },
   backButton: { width: 46, height: 46, borderRadius: 16, backgroundColor: colors.dark, alignItems: "center", justifyContent: "center" },
   backButtonHidden: { opacity: 0 },
-  backText: { color: colors.surface, fontSize: 27, lineHeight: 30, fontWeight: "700" },
+  backText: { color: colors.surface, fontSize: 27, lineHeight: 30, fontWeight: "700" , fontFamily: "PlusJakartaSans_700Bold" },
   stepChip: { backgroundColor: colors.dark, borderRadius: radii.pill, paddingHorizontal: 15, paddingVertical: 10 },
-  stepChipText: { color: colors.accent, fontSize: 12, fontWeight: "800", letterSpacing: 0.7 },
+  stepChipText: { color: colors.accent, fontSize: 12, fontWeight: "800", letterSpacing: 0.7 , fontFamily: "Inter_600SemiBold" },
   content: { flexGrow: 1, padding: spacing.lg, paddingTop: spacing.xl, gap: spacing.md, paddingBottom: spacing.xxl },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   brandDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
   brandText: { ...typography.label, color: colors.mutedText, letterSpacing: 1.1 },
-  title: { ...typography.display, color: colors.text, fontSize: 32, lineHeight: 39, marginTop: spacing.sm },
-  subtitle: { ...typography.body, color: colors.mutedText, fontSize: 16, lineHeight: 23, marginBottom: spacing.sm },
+  title: { ...typography.display, color: colors.text, fontSize: 32, lineHeight: 39, marginTop: spacing.sm , fontFamily: "PlusJakartaSans_600SemiBold" },
+  subtitle: { ...typography.body, color: colors.mutedText, fontSize: 16, lineHeight: 23, marginBottom: spacing.sm , fontFamily: "Inter_400Regular" },
   inputShell: { minHeight: 72, maxHeight: 150, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.dark, backgroundColor: colors.dark, flexDirection: "row", alignItems: "center" },
   inputFilled: { borderColor: colors.accent },
-  input: { flex: 1, minHeight: 72, maxHeight: 150, color: colors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, fontSize: 18, fontWeight: "600", textAlignVertical: "top" },
+  input: { flex: 1, minHeight: 72, maxHeight: 150, color: colors.surface, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, fontSize: 18, fontWeight: "600", textAlignVertical: "top" , fontFamily: "PlusJakartaSans_600SemiBold" },
   filledBadge: { width: 28, height: 28, borderRadius: 14, marginRight: spacing.md, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" },
-  filledBadgeText: { color: colors.dark, fontSize: 15, fontWeight: "900" },
+  filledBadgeText: { color: colors.dark, fontSize: 15, fontWeight: "900" , fontFamily: "Inter_600SemiBold" },
   dateField: { minHeight: 82, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.dark, backgroundColor: colors.dark, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  dateLabel: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, marginBottom: 5 },
-  dateValue: { color: colors.surface, fontSize: 18, fontWeight: "700" },
+  dateLabel: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.1, marginBottom: 5 , fontFamily: "Inter_600SemiBold" },
+  dateValue: { color: colors.surface, fontSize: 18, fontWeight: "700" , fontFamily: "PlusJakartaSans_700Bold" },
   datePlaceholder: { color: colors.darkMuted },
-  calendarIcon: { color: colors.accent, fontSize: 28, fontWeight: "700" },
+  calendarIcon: { color: colors.accent, fontSize: 28, fontWeight: "700" , fontFamily: "PlusJakartaSans_700Bold" },
   dateModalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" },
   dateModalCard: { borderTopLeftRadius: 32, borderTopRightRadius: 32, backgroundColor: colors.dark, padding: spacing.lg, gap: spacing.sm, borderWidth: 1, borderColor: "#313724" },
   dateModalHandle: { width: 44, height: 4, borderRadius: 2, backgroundColor: "#4B5045", alignSelf: "center", marginBottom: spacing.sm },
-  dateModalEyebrow: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
-  dateModalTitle: { color: colors.surface, fontSize: 24, lineHeight: 30, fontWeight: "900" },
-  dateModalSubtitle: { color: "#AEB2A8", fontSize: 14, lineHeight: 20, marginBottom: spacing.sm },
+  dateModalEyebrow: { color: colors.accent, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 , fontFamily: "Inter_600SemiBold" },
+  dateModalTitle: { color: colors.surface, fontSize: 24, lineHeight: 30, fontWeight: "900" , fontFamily: "PlusJakartaSans_700Bold" },
+  dateModalSubtitle: { color: "#AEB2A8", fontSize: 14, lineHeight: 20, marginBottom: spacing.sm , fontFamily: "Inter_400Regular" },
   calendarCard: { borderRadius: 22, backgroundColor: "#151713", borderWidth: 1, borderColor: "#343A2C", padding: spacing.sm, gap: spacing.sm },
   calendarYearRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 5 },
   calendarMiniButton: { minWidth: 42, height: 34, borderRadius: 12, borderWidth: 1, borderColor: "#3D4238", alignItems: "center", justifyContent: "center" },
-  calendarMiniText: { color: colors.surface, fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] },
-  calendarYear: { flex: 1, color: colors.accent, textAlign: "center", fontSize: 16, fontWeight: "900", fontVariant: ["tabular-nums"] },
+  calendarMiniText: { color: colors.surface, fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] , fontFamily: "Inter_600SemiBold" },
+  calendarYear: { flex: 1, color: colors.accent, textAlign: "center", fontSize: 16, fontWeight: "900", fontVariant: ["tabular-nums"] , fontFamily: "Inter_600SemiBold" },
   calendarMonthRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   calendarArrow: { width: 42, height: 38, borderRadius: 14, backgroundColor: "#25291F", alignItems: "center", justifyContent: "center" },
-  calendarArrowText: { color: colors.accent, fontSize: 29, lineHeight: 31, fontWeight: "700" },
-  calendarMonth: { color: colors.surface, fontSize: 18, fontWeight: "900" },
+  calendarArrowText: { color: colors.accent, fontSize: 29, lineHeight: 31, fontWeight: "700" , fontFamily: "PlusJakartaSans_700Bold" },
+  calendarMonth: { color: colors.surface, fontSize: 18, fontWeight: "900" , fontFamily: "PlusJakartaSans_700Bold" },
   calendarGrid: { flexDirection: "row", flexWrap: "wrap" },
-  calendarWeekDay: { width: "14.2857%", color: "#777C72", textAlign: "center", fontSize: 10, fontWeight: "900", paddingVertical: 5 },
+  calendarWeekDay: { width: "14.2857%", color: "#777C72", textAlign: "center", fontSize: 10, fontWeight: "900", paddingVertical: 5 , fontFamily: "Inter_600SemiBold" },
   calendarDay: { width: "14.2857%", aspectRatio: 1.18, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   calendarDaySelected: { backgroundColor: colors.accent },
-  calendarDayText: { color: colors.surface, fontSize: 13, fontWeight: "700", fontVariant: ["tabular-nums"] },
-  calendarDayTextSelected: { color: colors.dark, fontWeight: "900" },
+  calendarDayText: { color: colors.surface, fontSize: 13, fontWeight: "700", fontVariant: ["tabular-nums"] , fontFamily: "Inter_600SemiBold" },
+  calendarDayTextSelected: { color: colors.dark, fontWeight: "900" , fontFamily: "Inter_600SemiBold" },
   dateModalActions: { flexDirection: "row", gap: spacing.sm, paddingTop: spacing.md },
   dateCancelButton: { minHeight: 54, flex: 1, borderRadius: radii.pill, borderWidth: 1, borderColor: "#41463C", alignItems: "center", justifyContent: "center" },
-  dateCancelText: { color: colors.surface, fontSize: 15, fontWeight: "800" },
+  dateCancelText: { color: colors.surface, fontSize: 15, fontWeight: "800" , fontFamily: "Inter_600SemiBold" },
   dateConfirmButton: { minHeight: 54, flex: 1.5, borderRadius: radii.pill, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" },
-  dateConfirmText: { color: colors.dark, fontSize: 15, fontWeight: "900" },
+  dateConfirmText: { color: colors.dark, fontSize: 15, fontWeight: "900" , fontFamily: "Inter_600SemiBold" },
   optionList: { gap: spacing.sm },
   option: { minHeight: 66, borderRadius: radii.lg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.lg, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   optionSelected: { backgroundColor: colors.dark, borderColor: colors.accent },
-  optionText: { color: colors.text, fontSize: 17, fontWeight: "700" },
+  optionText: { color: colors.text, fontSize: 17, fontWeight: "700" , fontFamily: "Inter_600SemiBold" },
   optionTextSelected: { color: colors.surface },
   selectionCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: colors.borderStrong },
   selectionCircleSelected: { borderWidth: 6, borderColor: colors.accent, backgroundColor: colors.dark },
@@ -620,35 +649,35 @@ const styles = StyleSheet.create({
   documentButton: { minHeight: 84, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, padding: spacing.md, flexDirection: "row", alignItems: "center", gap: spacing.md },
   documentSelected: { borderColor: colors.accent, backgroundColor: colors.surfaceMuted },
   documentIcon: { width: 48, height: 48, borderRadius: 16, backgroundColor: colors.dark, alignItems: "center", justifyContent: "center" },
-  documentIconText: { color: colors.accent, fontSize: 24, fontWeight: "800" },
+  documentIconText: { color: colors.accent, fontSize: 24, fontWeight: "800" , fontFamily: "PlusJakartaSans_700Bold" },
   documentCopy: { flex: 1, gap: 4 },
-  documentLabel: { color: colors.text, fontSize: 16, fontWeight: "800" },
-  documentName: { color: colors.mutedText, fontSize: 13 },
+  documentLabel: { color: colors.text, fontSize: 16, fontWeight: "800" , fontFamily: "Inter_600SemiBold" },
+  documentName: { color: colors.mutedText, fontSize: 13 , fontFamily: "Inter_400Regular" },
   documentHint: { ...typography.label, color: colors.mutedText, lineHeight: 18 },
-  error: { color: "#DC2626", fontSize: 13, fontWeight: "700" },
+  error: { color: "#DC2626", fontSize: 13, fontWeight: "700" , fontFamily: "Inter_600SemiBold" },
   footer: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, backgroundColor: colors.background },
   continueButton: { minHeight: 58, borderRadius: radii.pill, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" },
   continueDisabled: { opacity: 0.45 },
-  continueText: { color: colors.dark, fontSize: 17, fontWeight: "900" },
+  continueText: { color: colors.dark, fontSize: 17, fontWeight: "900" , fontFamily: "Inter_600SemiBold" },
   passportCard: { minHeight: 184, overflow: "hidden", borderRadius: 28, backgroundColor: colors.dark, padding: spacing.md, borderWidth: 1, borderColor: "#253100" },
   passportGlow: { position: "absolute", width: 150, height: 150, borderRadius: 75, right: -34, top: 28, backgroundColor: colors.accent },
   passportTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   passportTag: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: radii.pill, borderWidth: 1, borderColor: "#343A2C", paddingHorizontal: 9, paddingVertical: 6 },
   passportTagDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent },
-  passportTagText: { color: colors.surface, fontSize: 9, fontWeight: "900", letterSpacing: 0.9 },
-  passportEdition: { color: colors.darkMuted, fontSize: 10, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  passportTagText: { color: colors.surface, fontSize: 9, fontWeight: "900", letterSpacing: 0.9 , fontFamily: "Inter_600SemiBold" },
+  passportEdition: { color: colors.darkMuted, fontSize: 10, fontWeight: "800", fontVariant: ["tabular-nums"] , fontFamily: "Inter_600SemiBold" },
   passportHero: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.md },
   passportMark: { width: 60, height: 60, borderRadius: 22, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" },
-  passportMarkText: { color: colors.dark, fontSize: 34, fontWeight: "900" },
+  passportMarkText: { color: colors.dark, fontSize: 34, fontWeight: "900" , fontFamily: "PlusJakartaSans_700Bold" },
   orbitDot: { position: "absolute", left: 48, top: 12, width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.accent },
   passportCopy: { flex: 1, gap: 2 },
-  passportEyebrow: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: 1 },
-  passportName: { color: colors.surface, fontSize: 20, fontWeight: "900" },
-  passportDescription: { color: "#B9BDB3", fontSize: 11, lineHeight: 15 },
+  passportEyebrow: { color: colors.accent, fontSize: 9, fontWeight: "900", letterSpacing: 1 , fontFamily: "Inter_600SemiBold" },
+  passportName: { color: colors.surface, fontSize: 20, fontWeight: "900" , fontFamily: "PlusJakartaSans_700Bold" },
+  passportDescription: { color: "#B9BDB3", fontSize: 11, lineHeight: 15 , fontFamily: "Inter_400Regular" },
   passportSteps: { flexDirection: "row", gap: 7 },
   passportStep: { flex: 1, gap: 5 },
   passportStepLine: { height: 3, borderRadius: radii.pill, backgroundColor: "#31342D" },
   passportStepLineActive: { backgroundColor: colors.accent },
-  passportStepText: { color: "#656A60", fontSize: 7, fontWeight: "900", letterSpacing: 0.5 },
+  passportStepText: { color: "#656A60", fontSize: 7, fontWeight: "900", letterSpacing: 0.5 , fontFamily: "Inter_600SemiBold" },
   passportStepTextActive: { color: colors.surface },
 });

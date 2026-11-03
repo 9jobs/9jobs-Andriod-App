@@ -61,8 +61,8 @@ const mockSupabase = {
   },
 };
 
-jest.mock("@/lib/supabase/client", () => ({
-  supabase: mockSupabase,
+jest.mock("@/lib/data/neon-database-client", () => ({
+  neonDatabase: mockSupabase,
 }));
 
 jest.mock("@/theme", () => ({

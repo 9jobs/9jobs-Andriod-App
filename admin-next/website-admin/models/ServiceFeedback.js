@@ -10,4 +10,4 @@ const ServiceFeedbackSchema = new mongoose.Schema({
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
 
 const mongoModel = mongoose.models.ServiceFeedback || mongoose.model('ServiceFeedback', ServiceFeedbackSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('ServiceFeedback') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('ServiceFeedback') : mongoModel;

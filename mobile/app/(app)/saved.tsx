@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   savedBadge: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accentDark,
     fontSize: 13,
-  },
+   fontFamily: "Inter_400Regular" },
   copyBlock: {
     gap: spacing.xs,
   },
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     ...typography.headline,
     color: colors.text,
     fontSize: 24,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   meta: {
     ...typography.body,
     color: colors.mutedText,
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 20,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   description: {
     ...typography.body,
     color: colors.subtleText,
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 16,
     color: colors.text,
-  },
+   fontFamily: "Inter_400Regular" },
   viewLabel: {
     color: colors.surface,
   },

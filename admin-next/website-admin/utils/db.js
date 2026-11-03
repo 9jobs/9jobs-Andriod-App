@@ -16,7 +16,7 @@ function getMongoUri() {
 
 async function connectDB() {
   // Services retain their existing connection boundary while Supabase owns persistence.
-  if (process.env.DATABASE_PROVIDER === 'supabase') {
+  if (['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER)) {
     return null;
   }
   if (cached.conn) {

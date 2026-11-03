@@ -1,3 +1,4 @@
+import "./lib/env";
 import http from "http";
 import { Server, Socket } from "socket.io";
 import dotenv from "dotenv";
@@ -5,9 +6,13 @@ import { socketAuthMiddleware } from "./middleware/auth";
 import { sendMessage, setMessageServiceIo } from "./services/messageService";
 import { supabase, hasNewSchema } from "./lib/supabase";
 import { createApp } from "./app";
+import { isNeonDatabase } from "./lib/database";
+import { markNeonMessagesSeen } from "./services/neonChat";
 
-dotenv.config({ path: ".env.contact.local" });
-dotenv.config();
+if(process.env.LOCAL_DATABASE_MODE!=="isolated-e2e"){
+  dotenv.config({ path: ".env.contact.local" });
+  dotenv.config();
+}
 
 const app = createApp();
 const port = process.env.PORT || 3000;
@@ -91,6 +96,19 @@ io.on("connection", (socket: Socket) => {
     console.log(`[Socket Server] mark_seen received from ${userId} (${role}) for conversation ${conversationId}`);
     
     try {
+      if (isNeonDatabase()) {
+        if (role === "client" && conversationId !== userId) return;
+        const updated = await markNeonMessagesSeen(conversationId, role);
+        io.to(`conversation:${conversationId}`).emit("message_seen", { conversationId, seenBy: role });
+        if (updated) {
+          io.to("admins").emit("conversation_updated", updated);
+          io.to(`user:${conversationId}`).emit("unread_count_updated", {
+            clientUnreadCount: updated.client_unread_count,
+            adminUnreadCount: updated.admin_unread_count,
+          });
+        }
+        return;
+      }
       const isNew = await hasNewSchema();
       if (role === "client") {
         if (isNew) {
@@ -204,6 +222,9 @@ io.on("connection", (socket: Socket) => {
 });
 
 // Start the server
-server.listen(port, "0.0.0.0" as any, () => {
-  console.log(`[Socket Server] Backend server listening on 0.0.0.0:${port}`);
+const host=process.env.LOCAL_DATABASE_MODE==="isolated-e2e"?"127.0.0.1":"0.0.0.0";
+server.listen(port, host as any, () => {
+  const address = server.address();
+  const boundPort = address && typeof address === "object" ? address.port : port;
+  console.log(`[Socket Server] Backend server listening on ${host}:${boundPort}`);
 });

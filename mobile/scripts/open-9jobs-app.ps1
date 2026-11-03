@@ -179,11 +179,19 @@ function Wait-For-MetroReady {
     if (Test-MetroEndpoint -Port $Port) {
       return
     }
+    # Reusing an existing verified Metro is successful even after the helper exits.
+    # Windows PowerShell may report a null ExitCode for Start-Process children.
+    if ($PhoneLauncherProcess -and $PhoneLauncherProcess.HasExited) {
+      $launcherExitCode = $PhoneLauncherProcess.ExitCode
+      if ($null -ne $launcherExitCode -and $launcherExitCode -ne 0) {
+        throw "Local startup failed. Check the specific error printed above."
+      }
+    }
 
     Start-Sleep -Seconds 2
     $attempts += 1
 
-    if ($attempts -ge 45) {
+    if ($attempts -ge 150) {
       throw "Metro endpoint on port $Port did not become ready within the expected time."
     }
   }
@@ -279,12 +287,19 @@ function Start-NineJobsApp {
   }
 }
 
-$MetroPort = Get-ActiveMetroPort
-
-if (-not $MetroPort) {
-  $MetroPort = Get-FreeMetroPort
-  Start-MetroServer -Port $MetroPort
-  Wait-For-MetroReady -Port $MetroPort
+# Keep npm run android's emulator flow and show Expo/Clerk logs plus QR in this terminal.
+# Use the same isolated local phone launcher rather than picking an unrelated Metro.
+$MetroPort = 8091
+$LocalPhoneLauncher = Join-Path $ProjectRoot "..\backend\scripts\start-localhost-phone.cjs"
+$NodePath = (Get-Command node -ErrorAction Stop).Source
+Write-Host "9JOBS local launcher v2 (Metro readiness fix)" -ForegroundColor Green
+Write-Host "Starting local Android/phone Metro (terminal QR enabled)..." -ForegroundColor Cyan
+$PhoneLauncherProcess = Start-Process -FilePath $NodePath `
+  -ArgumentList @("`"$LocalPhoneLauncher`"") `
+  -WorkingDirectory $ProjectRoot -NoNewWindow -PassThru
+Wait-For-MetroReady -Port $MetroPort
+if ($PhoneLauncherProcess.HasExited -and $null -ne $PhoneLauncherProcess.ExitCode -and $PhoneLauncherProcess.ExitCode -ne 0) {
+  throw "Local Android/phone launcher failed. Check the error printed above."
 }
 
 Ensure-EmulatorReady
@@ -295,6 +310,7 @@ Wait-For-MetroReady -Port $MetroPort
 Write-Host "Using Metro port $MetroPort." -ForegroundColor Cyan
 Write-Host "Reversing Metro port to the emulator..." -ForegroundColor Cyan
 & $AdbPath reverse "tcp:$MetroPort" "tcp:$MetroPort" | Out-Null
+& $AdbPath reverse "tcp:3100" "tcp:3100" | Out-Null
 & $AdbPath reverse "tcp:8082" "tcp:8082" | Out-Null
 
 Write-Host "Stopping Expo Go if it is running..." -ForegroundColor Cyan

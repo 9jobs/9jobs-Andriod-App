@@ -43,3 +43,16 @@ web-dist/
 
 # Agent folder
 .agents/
+.neon
+
+# Local workspaces, database contents, uploads, and generated test artifacts
+/.work/
+/.android-home/
+/backups/
+/backend/local_uploads/
+/backend/local_db.json
+/backend-upload-test.txt
+/admin-next/website-admin/reports/
+/mobile/android-captures/current_logcat.txt
+*.apk
+*.tsbuildinfo

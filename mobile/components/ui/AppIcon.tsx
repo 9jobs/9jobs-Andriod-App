@@ -1,6 +1,7 @@
 import Svg, { Circle, Path } from "react-native-svg";
 import type { ColorValue } from "react-native";
 import { colors } from "@/theme";
+import { IconBadge, iconTone } from "./IconBadge";
 
 type AppIconProps = {
   name:
@@ -25,9 +26,20 @@ type AppIconProps = {
   color?: ColorValue;
   size?: number;
   strokeWidth?: number;
+  decorated?: boolean;
 };
 
-export function AppIcon({
+export function AppIcon({ decorated = true, ...props }: AppIconProps) {
+  if (!decorated) return <IconGlyph {...props} />;
+  const size = props.size ?? 20;
+  return (
+    <IconBadge width={size} tone={iconTone(props.name)}>
+      <IconGlyph {...props} color="#252923" />
+    </IconBadge>
+  );
+}
+
+function IconGlyph({
   name,
   color = colors.text,
   size = 20,

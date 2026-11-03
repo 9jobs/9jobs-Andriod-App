@@ -158,4 +158,4 @@ AgreementSchema.index({ docuSignEnvelopeId: 1, status: 1 });
 AgreementSchema.index({ status: 1, docuSignLastSyncedAt: 1 });
 
 const mongoModel = mongoose.models.Agreement || mongoose.model('Agreement', AgreementSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('Agreement') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('Agreement') : mongoModel;

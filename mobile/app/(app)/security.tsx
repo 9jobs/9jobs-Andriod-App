@@ -61,7 +61,7 @@ export default function SecurityScreen() {
 
       <View style={[styles.formContainer, { backgroundColor: colors.surface }]}>
         <Text style={styles.sectionTitle}>Change Password</Text>
-        
+
         <View style={styles.inputGroup}>
           <Text style={styles.inputLabel}>Current Password</Text>
           <TextInput
@@ -130,14 +130,14 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 24,
     lineHeight: 30,
     marginTop: spacing.xs,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   formContainer: {
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 18,
     marginBottom: spacing.xs,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   inputGroup: {
     gap: spacing.xs,
   },
@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.mutedText,
     fontSize: 13,
-  },
+   fontFamily: "Inter_400Regular" },
   input: {
     minHeight: 52,
     borderRadius: radii.lg,
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   button: {
     backgroundColor: colors.accent,
     borderRadius: radii.pill,
@@ -184,5 +184,5 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 16,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
 });

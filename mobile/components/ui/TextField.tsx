@@ -87,9 +87,9 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   inputContainer: {
-    minHeight: 54,
+    minHeight: 48,
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     flexDirection: "row",
@@ -98,12 +98,12 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
     color: colors.text,
     fontSize: typography.body.fontSize,
     fontWeight: typography.body.fontWeight,
-  },
+   fontFamily: "Inter_400Regular" },
   iconButton: {
     padding: spacing.xs,
     justifyContent: "center",

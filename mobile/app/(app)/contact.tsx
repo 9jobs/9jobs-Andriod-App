@@ -181,13 +181,13 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 24,
     lineHeight: 30,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   subtitle: {
     ...typography.body,
     color: colors.mutedText,
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   contactTextWrap: {
     flex: 1,
     gap: 4,
@@ -238,12 +238,12 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontSize: 14,
     width: "100%",
-  },
+   fontFamily: "Inter_400Regular" },
   sectionTitle: {
     ...typography.title,
     color: colors.text,
     fontSize: 20,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   formStack: {
     gap: spacing.md,
   },
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   inputMultiline: {
     minHeight: 110,
     paddingTop: 16,

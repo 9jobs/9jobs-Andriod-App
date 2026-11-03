@@ -7,7 +7,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts",
-    "migrate": "ts-node src/migrate.ts",
+    "migrate": "npm run build && node scripts/migrate-neon.cjs",
+    "migrate:stripe": "ts-node src/migrateStripePayments.ts",
     "migrate:tracker-screenshots": "ts-node src/migrateTrackerScreenshots.ts",
     "typecheck": "tsc --noEmit"
   },

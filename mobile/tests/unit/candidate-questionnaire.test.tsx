@@ -2,15 +2,21 @@ import TestRenderer, { act } from "react-test-renderer";
 import CandidateQuestionnaireScreen from "@/app/questionnaire";
 
 jest.mock("react-native-reanimated", () => {
-  const { Text, View } = require("react-native");
+  const { Text, View, ScrollView } = require("react-native");
+  const React = require("react");
   return {
     __esModule: true,
-    default: { Text, View },
+    default: { Text, View, ScrollView },
     cancelAnimation: jest.fn(),
     Easing: { inOut: (value: unknown) => value, quad: "quad" },
     FadeInDown: { duration: () => ({}) },
     FadeInUp: { duration: () => ({ delay: () => ({}) }) },
     useAnimatedStyle: (factory: () => object) => factory(),
+    useAnimatedRef: () => React.useMemo(() => {
+      const ref = (node: unknown) => { ref.current = node; };
+      ref.current = null as unknown;
+      return ref;
+    }, []),
     useSharedValue: (value: number) => ({ value }),
     withRepeat: (value: number) => value,
     withTiming: (value: number) => value,
@@ -56,6 +62,9 @@ jest.mock("@/providers/SessionProvider", () => ({
 jest.mock("@/lib/data/candidate-questionnaire", () => ({
   submitCandidateQuestionnaire: jest.fn(),
   uploadQuestionnaireDocument: jest.fn(),
+  loadQuestionnaireDraft: jest.fn(async () => null),
+  saveQuestionnaireDraft: jest.fn(async () => {}),
+  clearQuestionnaireDraft: jest.fn(async () => {}),
 }));
 
 describe("CandidateQuestionnaireScreen", () => {

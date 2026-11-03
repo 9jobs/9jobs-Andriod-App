@@ -2,7 +2,13 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { Socket } from "socket.io";
 
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret-9jobs-chat-key-2026";
+function verifyBackendToken(token: string) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) throw new Error("Authentication is not configured");
+  const value = jwt.verify(token, secret, {algorithms:["HS256"],issuer:"9jobs-backend",audience:"9jobs-api"}) as jwt.JwtPayload;
+  if (value.identity_verified !== true || typeof value.userId !== "string" || !["client","admin","staff"].includes(value.role)) throw new Error("Verified identity required");
+  return value as {userId:string;role:string;email:string};
+}
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -20,11 +26,7 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
 
   const token = authHeader.split(" ")[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
-      userId: string;
-      role: string;
-      email: string;
-    };
+    const decoded = verifyBackendToken(token);
     req.user = decoded;
     next();
   } catch (err) {
@@ -40,11 +42,7 @@ export function socketAuthMiddleware(socket: Socket, next: (err?: Error) => void
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
-      userId: string;
-      role: string;
-      email: string;
-    };
+    const decoded = verifyBackendToken(token);
     socket.data = {
       userId: decoded.userId,
       role: decoded.role,

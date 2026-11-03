@@ -1,13 +1,18 @@
+import { FigmaAsset, type FigmaAssetName } from "@/components/ui/FigmaAsset";
 import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import Svg, { Path, Circle } from "react-native-svg";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { iconTone, iconTones } from "@/components/ui/IconBadge";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncSelector } from "@/features/mobile-sync/hooks";
+import { selectServiceCatalog } from "@/lib/data/mobile-sync-repository";
 import { colors, radii, shadows, spacing } from "@/theme";
 
 // Services list data matching mockup exactly
+const serviceAssets: Record<string, FigmaAssetName> = { tracker: "services-imgContainer1", "job-tracker": "services-imgContainer1", resume: "services-imgContainer3", "resume-intelligence": "services-imgContainer3", outreach: "services-imgContainer4", "hiring-manager-outreach": "services-imgContainer4", interview: "services-imgContainer5", "interview-prep": "services-imgContainer5", stories: "services-imgContainer6", "success-stories": "services-imgContainer6" };
+
 const SERVICES_DATA = [
   {
     id: "tracker",
@@ -71,7 +76,7 @@ import { CardFloatingParticles } from "@/components/motion/card-floating-particl
 import { traceNavigation, useScreenPerf } from "@/lib/perf/livePerf";
 
 export default function ServicesScreen() {
-  const { data: liveServices } = usePreviewSyncSelector((snapshot) => snapshot.services);
+  const { data: liveServices } = usePreviewSyncSelector(selectServiceCatalog);
   useScreenPerf("/(app)/services", Boolean(liveServices), {
     screen: "services",
     service_count: liveServices?.length ?? 0,
@@ -131,7 +136,7 @@ export default function ServicesScreen() {
               <View style={styles.miniJobCard}>
                 <View style={styles.miniCardTopRow}>
                   <View style={styles.miniLogoCircle}>
-                    <AppIcon name="briefcase" size={16} color={colors.text} />
+                    <Text style={{ color: colors.accent, fontFamily: "PlusJakartaSans_700Bold", fontSize:20 }}>9</Text>
                   </View>
                   <View style={styles.miniTitleCol}>
                     <Text style={styles.miniJobTitle} numberOfLines={1}>9Jobs</Text>
@@ -170,6 +175,7 @@ export default function ServicesScreen() {
         </View>
       </FadeInView>
 
+      <View style={styles.listHeading}><Text style={styles.listHeadingText}>AVAILABLE ACCELERATORS</Text><Text style={styles.listCount}>{services.length} active tools</Text></View>
       {/* 3. Services List Section */}
       <View style={styles.servicesList}>
         {services.map((service, index) => (
@@ -184,7 +190,7 @@ export default function ServicesScreen() {
               service.icon === "mail";
 
             return (
-              <FadeInView key={service.id} type="fade-up" delay={120 + index * 40}>
+              <FadeInView key={service.id} type={index % 2 === 0 ? "fade-left" : "fade-right"} delay={Math.min(index * 25, 100)}>
                 <AnimatedPressable
                   style={styles.serviceCard}
                   onPress={() => traceNavigation(String(service.route), `services.${service.id}`, () => router.push(service.route as never))}
@@ -194,16 +200,14 @@ export default function ServicesScreen() {
                   <View
                     style={[
                       styles.iconContainer,
-                      useDarkIconBackground
-                        ? { backgroundColor: colors.dark }
-                        : { backgroundColor: "rgba(163, 230, 53, 0.12)" },
+                      { backgroundColor: iconTones[iconTone(service.icon === "pricing" ? "spark" : service.icon)] },
                     ]}
                   >
-                    {service.icon === "star" ? (
+                    {serviceAssets[service.id] ? <FigmaAsset name={serviceAssets[service.id]} decorated={false} /> : service.icon === "star" ? (
                       <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                         <Path
                           d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"
-                          stroke={useDarkIconBackground ? colors.accent : colors.text}
+                          stroke={colors.text}
                           strokeWidth={2.2}
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -213,22 +217,23 @@ export default function ServicesScreen() {
                       <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                         <Path
                           d="M6 18L10 13L13 16L18 9"
-                          stroke={useDarkIconBackground ? colors.accent : colors.text}
+                          stroke={colors.text}
                           strokeWidth={2.2}
                           strokeLinecap="round"
                           strokeLinejoin="round"
                         />
                         <Path
                           d="M18 9H14"
-                          stroke={useDarkIconBackground ? colors.accent : colors.text}
+                          stroke={colors.text}
                           strokeWidth={2.2}
                           strokeLinecap="round"
                         />
                       </Svg>
                     ) : (
                       <AppIcon
+                        decorated={false}
                         name={service.icon as any}
-                        color={useDarkIconBackground ? colors.accent : colors.text}
+                        color={colors.text}
                         size={20}
                         strokeWidth={2.2}
                       />
@@ -249,21 +254,13 @@ export default function ServicesScreen() {
                         </View>
                       ) : null}
                     </View>
-                    <Text style={styles.serviceSubtitle} numberOfLines={1}>
+                    <Text style={styles.serviceSubtitle}>
                       {service.subtitle}
                     </Text>
                   </View>
 
                   {/* Right: Chevron arrow */}
-                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-                    <Path
-                      d="M9 5L16 12L9 19"
-                      stroke={colors.subtleText}
-                      strokeWidth={2.2}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </Svg>
+                  <FigmaAsset name="services-imgContainer2" />
                 </AnimatedPressable>
               </FadeInView>
             );
@@ -277,29 +274,33 @@ export default function ServicesScreen() {
 const styles = StyleSheet.create({
   screenContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingTop: 8,
     paddingBottom: 100,
-    gap: spacing.lg,
+    gap: 24,
   },
   header: {
     gap: 4,
-    marginTop: spacing.xs,
+    marginTop: 0,
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: "800",
+    fontWeight: "700",
     color: colors.text,
     letterSpacing: -0.5,
-  },
+
+    lineHeight: 36,
+   fontFamily: "PlusJakartaSans_700Bold" },
   headerSubtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.mutedText,
-    fontWeight: "500",
-  },
+    fontWeight: "400",
+
+    lineHeight: 20,
+   fontFamily: "Inter_400Regular" },
   heroCardContainer: {
-    backgroundColor: colors.dark,
-    borderRadius: radii.xl,
-    padding: 20,
+    backgroundColor: "#30322D",
+    borderRadius: 12,
+    padding: 16,
     position: "relative",
     overflow: "hidden",
   },
@@ -315,43 +316,43 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   heroRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: 16,
   },
   heroLeftCol: {
-    flex: 1.1,
+    flex: undefined,
     gap: 10,
   },
   heroBadge: {
     alignSelf: "flex-start",
-    backgroundColor: "rgba(163, 230, 53, 0.2)",
+    backgroundColor: colors.accent,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
   },
   heroBadgeText: {
-    color: colors.accent,
-    fontSize: 10,
-    fontWeight: "800",
-  },
+    color: colors.dark,
+    fontSize: 11,
+    fontWeight: "600",
+   fontFamily: "Inter_600SemiBold" },
   heroTitleText: {
-    color: colors.surface,
-    fontSize: 22,
-    fontWeight: "800",
-    lineHeight: 28,
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+    lineHeight: 26,
     letterSpacing: -0.4,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   heroRightCol: {
-    flex: 0.9,
-    alignItems: "flex-end",
+    flex: undefined,
+    alignItems: "stretch",
   },
   miniJobCard: {
     width: "100%",
-    backgroundColor: "#F2EFE6",
-    borderRadius: 18,
-    padding: 12,
-    gap: 10,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: 16,
+    gap: 8,
   },
   miniCardTopRow: {
     flexDirection: "row",
@@ -359,10 +360,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   miniLogoCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.accent,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: colors.dark,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -370,21 +371,21 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   miniTitleCol: {
     flex: 1,
     gap: 1,
   },
   miniJobTitle: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   miniJobCompany: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.mutedText,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   heartIconWrap: {
     marginLeft: "auto",
   },
@@ -394,10 +395,10 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   miniLocText: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.mutedText,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   miniCardBottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -405,38 +406,40 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   miniSalaryText: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   miniNewBadge: {
-    backgroundColor: "rgba(163, 230, 53, 0.2)",
+    backgroundColor: colors.accent,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 2,
     borderRadius: 8,
   },
   miniNewText: {
-    color: colors.accentDark,
+    color: colors.dark,
     fontSize: 9,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   servicesList: {
     gap: 12,
   },
   serviceCard: {
     backgroundColor: colors.surface,
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     flexDirection: "row",
     alignItems: "center",
     gap: 16,
     ...shadows.card,
+
+    minHeight: 80,
   },
   iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -448,37 +451,48 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+
+    flexWrap: "wrap",
   },
   serviceTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: colors.text,
-  },
+
+    lineHeight: 20,
+    flexShrink: 1,
+   fontFamily: "Inter_600SemiBold" },
   aiBadge: {
-    backgroundColor: colors.softAccent,
+    backgroundColor: colors.accent,
     borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
   },
   aiBadgeText: {
-    color: colors.accentDark,
-    fontSize: 10,
+    color: colors.dark,
+    fontSize: 9,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   proBadge: {
     backgroundColor: colors.dark,
     borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
   },
   proBadgeText: {
-    color: colors.surface,
-    fontSize: 10,
+    color: "#FFFFFF",
+    fontSize: 9,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   serviceSubtitle: {
     fontSize: 13,
     color: colors.mutedText,
-    fontWeight: "500",
-  },
+    fontWeight: "400",
+
+    lineHeight: 18,
+   fontFamily: "Inter_400Regular" },
+
+  listHeading: {flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8},
+  listHeadingText: {fontSize: 11, lineHeight: 16, letterSpacing: 0.6, color: colors.mutedText, fontFamily: "Inter_400Regular" },
+  listCount: {fontSize: 12, color: colors.subtleText, fontFamily: "Inter_400Regular" },
 });

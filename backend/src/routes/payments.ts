@@ -2,52 +2,10 @@ import crypto from "crypto";
 import { Router } from "express";
 import Stripe from "stripe";
 
-const router = Router();
-
 const STRIPE_API_VERSION: Stripe.LatestApiVersion = "2026-07-29.dahlia";
-const DEFAULT_CURRENCY = "usd";
+const DEFAULT_CURRENCY = "aud";
 
-type SupportedPlanId =
-  | "trial"
-  | "non-it"
-  | "it"
-  | "resume-makeover"
-  | "resume-linkedin-seek";
-
-const PLAN_CATALOG: Record<
-  SupportedPlanId,
-  {
-    name: string;
-    description: string;
-    defaultAmount: number;
-  }
-> = {
-  trial: {
-    name: "9Jobs Trial",
-    description: "2-day 9Jobs trial with resume, LinkedIn, and job application support walkthrough.",
-    defaultAmount: 5000,
-  },
-  "non-it": {
-    name: "9Jobs Non-IT Weekly Support",
-    description: "Weekly job support plan for non-IT candidates.",
-    defaultAmount: 20000,
-  },
-  it: {
-    name: "9Jobs IT Weekly Support",
-    description: "Weekly job support plan for IT candidates.",
-    defaultAmount: 25000,
-  },
-  "resume-makeover": {
-    name: "9Jobs Resume Makeover",
-    description: "One-time ATS-friendly resume makeover service.",
-    defaultAmount: 4900,
-  },
-  "resume-linkedin-seek": {
-    name: "9Jobs Resume + LinkedIn + SEEK Optimisation",
-    description: "One-time resume, LinkedIn, and SEEK optimisation service.",
-    defaultAmount: 8900,
-  },
-};
+import { buildPricingCheckout, normalizePlanId, pricingCatalog } from "../services/pricingCatalog";
 
 function getStripeClient() {
   const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
@@ -60,35 +18,12 @@ function getStripeClient() {
   });
 }
 
-function sanitizeAmount(input: unknown, fallbackAmount: number) {
-  if (typeof input === "number" && Number.isFinite(input)) {
-    const cents = Math.round(input * 100);
-    return cents >= 50 ? cents : fallbackAmount;
-  }
-
-  if (typeof input === "string") {
-    const normalized = Number(String(input).replace(/[^\d.]/g, ""));
-    if (Number.isFinite(normalized) && normalized > 0) {
-      const cents = Math.round(normalized * 100);
-      return cents >= 50 ? cents : fallbackAmount;
-    }
-  }
-
-  return fallbackAmount;
-}
-
-function normalizePlanId(value: unknown): SupportedPlanId | null {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (
-    normalized === "trial" ||
-    normalized === "non-it" ||
-    normalized === "it" ||
-    normalized === "resume-makeover" ||
-    normalized === "resume-linkedin-seek"
-  ) {
-    return normalized;
-  }
-  return null;
+async function getGstRateId(stripe: Stripe) {
+  const rates = await stripe.taxRates.list({ active: true, limit: 100 });
+  const rate = rates.data.find(rate => rate.percentage === 10 && !rate.inclusive
+    && rate.country === "AU" && rate.display_name.toUpperCase() === "GST");
+  if (!rate) throw new Error("Australian GST rate is not configured");
+  return rate.id;
 }
 
 function buildReturnUrl(pathname: string, params: Record<string, string>) {
@@ -104,21 +39,23 @@ function buildReturnUrl(pathname: string, params: Record<string, string>) {
   return `ninejobs://${pathname}?${search}`;
 }
 
+export function createPaymentsRouter(clientFactory = getStripeClient) {
+const router = Router();
 router.post("/payments/checkout-session", async (req, res) => {
   const planId = normalizePlanId(req.body?.planId);
   if (!planId) {
     return res.status(400).json({ error: "Invalid or missing planId." });
   }
 
-  const plan = PLAN_CATALOG[planId];
-  const amount = sanitizeAmount(req.body?.amount, plan.defaultAmount);
+  const plan = pricingCatalog[planId];
+  const amount = plan.amount;
   const customerEmail = typeof req.body?.customerEmail === "string" ? req.body.customerEmail.trim() : "";
   const customerName = typeof req.body?.customerName === "string" ? req.body.customerName.trim() : "";
 
   try {
-    const stripe = getStripeClient();
+    const stripe = clientFactory();
     const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+      ...buildPricingCheckout(planId, await getGstRateId(stripe)),
       success_url: buildReturnUrl("pricing", {
         payment_status: "success",
         session_id: "{CHECKOUT_SESSION_ID}",
@@ -126,19 +63,6 @@ router.post("/payments/checkout-session", async (req, res) => {
       cancel_url: buildReturnUrl("pricing", {
         payment_status: "cancelled",
       }),
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: DEFAULT_CURRENCY,
-            product_data: {
-              name: plan.name,
-              description: plan.description,
-            },
-            unit_amount: amount,
-          },
-        },
-      ],
       customer_email: customerEmail || undefined,
       metadata: {
         planId,
@@ -152,14 +76,16 @@ router.post("/payments/checkout-session", async (req, res) => {
       success: true,
       checkoutUrl: session.url,
       sessionId: session.id,
-      amount,
+      amount: amount + Math.round(amount * 0.1),
+      subtotal: amount,
+      gst: Math.round(amount * 0.1),
       currency: DEFAULT_CURRENCY,
       publishableKey: process.env.STRIPE_PUBLISHABLE_KEY?.trim() || "",
     });
   } catch (error) {
-    console.error("[Payments] Failed to create checkout session:", error);
+    console.error("[Payments] Failed to create checkout session");
     return res.status(500).json({
-      error: error instanceof Error ? error.message : "Could not create checkout session.",
+      error: "Could not create checkout session. Please try again or contact 9Jobs support.",
     });
   }
 });
@@ -171,7 +97,7 @@ router.get("/payments/checkout-session/:sessionId", async (req, res) => {
   }
 
   try {
-    const stripe = getStripeClient();
+    const stripe = clientFactory();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     return res.json({
@@ -187,11 +113,13 @@ router.get("/payments/checkout-session/:sessionId", async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("[Payments] Failed to verify checkout session:", error);
+    console.error("[Payments] Failed to verify checkout session");
     return res.status(500).json({
-      error: error instanceof Error ? error.message : "Could not verify checkout session.",
+      error: "Could not verify checkout session.",
     });
   }
 });
 
-export default router;
+return router;
+}
+export default createPaymentsRouter();

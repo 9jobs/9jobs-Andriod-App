@@ -53,7 +53,7 @@ export default function ResumeScreen() {
   const { data: trackerSummary } = usePreviewSyncSelector((snapshot) => snapshot.trackerSummary);
   const { data: resumeAnalysis } = usePreviewSyncSelector((snapshot) => snapshot.resumeAnalysis);
   const { data: coverLetterSnapshot } = usePreviewSyncSelector((snapshot) => snapshot.coverLetter);
-  
+
   const copyToClipboard = async (text: string) => {
     try {
       const ExpoClipboard = require("expo-clipboard");
@@ -442,7 +442,7 @@ export default function ResumeScreen() {
           {!isScanning && (
             <View style={styles.aiIntelContainer}>
               <Text style={styles.aiIntelTitle}>AI Resume Intelligence</Text>
-              
+
               {/* Score Progress Bars (Styled like Keywords, Formatting, etc.) */}
               <View style={[styles.metricsStack, { marginBottom: spacing.md }]}>
                 {/* 1. ATS Score Detail */}
@@ -809,14 +809,14 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   chartCard: {
     alignSelf: "center",
     width: 200,
@@ -912,7 +912,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     color: colors.accent,
-  },
+   fontFamily: "Inter_600SemiBold" },
   chartFooter: {
     position: "absolute",
     left: 0,
@@ -925,7 +925,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.accent,
     letterSpacing: 0.5,
-  },
+   fontFamily: "Inter_600SemiBold" },
   splineBrandingCover: {
     position: "absolute",
     right: 0,
@@ -966,7 +966,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   segmentTextActive: {
     color: colors.surface,
   },
@@ -994,13 +994,13 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "800",
     color: colors.surface,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   ringMeta: {
     fontSize: 10,
     fontWeight: "600",
     color: colors.darkMuted,
     marginTop: -2,
-  },
+   fontFamily: "Inter_600SemiBold" },
   overallCopy: {
     flex: 1,
     gap: 4,
@@ -1009,13 +1009,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: colors.darkMuted,
-  },
+   fontFamily: "Inter_600SemiBold" },
   overallTitle: {
     fontSize: 20,
     fontWeight: "800",
     color: colors.surface,
     letterSpacing: -0.4,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   excellentBadge: {
     alignSelf: "flex-start",
     borderRadius: radii.pill,
@@ -1028,7 +1028,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     color: colors.accent,
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricsStack: {
     gap: spacing.md,
   },
@@ -1049,12 +1049,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   scoreHighlightValue: {
     fontSize: 22,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   metricRow: {
     gap: 8,
   },
@@ -1067,12 +1067,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricValue: {
     fontSize: 15,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricTrack: {
     height: 8,
     borderRadius: 999,
@@ -1095,7 +1095,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 15,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   uploadButton: {
     backgroundColor: colors.accent,
     borderRadius: radii.pill,
@@ -1107,7 +1107,7 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 15,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   buttonDisabled: {
     opacity: 0.7,
   },
@@ -1117,7 +1117,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginVertical: 4,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   tabContentContainer: {
     gap: spacing.md,
   },
@@ -1126,7 +1126,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.text,
     marginTop: 4,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   optimizationCard: {
     backgroundColor: colors.surface,
     borderRadius: 18,
@@ -1146,7 +1146,7 @@ const styles = StyleSheet.create({
     color: colors.accentDark,
     fontSize: 12,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   optCopy: {
     flex: 1,
     gap: 2,
@@ -1155,12 +1155,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   optBody: {
     fontSize: 13,
     color: colors.mutedText,
     lineHeight: 18,
-  },
+   fontFamily: "Inter_400Regular" },
   comparisonCard: {
     backgroundColor: colors.dark,
     borderRadius: 20,
@@ -1171,7 +1171,7 @@ const styles = StyleSheet.create({
     color: colors.darkMuted,
     fontSize: 13,
     fontWeight: "500",
-  },
+   fontFamily: "Inter_500Medium" },
   comparisonBarRow: {
     flexDirection: "row",
     justifyContent: "space-around",
@@ -1191,7 +1191,7 @@ const styles = StyleSheet.create({
     color: colors.surface,
     fontSize: 11,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   scannerWrapper: {
     width: 200,
     height: 200,
@@ -1260,7 +1260,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 22,
     textAlign: "center",
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   scanningDescription: {
     ...typography.body,
     color: colors.mutedText,
@@ -1268,7 +1268,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     paddingHorizontal: spacing.sm,
-  },
+   fontFamily: "Inter_400Regular" },
   scanningProgressContainer: {
     width: "100%",
     alignItems: "center",
@@ -1292,7 +1292,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 14,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   scanningMetricsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1315,12 +1315,12 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.mutedText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   scanningMetricValue: {
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   scanningFooter: {
     ...typography.body,
     color: colors.mutedText,
@@ -1329,7 +1329,7 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     paddingHorizontal: spacing.xl,
     marginTop: spacing.md,
-  },
+   fontFamily: "Inter_400Regular" },
   aiIntelContainer: {
     marginTop: spacing.md,
     gap: spacing.md,
@@ -1340,7 +1340,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     letterSpacing: -0.3,
     marginBottom: spacing.xs,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   aiIntelRow: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -1357,12 +1357,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   aiIntelMetricValue: {
     fontSize: 20,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   aiIntelProgressBg: {
     height: 4,
     backgroundColor: colors.border,
@@ -1391,7 +1391,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     color: "#FFFFFF",
-  },
+   fontFamily: "Inter_600SemiBold" },
   complianceBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -1400,7 +1400,7 @@ const styles = StyleSheet.create({
   complianceBadgeText: {
     fontSize: 10,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   bulletList: {
     gap: 8,
   },
@@ -1413,18 +1413,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.accent,
     marginTop: -1,
-  },
+   fontFamily: "Inter_400Regular" },
   bulletText: {
     fontSize: 13,
     color: colors.mutedText,
     lineHeight: 18,
     flex: 1,
-  },
+   fontFamily: "Inter_400Regular" },
   complianceSuccessText: {
     fontSize: 13,
     color: colors.accent,
     lineHeight: 18,
-  },
+   fontFamily: "Inter_400Regular" },
   aiDetailCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.md,
@@ -1436,7 +1436,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   keywordBadgeContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1452,12 +1452,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyText: {
     fontSize: 13,
     color: colors.mutedText,
     fontStyle: "italic",
-  },
+   fontFamily: "Inter_400Regular" },
   rewriteContainer: {
     backgroundColor: colors.surfaceMuted || "#FCFBF7",
     borderRadius: radii.sm,
@@ -1478,22 +1478,22 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
+   fontFamily: "Inter_600SemiBold" },
   rewriteTextOriginal: {
     fontSize: 13,
     color: colors.subtleText,
     fontStyle: "italic",
-  },
+   fontFamily: "Inter_400Regular" },
   rewriteTextSuggested: {
     fontSize: 13.5,
     fontWeight: "600",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   comparisonBody: {
     fontSize: 13,
     color: colors.mutedText,
     lineHeight: 19,
-  },
+   fontFamily: "Inter_400Regular" },
   coverLetterCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.md,
@@ -1514,7 +1514,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     textAlignVertical: "top",
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   copyButton: {
     backgroundColor: colors.accent,
     borderRadius: radii.md,
@@ -1527,5 +1527,5 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontWeight: "800",
     fontSize: 14,
-  },
+   fontFamily: "Inter_600SemiBold" },
 });

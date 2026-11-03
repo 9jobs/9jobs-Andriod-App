@@ -9,7 +9,7 @@ type AdminLookupError = {
 
 export const previewAdminCredentials = {
   email: "9jobsapplicationservice@gmail.com",
-  password: "Akash@#1234",
+  password: "", // Never bundle or persist an admin password in frontend code.
 } as const;
 
 export function isMissingAdminsTableError(error: AdminLookupError | null | undefined) {
@@ -52,9 +52,10 @@ export function resolveAdminAccess(email: string, adminList: AdminRecord[] | nul
   };
 }
 
-export function validatePreviewAdminLogin(email: string, password: string) {
-  return (
-    email.trim().toLowerCase() === previewAdminCredentials.email.toLowerCase() &&
-    password === previewAdminCredentials.password
-  );
+export async function requestAdminPasswordToken(email: string, password: string, backendUrl: string, fetcher: typeof fetch = fetch): Promise<string | null> {
+  if(!email.trim() || !password)return null;
+  const response=await fetcher(`${backendUrl}/api/auth/token`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email.trim(),password,role:"admin"})});
+  if(!response.ok)return null;
+  const body=await response.json();
+  return body?.user?.role==="admin" && typeof body.token==="string" && body.token ? body.token : null;
 }

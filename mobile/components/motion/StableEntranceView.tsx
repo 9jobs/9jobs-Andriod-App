@@ -1,77 +1,47 @@
-import { PropsWithChildren, useCallback, useRef } from "react";
-import { LayoutChangeEvent, StyleProp, ViewStyle } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withTiming,
-} from "react-native-reanimated";
+import { PropsWithChildren, useEffect, useRef } from "react";
+import { Animated, Easing, StyleProp, ViewStyle } from "react-native";
 import { useReducedMotionPreference } from "./ReducedMotion";
+import { entranceTiming } from "./entrance";
 
 export type EntranceDirection = "none" | "up" | "down" | "left" | "right" | "scale";
-
 type StableEntranceViewProps = PropsWithChildren<{
   direction?: EntranceDirection;
   delay?: number;
   duration?: number;
   distance?: number;
+  revealOnScroll?: boolean;
   style?: StyleProp<ViewStyle>;
 }>;
 
-export function StableEntranceView({
-  children,
-  direction = "up",
-  delay = 0,
-  duration = 420,
-  distance = 8,
-  style,
-}: StableEntranceViewProps) {
+export function StableEntranceView({ children, direction = "up", delay = 0, duration = 360, distance = 12, style }: StableEntranceViewProps) {
   const reducedMotion = useReducedMotionPreference();
   const hasStarted = useRef(false);
-  const opacity = useSharedValue(0);
-  const translateX = useSharedValue(
-    direction === "left" ? -distance : direction === "right" ? distance : 0
-  );
-  const translateY = useSharedValue(
-    direction === "down" ? -distance : direction === "up" ? distance : 0
-  );
-  const scale = useSharedValue(direction === "scale" ? 0.985 : 1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-  }));
-
-  const handleLayout = useCallback(
-    (_event: LayoutChangeEvent) => {
-      if (hasStarted.current) return;
+  // The React layout starts visible; animation state never owns content layout.
+  const progress = useRef(new Animated.Value(1)).current;
+  const { delay: safeDelay, duration: safeDuration } = entranceTiming(delay, duration);
+  useEffect(() => {
+    if (reducedMotion) {
+      progress.stopAnimation();
+      progress.setValue(1);
       hasStarted.current = true;
-
-      const safeDelay = Math.min(Math.max(delay, 0), 320);
-      const safeDuration = Math.min(Math.max(duration, 350), 600);
-      const timing = {
-        duration: reducedMotion ? 120 : safeDuration,
-        easing: Easing.out(Easing.cubic),
-      };
-      const start = <T extends number>(value: T) =>
-        reducedMotion ? withTiming(value, timing) : withDelay(safeDelay, withTiming(value, timing));
-
-      opacity.value = start(1);
-      translateX.value = start(0);
-      translateY.value = start(0);
-      scale.value = start(1);
-    },
-    [delay, duration, opacity, reducedMotion, scale, translateX, translateY]
-  );
-
+      return;
+    }
+    if (hasStarted.current) return;
+    hasStarted.current = true;
+    progress.setValue(0);
+    Animated.timing(progress, { toValue: 1, delay: safeDelay, duration: safeDuration, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [reducedMotion, progress, safeDelay, safeDuration]);
+  useEffect(() => () => progress.stopAnimation(), [progress]);
+  const x = direction === "left" ? -distance : direction === "right" ? distance : 0;
+  const y = direction === "down" ? -distance : direction === "up" ? distance : 0;
   return (
-    <Animated.View onLayout={handleLayout} style={[style, animatedStyle]}>
-      {children}
-    </Animated.View>
+    <Animated.View collapsable={false} style={[style, {
+      opacity: progress,
+      transform: [
+        { translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [x, 0] }) },
+        { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [y, 0] }) },
+        { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [direction === "scale" ? 0.985 : 1, 1] }) },
+      ],
+    }]}>{children}</Animated.View>
   );
 }

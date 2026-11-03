@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -331,12 +331,12 @@ const styles = StyleSheet.create({
     ...typography.display,
     fontSize: 24,
     color: colors.text,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   markReadText: {
     ...typography.body,
     fontWeight: "700",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   listStack: {
     gap: spacing.md,
   },
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontSize: 13,
     flexShrink: 0,
-  },
+   fontFamily: "Inter_400Regular" },
   previewDesc: {
     ...typography.body,
     color: colors.mutedText,
@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 17,
     flex: 1,
-  },
+   fontFamily: "Inter_400Regular" },
   itemTime: {
     ...typography.body,
     color: colors.mutedText,
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     lineHeight: 24,
     fontSize: 15,
-  },
+   fontFamily: "Inter_400Regular" },
   emptyCard: {
     backgroundColor: colors.surfaceRaised,
     borderRadius: radii.xl,
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 18,
     marginBottom: spacing.xs,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   emptyText: {
     ...typography.body,
     color: colors.mutedText,

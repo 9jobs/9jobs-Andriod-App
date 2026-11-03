@@ -1,5 +1,7 @@
+import { FadeInView } from "@/components/motion/FadeInView";
+import { FigmaAsset, type FigmaAssetName } from "@/components/ui/FigmaAsset";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { Screen } from "@/components/ui/Screen";
 import { AppIcon } from "@/components/ui/AppIcon";
@@ -37,10 +39,15 @@ export default function SettingsScreen() {
   };
 
   return (
-    <Screen style={{ backgroundColor: darkModeActive ? "#000000" : "#F4F1E8" }}>
+    <Screen style={{ backgroundColor: darkModeActive ? "#000000" : "#FBF9F7" }}>
       <View style={styles.topRow}>
         <BackHeader isDark={darkModeActive} />
-        <Text style={[styles.title, { color: darkModeActive ? "#FFFFFF" : "#0A0A08" }]}>Settings</Text>
+        <Text style={[styles.title, { color: darkModeActive ? "#FFFFFF" : "#1B1C1B" }]}>Settings</Text>
+      </View>
+
+      <View style={styles.profileCard}>
+        {profile?.avatarUrl ? <Image source={{ uri: profile.avatarUrl }} style={styles.profileAvatar} /> : <AppIcon name="profile" size={32} color={colors.text} />}
+        <View style={styles.profileCopy}><Text style={styles.profileName}>{profile?.fullName}</Text><Text style={styles.profileEmail}>{profile?.email}</Text></View>
       </View>
 
       <Section label="ACCOUNT" isDark={darkModeActive}>
@@ -96,7 +103,7 @@ export default function SettingsScreen() {
 }
 
 function BackHeader({ isDark }: { isDark: boolean }) {
-  const textColor = isDark ? "#FFFFFF" : "#0A0A08";
+  const textColor = isDark ? "#FFFFFF" : "#1B1C1B";
   return (
     <Pressable onPress={() => router.back()} style={styles.backRow}>
       <Text style={[styles.backArrow, { color: textColor }]}>←</Text>
@@ -107,10 +114,10 @@ function BackHeader({ isDark }: { isDark: boolean }) {
 
 function Section({ label, children, isDark }: { label: string; children: React.ReactNode; isDark: boolean }) {
   return (
-    <View style={styles.sectionWrap}>
-      <Text style={[styles.sectionLabel, { color: isDark ? "#A1A595" : "#A0A7BD" }]}>{label}</Text>
+    <FadeInView type="fade-up" style={styles.sectionWrap}>
+      <Text style={[styles.sectionLabel, { color: isDark ? "#A1A595" : "#747A60" }]}>{label}</Text>
       <View style={[styles.sectionCard, { backgroundColor: isDark ? "#1A1A1A" : "#FFFFFF" }]}>{children}</View>
-    </View>
+    </FadeInView>
   );
 }
 
@@ -125,12 +132,12 @@ function Row({
   onPress?: () => void;
   isDark: boolean;
 }) {
-  const textColor = isDark ? "#FFFFFF" : "#0A0A08";
+  const textColor = isDark ? "#FFFFFF" : "#1B1C1B";
   return (
     <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
-        <View style={[styles.iconBubble, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(10, 10, 8, 0.04)" }]}>
-          <AppIcon name={icon} size={18} color={textColor} />
+        <View style={styles.iconBubble}>
+          <FigmaAsset name={({ profile: "settings-imgContainer", settings: "settings-imgContainer2", spark: "settings-imgContainer3", bell: "settings-imgContainer4", grid: "settings-imgContainer6", info: title === "Help Center" ? "settings-imgContainer7" : "settings-imgContainer9", mail: "settings-imgContainer8" } as Partial<Record<typeof icon, FigmaAssetName>>)[icon] ?? "settings-imgContainer9"} />
         </View>
         <Text style={[styles.rowTitle, { color: textColor }]}>{title}</Text>
       </View>
@@ -152,12 +159,12 @@ function ToggleRow({
   onPress?: () => void;
   isDark: boolean;
 }) {
-  const textColor = isDark ? "#FFFFFF" : "#0A0A08";
+  const textColor = isDark ? "#FFFFFF" : "#1B1C1B";
   return (
     <Pressable style={styles.row} onPress={onPress}>
       <View style={styles.rowLeft}>
-        <View style={[styles.iconBubble, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(10, 10, 8, 0.04)" }]}>
-          <AppIcon name={icon} size={18} color={textColor} />
+        <View style={styles.iconBubble}>
+          <FigmaAsset name={({ profile: "settings-imgContainer", settings: "settings-imgContainer2", spark: "settings-imgContainer3", bell: "settings-imgContainer4", grid: "settings-imgContainer6", info: title === "Help Center" ? "settings-imgContainer7" : "settings-imgContainer9", mail: "settings-imgContainer8" } as Partial<Record<typeof icon, FigmaAssetName>>)[icon] ?? "settings-imgContainer9"} />
         </View>
         <Text style={[styles.rowTitle, { color: textColor }]}>{title}</Text>
       </View>
@@ -169,7 +176,7 @@ function ToggleRow({
 }
 
 function Divider({ isDark }: { isDark: boolean }) {
-  return <View style={[styles.divider, { backgroundColor: isDark ? "#2A2B27" : "#E8E5DB" }]} />;
+  return <View style={[styles.divider, { backgroundColor: isDark ? "#2A2B27" : "#EFEEEB" }]} />;
 }
 
 const styles = StyleSheet.create({
@@ -177,7 +184,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-    marginTop: spacing.sm,
+    marginTop: 8,
+
+    minHeight: 48,
   },
   backRow: {
     flexDirection: "row",
@@ -192,29 +201,29 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
-    fontSize: 24,
-    lineHeight: 30,
-  },
+    fontSize: 20,
+    lineHeight: 28,
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   sectionWrap: {
     gap: spacing.sm,
   },
   sectionLabel: {
     ...typography.label,
-    color: "#A0A7BD",
-    letterSpacing: 1.1,
+    color: colors.subtleText,
+    letterSpacing: 0.6,
   },
   sectionCard: {
-    borderRadius: radii.lg,
+    borderRadius: 12,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     ...shadows.card,
   },
   row: {
-    minHeight: 64,
+    minHeight: 56,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -222,14 +231,14 @@ const styles = StyleSheet.create({
   rowLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.md,
+    gap: 12,
     flex: 1,
   },
   iconBubble: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: colors.panel,
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -237,18 +246,23 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+
+    fontWeight: "500",
+    flexShrink: 1,
+   fontFamily: "Inter_500Medium" },
   chevron: {
     ...typography.headline,
     color: colors.subtleText,
   },
   divider: {
-    height: 1,
+    height: 0.5,
     backgroundColor: colors.border,
+
+    marginLeft: 46,
   },
   toggle: {
-    width: 44,
-    height: 24,
+    width: 48,
+    height: 28,
     borderRadius: 999,
     backgroundColor: "#E5E5E5",
     padding: 2,
@@ -258,13 +272,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dark,
   },
   knob: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: colors.surface,
   },
   knobOn: {
     alignSelf: "flex-end",
     backgroundColor: colors.accent,
   },
+
+  profileCard: {flexDirection: "row", alignItems: "center", gap: 12, padding: 16, backgroundColor: colors.surface, borderRadius: 12},
+  profileAvatar: {width: 48, height: 48, borderRadius: 24},
+  profileCopy: {flex: 1, gap: 4},
+  profileName: {fontSize: 16, fontWeight: "600", color: colors.text, fontFamily: "Inter_600SemiBold" },
+  profileEmail: {fontSize: 13, color: colors.mutedText, fontFamily: "Inter_400Regular" },
 });

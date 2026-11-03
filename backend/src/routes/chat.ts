@@ -1,6 +1,8 @@
 import express, { Router, Response } from "express";
 import { AuthenticatedRequest, authMiddleware } from "../middleware/auth";
 import { supabase, hasNewSchema } from "../lib/supabase";
+import { isNeonDatabase } from "../lib/database";
+import { markNeonMessagesSeen } from "../services/neonChat";
 import {
   sendMessage,
   deleteMessage,
@@ -161,6 +163,10 @@ router.post("/chat/messages/seen", authMiddleware, async (req: AuthenticatedRequ
   if (!userId) return res.status(400).json({ error: "Missing user credentials" });
 
   try {
+    if (isNeonDatabase()) {
+      const conversation = await markNeonMessagesSeen(userId, "client");
+      return res.json({ success: true, conversation });
+    }
     const isNew = await hasNewSchema();
     if (isNew) {
       // Update unseen messages sent by admin/bot/system

@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 19,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   company: {
     ...typography.body,
     color: colors.mutedText,

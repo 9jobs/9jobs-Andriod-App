@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.surface,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   actionArrow: {
     ...typography.label,
     color: colors.darkMuted,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 17,
-  },
+   fontFamily: "Inter_400Regular" },
   listSubtitle: {
     ...typography.body,
     color: colors.mutedText,

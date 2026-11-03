@@ -276,7 +276,7 @@ export default function ProfileScreen() {
 
         <View style={[styles.menuWrap, { backgroundColor: colors.surface }]}>
           {profileItems.map((item, index) => (
-            <FadeInView key={item.id} type="fade-up" delay={index * 40}>
+            <FadeInView key={item.id} type={index % 2 === 0 ? "fade-left" : "fade-right"} delay={Math.min(index * 25, 100)}>
               <Pressable
                 style={styles.menuRow}
                 onPress={() => router.push(item.onPress() as never)}
@@ -297,18 +297,18 @@ export default function ProfileScreen() {
             </FadeInView>
           ))}
         </View>
-      </Screen>
-
       <View style={styles.signOutDock}>
         <Pressable
-          style={styles.signOutButton}
+          style={({ pressed }) => [styles.signOutButton, pressed && styles.signOutButtonPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Sign out"
           disabled={isSigningOut}
           onPress={() => {
             void handleSignOut();
           }}
         >
           {isSigningOut ? (
-            <ActivityIndicator color="#FF4D4F" />
+            <ActivityIndicator color={colors.accent} />
           ) : (
             <View style={styles.signOutContent}>
               <Text style={styles.signOutIcon}>↪</Text>
@@ -317,6 +317,7 @@ export default function ProfileScreen() {
           )}
         </Pressable>
       </View>
+      </Screen>
 
       {/* Custom Crop Preview Modal with Save Button next to Crop */}
       <Modal
@@ -488,26 +489,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   screenContent: {
-    paddingHorizontal: 0,
-    paddingTop: 0,
-    gap: 0,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    gap: 16,
+    paddingBottom: 24,
   },
   hero: {
     backgroundColor: colors.dark,
-    minHeight: 254,
-    paddingTop: 18,
+    minHeight: 248,
+    paddingTop: 20,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: 20,
     alignItems: "center",
     position: "relative",
     overflow: "hidden",
+
+    borderRadius: 16,
   },
   heroHeader: {
     width: "100%",
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 26,
+    marginBottom: 12,
   },
   title: {
     ...typography.display,
@@ -515,7 +519,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     letterSpacing: -0.6,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   settingsButton: {
     width: 36,
     height: 36,
@@ -589,9 +593,9 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   avatarRing: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     borderWidth: 3,
     borderColor: colors.accent,
     backgroundColor: "rgba(163,230,53,0.06)",
@@ -600,9 +604,9 @@ const styles = StyleSheet.create({
     ...shadows.glow,
   },
   avatarImage: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
   },
   cameraBadge: {
     position: "absolute",
@@ -638,7 +642,7 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 13,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   socialRow: {
     flexDirection: "row",
     gap: 12,
@@ -658,7 +662,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.lg,
-    paddingBottom: 216,
+    paddingBottom: spacing.md,
   },
   menuRow: {
     minHeight: 66,
@@ -683,7 +687,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   chevron: {
     ...typography.headline,
     color: colors.subtleText,
@@ -693,35 +697,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   signOutDock: {
-    position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: 104,
+    width: "100%",
+    alignItems: "center",
   },
   signOutButton: {
-    minHeight: 66,
-    borderRadius: 16,
-    backgroundColor: "#FFE3E3",
+    width: "100%",
+    minHeight: 44,
+    minWidth: 156,
+    paddingHorizontal: 24,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.dark,
+    backgroundColor: colors.dark,
     alignItems: "center",
     justifyContent: "center",
-    ...shadows.card,
+  },
+  signOutButtonPressed: {
+    backgroundColor: colors.dark,
+    opacity: 0.85,
   },
   signOutContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
+    gap: 8,
   },
   signOutIcon: {
-    color: "#FF4D4F",
+    color: colors.accent,
     fontSize: 16,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   signOutText: {
     ...typography.title,
-    color: "#FF4D4F",
+    color: colors.accent,
     fontSize: 16,
-  },
+   fontFamily: "Inter_600SemiBold" },
   saveCancelRow: {
     flexDirection: "row",
     gap: spacing.md,
@@ -747,13 +757,13 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   saveButtonText: {
     ...typography.title,
     color: colors.dark,
     fontSize: 16,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   modalRoot: {
     flex: 1,
     backgroundColor: "#000",
@@ -785,7 +795,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#000",
     marginRight: 8,
-  },
+   fontFamily: "Inter_400Regular" },
   modalSaveButton: {
     backgroundColor: colors.accent,
     paddingHorizontal: 16,
@@ -796,7 +806,7 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 14,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   modalImageContainer: {
     flex: 1,
     alignItems: "center",

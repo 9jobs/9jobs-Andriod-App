@@ -15,4 +15,4 @@ const BillingWebhookEventSchema = new mongoose.Schema(
 );
 
 const mongoModel = mongoose.models.BillingWebhookEvent || mongoose.model('BillingWebhookEvent', BillingWebhookEventSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('BillingWebhookEvent') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('BillingWebhookEvent') : mongoModel;

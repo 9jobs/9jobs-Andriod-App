@@ -1,3 +1,5 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
+import { FigmaAsset } from "@/components/ui/FigmaAsset";
 import React, { useState, useMemo, useRef } from "react";
 import { StyleSheet, Text, View, Pressable, ScrollView, Modal, Image, Alert, TouchableOpacity, ActivityIndicator, Linking, InteractionManager } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -8,6 +10,7 @@ import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
 import { verticalScrollProps } from "@/lib/ui/scroll";
 import { colors, spacing, typography, radii, shadows } from "@/theme";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { JobLinkText } from "@/components/ui/JobLinkText";
 import { FadeInView } from "@/components/motion/FadeInView";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSession } from "@/providers/SessionProvider";
@@ -644,6 +647,7 @@ export default function TrackerScreen() {
       kicker="PIPELINE"
       hero={
         <DarkHeroCard>
+          <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>● Live Tracker</Text></View>
           <Text style={styles.heroTitle}>Track applications, secure offers.</Text>
           <Text style={styles.heroBody}>
             Never miss a follow-up. Monitor your applications, interviews, and offers in real-time.
@@ -667,6 +671,7 @@ export default function TrackerScreen() {
       }
     >
       {/* Primary Clickable Circular Metrics Grid */}
+      <View style={styles.statusHeading}><Text style={styles.statusTitle}>Status Overview</Text><Text style={styles.statusCaption}>Real-time sync</Text></View>
       <View style={styles.topMetricsCard}>
         <View style={styles.topMetricsGrid}>
           <Pressable
@@ -675,10 +680,10 @@ export default function TrackerScreen() {
           >
             <View style={[
               styles.metricCircle,
-              { backgroundColor: colors.softAccent, borderColor: colors.borderStrong },
+              { backgroundColor: "transparent", borderColor: colors.borderStrong },
               activeFilter === "Applied" && { borderColor: colors.accent, borderWidth: 2 }
             ]}>
-              <AppIcon name="spark" color={colors.accentDark} size={20} />
+              <FigmaAsset name="trackerTop-imgContainer1" />
             </View>
             <Text style={styles.metricVal}>{summary.applied}</Text>
             <Text style={styles.metricLbl}>Applied</Text>
@@ -690,10 +695,10 @@ export default function TrackerScreen() {
           >
             <View style={[
               styles.metricCircle,
-              { backgroundColor: colors.softAccent, borderColor: colors.borderStrong },
+              { backgroundColor: "transparent", borderColor: colors.borderStrong },
               (activeFilter === "Upcoming Interviews" || activeFilter === "Interviewing") && { borderColor: colors.accent, borderWidth: 2 }
             ]}>
-              <AppIcon name="mic" color={colors.accentDark} size={20} />
+              <FigmaAsset name="trackerTop-imgContainer2" />
             </View>
             <Text style={styles.metricVal}>{summary.interviewing}</Text>
             <Text style={styles.metricLbl}>Interviewing</Text>
@@ -705,10 +710,10 @@ export default function TrackerScreen() {
           >
             <View style={[
               styles.metricCircle,
-              { backgroundColor: colors.softAccent, borderColor: colors.borderStrong },
+              { backgroundColor: "transparent", borderColor: colors.borderStrong },
               (activeFilter === "Offers Received" || activeFilter === "Offers") && { borderColor: colors.accent, borderWidth: 2 }
             ]}>
-              <AppIcon name="briefcase" color={colors.accentDark} size={20} />
+              <FigmaAsset name="trackerTop-imgContainer3" />
             </View>
             <Text style={styles.metricVal}>{summary.offers}</Text>
             <Text style={styles.metricLbl}>Offers</Text>
@@ -720,10 +725,10 @@ export default function TrackerScreen() {
           >
             <View style={[
               styles.metricCircle,
-              { backgroundColor: colors.softAccent, borderColor: colors.borderStrong },
+              { backgroundColor: "transparent", borderColor: colors.borderStrong },
               activeFilter === "Saved" && { borderColor: colors.accent, borderWidth: 2 }
             ]}>
-              <AppIcon name="saved" color={colors.accentDark} size={20} />
+              <FigmaAsset name="trackerTop-imgContainer4" />
             </View>
             <Text style={styles.metricVal}>{summary.saved}</Text>
             <Text style={styles.metricLbl}>Saved</Text>
@@ -753,106 +758,124 @@ export default function TrackerScreen() {
       ) : null}
 
       {/* Advanced Recruitment Insights */}
-      <View style={[styles.sectionCard, { backgroundColor: colors.surface }]}>
-        <Text style={[styles.sectionLabel, { color: colors.accent }]}>ADVANCED METRICS</Text>
+      <View style={[styles.sectionCard, { backgroundColor: "transparent" }]}>
+        <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>ADVANCED METRICS</Text>
         <View style={styles.metricsGrid}>
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Applications Today")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Applications Today" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="spark" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Applications Today" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer" />
             </View>
-            <Text style={styles.metricVal}>{summary.applicationsToday}</Text>
-            <Text style={styles.metricLbl}>Applications Today</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.applicationsToday}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Applications Today</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Recruiter Contacted")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Recruiter Contacted" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="mail" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Recruiter Contacted" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer1" />
             </View>
-            <Text style={styles.metricVal}>{summary.recruiterContacted}</Text>
-            <Text style={styles.metricLbl}>Recruiter Contacted</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.recruiterContacted}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Recruiter Contacted</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Shortlisted")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Shortlisted" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="saved" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Shortlisted" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer2" />
             </View>
-            <Text style={styles.metricVal}>{summary.shortlisted}</Text>
-            <Text style={styles.metricLbl}>Shortlisted</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.shortlisted}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Shortlisted</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Interview Completed")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Interview Completed" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="briefcase" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Interview Completed" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer3" />
             </View>
-            <Text style={styles.metricVal}>{summary.interviewCompleted}</Text>
-            <Text style={styles.metricLbl}>Interview Completed</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.interviewCompleted}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Interview Completed</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Hired")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Hired" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="profile" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Hired" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer4" />
             </View>
-            <Text style={styles.metricVal}>{summary.hired}</Text>
-            <Text style={styles.metricLbl}>Hired</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.hired}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Hired</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Rejected")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Rejected" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="eye-off" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Rejected" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer5" />
             </View>
-            <Text style={styles.metricVal}>{summary.rejected}</Text>
-            <Text style={styles.metricLbl}>Rejected</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.rejected}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Rejected</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Follow-ups Due")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Follow-ups Due" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="info" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Follow-ups Due" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer6" />
             </View>
-            <Text style={styles.metricVal}>{summary.followupsDue}</Text>
-            <Text style={styles.metricLbl}>Follow-ups Due</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.followupsDue}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Follow-ups Due</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Cold Emails Sent")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Cold Emails Sent" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="mail" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Cold Emails Sent" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer7" />
             </View>
-            <Text style={styles.metricVal}>{summary.coldEmailsSent}</Text>
-            <Text style={styles.metricLbl}>Cold Emails Sent</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.coldEmailsSent}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Cold Emails Sent</Text>
+</View>
           </Pressable>
 
           <Pressable
             style={styles.metricTile}
             onPress={() => openMetricDetails("Hiring Managers Contacted")}
           >
-            <View style={[styles.metricCircle, { backgroundColor: colors.softAccent, borderColor: colors.borderStrong }, activeFilter === "Hiring Managers Contacted" && { borderColor: colors.accent, borderWidth: 2 }]}>
-              <AppIcon name="profile" color={colors.accentDark} size={20} />
+            <View style={[styles.metricCircle, { backgroundColor: "transparent", borderColor: colors.borderStrong }, activeFilter === "Hiring Managers Contacted" && { borderColor: colors.accent, borderWidth: 2 }]}>
+              <FigmaAsset name="trackerLower-imgContainer8" />
             </View>
-            <Text style={styles.metricVal}>{summary.hiringManagersContacted}</Text>
-            <Text style={styles.metricLbl}>Contacts Reached</Text>
+            <View style={styles.metricCopy}>
+<Text style={[styles.metricVal, styles.metricCompactValue]}>{summary.hiringManagersContacted}</Text>
+            <Text style={[styles.metricLbl, styles.metricCompactLabel]}>Contacts Reached</Text>
+</View>
           </Pressable>
         </View>
       </View>
@@ -946,13 +969,13 @@ export default function TrackerScreen() {
             return <View key={job.id}>{card}</View>;
           })
         ) : (
-          <Text style={styles.emptyText}>No applications match this filter.</Text>
+          <View style={styles.emptyPanel}><FigmaAsset name="trackerLower-imgContainer10" /><Text style={styles.emptyText}>No applications match this filter.</Text><Text style={styles.emptyCaption}>Your pipeline will show live company milestones, next rounds, and follow-up alerts here.</Text></View>
         )}
       </View>
 
       {interviewReminderEntries.length > 0 ? (
         <View style={[styles.sectionCard, { backgroundColor: colors.surface, marginTop: spacing.lg }]}>
-          <Text style={[styles.sectionLabel, { color: colors.accent }]}>INTERVIEW REMINDER</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>INTERVIEW REMINDER</Text>
           <View style={styles.interviewReminderStack}>
             {interviewReminderEntries.map((entry) => (
               <View key={entry.key} style={styles.interviewReminderCard}>
@@ -997,7 +1020,7 @@ export default function TrackerScreen() {
 
       {/* Activity Timeline */}
       <View style={[styles.sectionCard, { backgroundColor: colors.surface, marginTop: spacing.lg }]}>
-        <Text style={[styles.sectionLabel, { color: colors.accent }]}>ACTIVITY TIMELINE</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>ACTIVITY TIMELINE</Text>
         <View style={styles.timelineContainer}>
           {timelineItems.length > 0 ? (
             timelineItems.map((item, index) => (
@@ -1040,7 +1063,7 @@ export default function TrackerScreen() {
               </View>
               <Text style={styles.modalMeta}>{selectedJob.company} • {selectedJob.location}</Text>
 
-              <ScrollView
+              <SmoothScrollView
                 {...verticalScrollProps}
                 contentContainerStyle={styles.modalScroll}
               >
@@ -1101,11 +1124,11 @@ export default function TrackerScreen() {
                 {/* Job Description Summary */}
                 <Text style={styles.sectionHeading}>JOB DESCRIPTION SUMMARY</Text>
                 <View style={styles.summarySectionCard}>
-                  <Text style={styles.summaryText}>
+                  <JobLinkText style={styles.summaryText}>
                     {selectedJob.description
                       ? selectedJob.description
                       : "No job description summary available."}
-                  </Text>
+                  </JobLinkText>
                 </View>
 
                 <Text style={styles.sectionHeading}>INTERVIEW MANAGEMENT</Text>
@@ -1147,7 +1170,7 @@ export default function TrackerScreen() {
                           ) : null}
                           {details.jobLink ? (
                             <Pressable onPress={() => Linking.openURL(details.jobLink)}>
-                              <Text style={styles.managementCardLink}>Job Link: {details.jobLink}</Text>
+                              <Text style={styles.managementCardLink}>Job Link: Link</Text>
                             </Pressable>
                           ) : null}
                           {details.notes ? <Text style={styles.featureCardNotes}>Notes: {details.notes}</Text> : null}
@@ -1194,7 +1217,7 @@ export default function TrackerScreen() {
                           ) : null}
                           {details.jobLink ? (
                             <Pressable onPress={() => Linking.openURL(details.jobLink)}>
-                              <Text style={styles.managementCardLink}>Job Link: {details.jobLink}</Text>
+                              <Text style={styles.managementCardLink}>Job Link: Link</Text>
                             </Pressable>
                           ) : null}
                           {details.notes ? <Text style={styles.featureCardNotes}>Notes: {details.notes}</Text> : null}
@@ -1279,7 +1302,7 @@ export default function TrackerScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-              </ScrollView>
+              </SmoothScrollView>
             </View>
           </View>
         </Modal>
@@ -1291,33 +1314,59 @@ export default function TrackerScreen() {
 const styles = StyleSheet.create({
   topMetricsCard: {
     borderRadius: radii.lg,
-    padding: spacing.md,
-    backgroundColor: colors.surface,
+    padding: 0,
+    backgroundColor: "transparent",
     ...shadows.card,
-    marginBottom: spacing.md,
+    marginBottom: 8,
+
+    elevation: 0,
+    shadowOpacity: 0,
   },
   topMetricsGrid: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "stretch",
+
+    gap: 12,
   },
   topMetricTile: {
-    width: "22%",
-    alignItems: "center",
-    gap: 4,
-    minHeight: 94,
+    width: "48%",
+    alignItems: "flex-start",
+    gap: 8,
+    minHeight: 132,
     justifyContent: "flex-start",
+
+    flexGrow: 1,
+    flexBasis: "46%",
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   heroTitle: {
     ...typography.headline,
-    color: colors.surface,
-  },
+    color: "#FFFFFF",
+
+    fontSize: 20,
+    lineHeight: 27,
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   heroBody: {
     ...typography.body,
-    color: colors.darkMuted,
-  },
+    color: "#C5C7C0",
+
+    fontSize: 14,
+    lineHeight: 21,
+   fontFamily: "Inter_400Regular" },
   heroSummary: {
     gap: 4,
+
+    backgroundColor: "rgba(255,255,255,0.09)",
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 12,
   },
   heroSummaryLabel: {
     ...typography.label,
@@ -1325,7 +1374,7 @@ const styles = StyleSheet.create({
   },
   heroSummaryValue: {
     ...typography.body,
-    color: colors.surface,
+    color: "#FFFFFF",
   },
   heroStatusRow: {
     flexDirection: "row",
@@ -1349,58 +1398,76 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   sectionCard: {
-    borderRadius: radii.lg,
-    padding: spacing.md,
+    borderRadius: 16,
+    padding: 0,
     ...shadows.card,
-    gap: spacing.sm,
+    gap: 12,
+
+    shadowOpacity: 0,
+    elevation: 0,
   },
   sectionLabel: {
     ...typography.label,
     letterSpacing: 1.1,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     rowGap: spacing.md,
     columnGap: spacing.xs,
-    justifyContent: "flex-start",
+    justifyContent: "space-between",
+
+    gap: 8,
   },
   metricTile: {
-    flexBasis: "31%",
-    maxWidth: "31%",
+    flexBasis: "46%",
+    flexGrow: 1,
+    maxWidth: "49%",
+    flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    minHeight: 112,
+    gap: 10,
+    minHeight: 84,
     justifyContent: "flex-start",
+
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
+  metricCopy: { flex: 1, minWidth: 0, gap: 2 },
+  metricCompactValue: { fontSize: 22, lineHeight: 27, minHeight: 0 },
+  metricCompactLabel: { fontSize: 11, lineHeight: 16, minHeight: 0 },
   metricCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
+    borderWidth: 0,
   },
   metricVal: {
     ...typography.title,
-    fontSize: 15,
-    fontWeight: "800",
+    fontSize: 28,
+    fontWeight: "700",
     color: colors.text,
-    textAlign: "center",
-    marginTop: 4,
-    minHeight: 22,
-  },
+    textAlign: "left",
+    marginTop: 0,
+    minHeight: 32,
+
+    lineHeight: 32,
+   fontFamily: "PlusJakartaSans_700Bold" },
   metricLbl: {
     ...typography.label,
     color: colors.mutedText,
-    fontSize: 10,
-    lineHeight: 13,
-    textAlign: "center",
-    minHeight: 26,
-  },
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: "left",
+    minHeight: 36,
+   fontFamily: "Inter_400Regular" },
   listHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1413,12 +1480,12 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 18,
     fontWeight: "700",
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   resetFilter: {
     ...typography.body,
     color: colors.accent,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   stack: {
     gap: spacing.md,
   },
@@ -1445,7 +1512,7 @@ const styles = StyleSheet.create({
     color: colors.accent,
     marginTop: 6,
     fontSize: 10,
-  },
+   fontFamily: "Inter_400Regular" },
   time: {
     ...typography.label,
     color: colors.mutedText,
@@ -1468,26 +1535,28 @@ const styles = StyleSheet.create({
   offerBadgeText: {
     color: colors.accentDark,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   interviewBadge: {
     backgroundColor: "rgba(59, 130, 246, 0.15)",
   },
   interviewBadgeText: {
     color: "#3B82F6",
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   rejectedBadge: {
     backgroundColor: "rgba(239, 68, 68, 0.15)",
   },
   rejectedBadgeText: {
     color: "#EF4444",
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyText: {
     ...typography.body,
-    color: colors.subtleText,
+    color: colors.text,
     textAlign: "center",
     paddingVertical: spacing.lg,
+
+    padding: 24,
   },
   screenshotIndicator: {
     flexDirection: "row",
@@ -1499,7 +1568,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   interviewReminderStack: {
     marginTop: spacing.sm,
     gap: spacing.md,
@@ -1519,17 +1588,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   interviewReminderLine: {
     ...typography.body,
     color: colors.text,
     fontSize: 14,
     lineHeight: 22,
-  },
+   fontFamily: "Inter_400Regular" },
   interviewReminderLabel: {
     color: colors.dark,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   interviewReminderBlock: {
     marginTop: 10,
     gap: 6,
@@ -1540,7 +1609,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 23,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   interviewReminderBullet: {
     ...typography.body,
     color: colors.text,
@@ -1548,7 +1617,7 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     paddingLeft: 4,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   interviewReminderLinkBox: {
     marginTop: 10,
     paddingVertical: 10,
@@ -1564,14 +1633,14 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 13,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   interviewReminderLink: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 14,
     lineHeight: 21,
     textDecorationLine: "underline",
-  },
+   fontFamily: "Inter_400Regular" },
   timelineContainer: {
     marginTop: spacing.xs,
     paddingLeft: 4,
@@ -1607,19 +1676,19 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 14,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   timelineSubtitleText: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 12,
     marginTop: 2,
-  },
+   fontFamily: "Inter_400Regular" },
   timelineTimeText: {
     ...typography.label,
     color: colors.subtleText,
     fontSize: 10,
     marginTop: 2,
-  },
+   fontFamily: "Inter_400Regular" },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -1663,7 +1732,7 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontSize: 13,
     lineHeight: 18,
-  },
+   fontFamily: "Inter_400Regular" },
   metricModalCountCard: {
     borderRadius: radii.lg,
     paddingVertical: spacing.md,
@@ -1678,12 +1747,12 @@ const styles = StyleSheet.create({
     ...typography.display,
     fontSize: 28,
     color: colors.surface,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   metricModalCountLabel: {
     ...typography.label,
     color: colors.accent,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricSummaryGrid: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -1704,17 +1773,17 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   metricSummarySideValue: {
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   metricSummarySideHint: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   metricInsightCard: {
     marginTop: spacing.md,
     borderRadius: radii.lg,
@@ -1728,7 +1797,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricInsightValue: {
     ...typography.body,
     color: colors.text,
@@ -1759,12 +1828,12 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   metricDetailMeta: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   metricDetailFacts: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1783,23 +1852,23 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 10,
-  },
+   fontFamily: "Inter_400Regular" },
   metricFactValue: {
     ...typography.label,
     color: colors.text,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricDetailBody: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 12,
     lineHeight: 18,
-  },
+   fontFamily: "Inter_400Regular" },
   metricDetailHint: {
     ...typography.body,
     color: colors.accentDark,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   metricEmptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -1810,7 +1879,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   metricEmptyBody: {
     ...typography.body,
     color: colors.mutedText,
@@ -1837,13 +1906,13 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 14,
-  },
+   fontFamily: "Inter_400Regular" },
   modalTitle: {
     ...typography.headline,
     fontSize: 20,
     flex: 1,
     marginRight: spacing.md,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   closeButton: {
     width: 32,
     height: 32,
@@ -1854,7 +1923,7 @@ const styles = StyleSheet.create({
   closeButtonText: {
     fontSize: 18,
     fontWeight: "bold",
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   modalMeta: {
     ...typography.body,
     color: colors.mutedText,
@@ -1880,14 +1949,14 @@ const styles = StyleSheet.create({
   detailValue: {
     ...typography.title,
     fontSize: 14,
-  },
+   fontFamily: "Inter_400Regular" },
   sectionHeading: {
     ...typography.label,
     color: colors.subtleText,
     fontWeight: "700",
     letterSpacing: 1.1,
     marginTop: spacing.md,
-  },
+   fontFamily: "Inter_600SemiBold" },
   stageSelectorGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1909,11 +1978,11 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   stageOptionChipTextActive: {
     color: colors.accentDark,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   inlineLoader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1938,14 +2007,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
     marginTop: spacing.xs,
-  },
+   fontFamily: "Inter_400Regular" },
   uploadBoxBody: {
     ...typography.body,
     color: colors.subtleText,
     fontSize: 11,
     textAlign: "center",
     paddingHorizontal: spacing.md,
-  },
+   fontFamily: "Inter_400Regular" },
   uploadButton: {
     backgroundColor: colors.accent,
     paddingHorizontal: spacing.md,
@@ -1959,7 +2028,7 @@ const styles = StyleSheet.create({
     color: colors.dark,
     fontSize: 12,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   screenshotContainer: {
     gap: spacing.sm,
   },
@@ -1978,7 +2047,7 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     fontSize: 13,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   updatedResumeCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -2002,11 +2071,11 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   updatedResumeCopy: { flex: 1, gap: 2 },
-  updatedResumeEyebrow: { ...typography.label, color: colors.accent, fontSize: 9, letterSpacing: 1 },
-  updatedResumeTitle: { ...typography.title, color: colors.surface, fontSize: 17 },
-  updatedResumeName: { ...typography.body, color: colors.darkMuted, fontSize: 11 },
+  updatedResumeEyebrow: { ...typography.label, color: colors.accent, fontSize: 9, letterSpacing: 1 , fontFamily: "Inter_400Regular" },
+  updatedResumeTitle: { ...typography.title, color: colors.surface, fontSize: 17 , fontFamily: "Inter_400Regular" },
+  updatedResumeName: { ...typography.body, color: colors.darkMuted, fontSize: 11 , fontFamily: "Inter_400Regular" },
   updatedResumeAction: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: radii.pill, backgroundColor: colors.accent },
-  updatedResumeActionText: { ...typography.label, color: colors.dark, fontSize: 10, fontWeight: "900" },
+  updatedResumeActionText: { ...typography.label, color: colors.dark, fontSize: 10, fontWeight: "900" , fontFamily: "Inter_600SemiBold" },
   summarySectionCard: {
     backgroundColor: colors.background,
     borderRadius: radii.md,
@@ -2020,7 +2089,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     lineHeight: 18,
-  },
+   fontFamily: "Inter_400Regular" },
   jobFeatureCard: {
     backgroundColor: colors.background,
     borderRadius: radii.md,
@@ -2041,28 +2110,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.text,
     textTransform: "capitalize",
-  },
+   fontFamily: "Inter_600SemiBold" },
   featureCardDate: {
     ...typography.body,
     fontSize: 12,
     color: colors.accent,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   featureCardType: {
     ...typography.body,
     fontSize: 12,
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   featureHighlight: {
     color: colors.text,
     fontWeight: "600",
     textTransform: "capitalize",
-  },
+   fontFamily: "Inter_600SemiBold" },
   featureCardDetail: {
     ...typography.body,
     fontSize: 12,
     color: colors.text,
-  },
+   fontFamily: "Inter_400Regular" },
   featureCardLink: {
     ...typography.body,
     fontSize: 12,
@@ -2070,31 +2139,31 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
     fontWeight: "600",
     marginTop: 2,
-  },
+   fontFamily: "Inter_600SemiBold" },
   featureCardNotes: {
     ...typography.body,
     fontSize: 11,
     color: colors.mutedText,
     fontStyle: "italic",
     marginTop: 2,
-  },
+   fontFamily: "Inter_400Regular" },
   managementCardTitle: {
     ...typography.title,
     color: colors.text,
     fontSize: 15,
     lineHeight: 22,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   managementCardLine: {
     ...typography.body,
     color: colors.text,
     fontSize: 13,
     lineHeight: 20,
-  },
+   fontFamily: "Inter_400Regular" },
   managementCardLabel: {
     color: colors.text,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   managementBlock: {
     marginTop: 6,
     gap: 4,
@@ -2104,34 +2173,34 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   managementBlockText: {
     ...typography.body,
     color: colors.text,
     fontSize: 13,
     lineHeight: 20,
-  },
+   fontFamily: "Inter_400Regular" },
   managementBulletLine: {
     ...typography.body,
     color: colors.text,
     fontSize: 13,
     lineHeight: 20,
     paddingLeft: 4,
-  },
+   fontFamily: "Inter_400Regular" },
   managementCardLink: {
     ...typography.body,
     fontSize: 12,
     color: colors.accent,
     textDecorationLine: "underline",
     lineHeight: 18,
-  },
+   fontFamily: "Inter_400Regular" },
   featureEmptyText: {
     ...typography.body,
     color: colors.subtleText,
     fontSize: 12,
     paddingLeft: 4,
     marginTop: spacing.xs,
-  },
+   fontFamily: "Inter_400Regular" },
   nestedDetailBlock: {
     marginTop: 6,
     backgroundColor: "rgba(255, 255, 255, 0.03)",
@@ -2147,11 +2216,19 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     fontWeight: "700",
     marginBottom: 2,
-  },
+   fontFamily: "Inter_600SemiBold" },
   nestedDetailText: {
     ...typography.body,
     fontSize: 11,
     color: colors.text,
     lineHeight: 15,
-  },
+   fontFamily: "Inter_400Regular" },
+
+  statusHeading: {flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12},
+  statusTitle: {fontSize: 16, lineHeight: 22, fontWeight: "600", color: colors.text, fontFamily: "Inter_600SemiBold" },
+  statusCaption: {fontSize: 12, color: colors.mutedText, fontFamily: "Inter_400Regular" },
+  liveBadge: {alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20},
+  liveBadgeText: {fontSize: 12, color: "#FFFFFF", fontFamily: "Inter_400Regular" },
+  emptyPanel: {backgroundColor: colors.surface, borderRadius: 16, padding: 20, alignItems: "center", gap: 8},
+  emptyCaption: {fontSize: 13, lineHeight: 20, color: colors.mutedText, textAlign: "center", fontFamily: "Inter_400Regular" },
 });

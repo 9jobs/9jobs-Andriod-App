@@ -1,3 +1,4 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import { useMemo } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
@@ -74,7 +75,7 @@ export default function UpcomingInterviewScreen() {
       </View>
 
       {upcomingInterviews.length > 0 ? (
-        <ScrollView
+        <SmoothScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -161,7 +162,7 @@ export default function UpcomingInterviewScreen() {
               </View>
             );
           })}
-        </ScrollView>
+        </SmoothScrollView>
       ) : (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
@@ -211,7 +212,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -230,7 +231,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.4,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   scroll: {
     flex: 1,
   },
@@ -252,7 +253,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginBottom: 12,
     letterSpacing: 0.5,
-  },
+   fontFamily: "Inter_600SemiBold" },
   detailItem: {
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -267,12 +268,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 0.8,
-  },
+   fontFamily: "Inter_600SemiBold" },
   detailValue: {
     color: colors.text,
     fontSize: 14,
     fontWeight: "600",
-  },
+   fontFamily: "Inter_600SemiBold" },
   capitalize: {
     textTransform: "capitalize",
   },
@@ -282,7 +283,7 @@ const styles = StyleSheet.create({
   notesText: {
     fontSize: 13,
     fontStyle: "italic",
-  },
+   fontFamily: "Inter_400Regular" },
   countdownBadge: {
     alignSelf: "flex-start",
     marginTop: 6,
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
     color: colors.accentDark,
     fontSize: 11,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -318,11 +319,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     textAlign: "center",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyStateSubtext: {
     color: colors.mutedText,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 20,
-  },
+   fontFamily: "Inter_400Regular" },
 });

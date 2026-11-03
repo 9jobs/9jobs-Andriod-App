@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 15,
     color: colors.text,
-  },
+   fontFamily: "Inter_400Regular" },
   resumeCard: {
     width: 184,
     borderRadius: 22,
@@ -224,5 +224,5 @@ const styles = StyleSheet.create({
     fontSize: 9,
     lineHeight: 12,
     color: colors.accentDark,
-  },
+   fontFamily: "Inter_400Regular" },
 });

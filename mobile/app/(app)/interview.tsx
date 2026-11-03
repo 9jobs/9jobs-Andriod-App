@@ -462,7 +462,7 @@ export default function InterviewScreen() {
             </Svg>
           </Pressable>
         </View>
-        <Text style={[styles.answerText, isRecording && { color: "red", fontWeight: "700" }]}>
+        <Text style={[styles.answerText, isRecording && { color: "red", fontWeight: "700" , fontFamily: "Inter_600SemiBold" }]}>
           {isRecording
             ? "Listening... tap again to stop"
             : isGeneratingAnswer
@@ -531,14 +531,14 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   title: {
     ...typography.display,
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
     letterSpacing: -0.5,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   hero: {
     height: 250,
     borderRadius: radii.lg,
@@ -586,19 +586,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     color: colors.text,
-  },
+   fontFamily: "Inter_600SemiBold" },
   heroName: {
     color: colors.surface,
     fontSize: 18,
     fontWeight: "800",
     marginTop: 6,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   heroRole: {
     fontSize: 13,
     color: colors.darkMuted,
     fontWeight: "500",
     marginTop: 2,
-  },
+   fontFamily: "Inter_500Medium" },
   questionCard: {
     borderRadius: radii.lg,
     backgroundColor: colors.dark,
@@ -611,14 +611,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#7782A1",
     letterSpacing: 0.5,
-  },
+   fontFamily: "Inter_600SemiBold" },
   questionText: {
     color: colors.surface,
     fontSize: 20,
     fontWeight: "800",
     lineHeight: 26,
     letterSpacing: -0.4,
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   tagRow: {
     flexDirection: "row",
     gap: 8,
@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     color: colors.accent,
-  },
+   fontFamily: "Inter_600SemiBold" },
   answerBlock: {
     alignItems: "center",
     gap: 10,
@@ -653,14 +653,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   errorText: {
     fontSize: 13,
     fontWeight: "600",
     color: "#D64545",
     textAlign: "center",
     maxWidth: 260,
-  },
+   fontFamily: "Inter_600SemiBold" },
   feedbackCard: {
     borderRadius: radii.lg,
     backgroundColor: "#F4F7EE",
@@ -673,7 +673,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     color: colors.accentDark,
-  },
+   fontFamily: "Inter_600SemiBold" },
   userQueryBox: {
     backgroundColor: "rgba(163,230,53,0.14)",
     borderRadius: 12,
@@ -688,24 +688,24 @@ const styles = StyleSheet.create({
     color: colors.accentDark,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
+   fontFamily: "Inter_600SemiBold" },
   userQueryText: {
     fontSize: 13,
     fontWeight: "600",
     color: colors.text,
     fontStyle: "italic",
-  },
+   fontFamily: "Inter_600SemiBold" },
   feedbackBody: {
     fontSize: 14,
     color: colors.text,
     lineHeight: 20,
     fontWeight: "600",
     textAlign: "justify",
-  },
+   fontFamily: "Inter_600SemiBold" },
   feedbackHint: {
     fontSize: 13,
     color: colors.mutedText,
     lineHeight: 19,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
 });

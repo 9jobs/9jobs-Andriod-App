@@ -62,4 +62,4 @@ SocialBlogSchema.index({ slug: 1 });
 SocialBlogSchema.index({ status: 1, publishedAt: -1 });
 
 const mongoModel = mongoose.models.SocialBlog || mongoose.model('SocialBlog', SocialBlogSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('SocialBlog') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('SocialBlog') : mongoModel;

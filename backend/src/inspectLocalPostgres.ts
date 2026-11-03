@@ -1,9 +1,11 @@
 import { Client } from "pg";
 
 async function inspectLocalPostgres() {
-  const client = new Client({
-    connectionString: "postgres://postgres:postgres@localhost:5432/postgres"
-  });
+  const connectionString = process.env.LOCAL_DIAGNOSTIC_DATABASE_URL;
+  if (!connectionString || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connectionString).hostname)) {
+    throw new Error("Set LOCAL_DIAGNOSTIC_DATABASE_URL to an authorized loopback database.");
+  }
+  const client = new Client({ connectionString });
 
   try {
     await client.connect();
@@ -19,7 +21,7 @@ async function inspectLocalPostgres() {
 
     await client.end();
   } catch (err: any) {
-    console.error("Inspection failed:", err.message);
+    console.error("Local database inspection failed.");
   }
 }
 

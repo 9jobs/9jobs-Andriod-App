@@ -18,7 +18,7 @@ const clerkState = {
 };
 
 jest.mock("@clerk/expo", () => ({
-  useAuth: () => ({ isLoaded: true, isSignedIn: clerkState.isSignedIn, signOut: jest.fn() }),
+  useAuth: () => ({ isLoaded: true, isSignedIn: clerkState.isSignedIn, signOut: jest.fn(), getToken: async () => "fixture-clerk-session" }),
   useUser: () => ({ isLoaded: true, user: clerkState.user }),
 }));
 
@@ -39,12 +39,15 @@ function SessionProbe() {
 }
 
 describe("SessionProvider in Clerk mode", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = originalFetch; });
   beforeAll(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
       true;
   });
 
   beforeEach(async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ token: "fixture-backend-token", completed: false }) });
     await AsyncStorage.clear();
     clerkState.isSignedIn = false;
     clerkState.user = null;

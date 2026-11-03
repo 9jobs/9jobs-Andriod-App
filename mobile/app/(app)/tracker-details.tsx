@@ -1,3 +1,4 @@
+import { SmoothScrollView } from "@/components/ui/SmoothScrollView";
 import React, { useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View, InteractionManager } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -6,6 +7,7 @@ import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
 import { AppIcon } from "@/components/ui/AppIcon";
+import { JobLinkText } from "@/components/ui/JobLinkText";
 import type { MobileSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { normalizeTrackerSummary } from "@/lib/data/tracker-summary";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
@@ -550,7 +552,7 @@ export default function TrackerDetailsScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <SmoothScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         nestedScrollEnabled={true}
@@ -571,7 +573,7 @@ export default function TrackerDetailsScreen() {
             </AnimatedPressable>
           );
         })}
-      </ScrollView>
+      </SmoothScrollView>
 
       {isColdEmailView ? (
         <View style={styles.emailScreenHeader}>
@@ -744,9 +746,9 @@ export default function TrackerDetailsScreen() {
                   ) : null}
                 </View>
 
-                <Text style={styles.description}>
+                <JobLinkText style={styles.description}>
                   {job.description || "Admin-managed tracker updates for this role appear here as soon as they sync."}
-                </Text>
+                </JobLinkText>
 
                 {shouldShowScreenshots && (hasBeforeScreenshot || hasAfterScreenshot) ? (
                   <View style={styles.screenshotPair}>
@@ -911,7 +913,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.text,
     letterSpacing: 0.5,
-  },
+   fontFamily: "Inter_600SemiBold" },
   categoryScrollContainer: {
     gap: 8,
     paddingVertical: 4,
@@ -932,11 +934,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_600SemiBold" },
   categoryPillTextActive: {
     color: colors.surface,
     fontWeight: "800",
-  },
+   fontFamily: "Inter_600SemiBold" },
   backRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -947,7 +949,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 16,
-  },
+   fontFamily: "Inter_400Regular" },
   heroCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
@@ -966,7 +968,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 28,
     fontWeight: "800",
-  },
+   fontFamily: "PlusJakartaSans_700Bold" },
   subtitle: {
     ...typography.body,
     color: colors.mutedText,
@@ -988,12 +990,12 @@ const styles = StyleSheet.create({
     ...typography.display,
     color: colors.surface,
     fontSize: 32,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   metricCardLabel: {
     ...typography.label,
     color: colors.accent,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   metricCardSecondary: {
     flex: 0.9,
     backgroundColor: colors.background,
@@ -1008,17 +1010,17 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   sideValue: {
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   sideHint: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   focusCard: {
     borderRadius: radii.md,
     padding: spacing.md,
@@ -1031,7 +1033,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   focusValue: {
     ...typography.body,
     color: colors.text,
@@ -1062,12 +1064,12 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   detailMeta: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   stageBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -1085,28 +1087,28 @@ const styles = StyleSheet.create({
   offerBadgeText: {
     color: colors.accentDark,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   interviewBadge: {
     backgroundColor: "rgba(59, 130, 246, 0.15)",
   },
   interviewBadgeText: {
     color: "#3B82F6",
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   rejectedBadge: {
     backgroundColor: "rgba(239, 68, 68, 0.15)",
   },
   rejectedBadgeText: {
     color: "#EF4444",
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   interviewCompletedBadge: {
     backgroundColor: "rgba(16, 185, 129, 0.15)",
   },
   interviewCompletedBadgeText: {
     color: "#10B981",
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   factGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1125,29 +1127,29 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 10,
-  },
+   fontFamily: "Inter_400Regular" },
   factValue: {
     ...typography.label,
     color: colors.text,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   description: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 13,
     lineHeight: 20,
     textAlign: "justify",
-  },
+   fontFamily: "Inter_400Regular" },
   syncedHint: {
     ...typography.body,
     color: colors.mutedText,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   emailHeaderMeta: {
     ...typography.label,
     color: colors.subtleText,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   emailThreadCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
@@ -1167,12 +1169,12 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 17,
-  },
+   fontFamily: "Inter_400Regular" },
   emailDate: {
     ...typography.label,
     color: colors.subtleText,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   emailBodyCard: {
     borderRadius: radii.md,
     borderWidth: 1,
@@ -1185,7 +1187,7 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.text,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emailBodyText: {
     ...typography.body,
     color: colors.text,
@@ -1211,7 +1213,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 11,
-  },
+   fontFamily: "Inter_400Regular" },
   emailMetaValue: {
     ...typography.body,
     color: colors.text,
@@ -1232,7 +1234,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.subtleText,
     fontSize: 12,
-  },
+   fontFamily: "Inter_400Regular" },
   actionButton: {
     alignSelf: "flex-start",
     paddingHorizontal: spacing.md,
@@ -1244,7 +1246,7 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.accent,
     fontWeight: "700",
-  },
+   fontFamily: "Inter_600SemiBold" },
   emptyCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.lg,
@@ -1259,7 +1261,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 18,
-  },
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   emptyBody: {
     ...typography.body,
     color: colors.mutedText,
@@ -1285,7 +1287,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.text,
     fontSize: 14,
-  },
+   fontFamily: "Inter_400Regular" },
   completedInterviewsSection: {
     marginTop: spacing.md,
     paddingTop: spacing.md,
@@ -1297,7 +1299,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     fontSize: 14,
     color: colors.text,
-  },
+   fontFamily: "Inter_400Regular" },
   interviewDetailRow: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -1323,17 +1325,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text,
     textTransform: "capitalize",
-  },
+   fontFamily: "Inter_400Regular" },
   interviewDateText: {
     ...typography.body,
     fontSize: 12,
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   interviewerText: {
     ...typography.body,
     fontSize: 12,
     color: colors.mutedText,
-  },
+   fontFamily: "Inter_400Regular" },
   interviewNotesText: {
     ...typography.body,
     fontSize: 12,
@@ -1344,5 +1346,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginTop: 4,
-  },
+   fontFamily: "Inter_400Regular" },
 });

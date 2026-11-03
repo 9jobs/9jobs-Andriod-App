@@ -2,6 +2,7 @@ import type { PremiumScreenContent } from "@/lib/data/premium-content";
 import type { ApplicationStatus, Job, JobCategory } from "@/types/jobs";
 
 type JobRow = {
+  source?: string;
   id: string;
   title: string;
   company: string;
@@ -65,6 +66,8 @@ type FollowUpRow = {
 };
 
 type RecruiterContactRow = {
+  source?: string;
+  source_outreach_confirmed?: boolean;
   id?: number;
   application_id?: number | null;
   email?: string | null;
@@ -75,6 +78,8 @@ type RecruiterContactRow = {
 };
 
 type ColdEmailRow = {
+  source?: string;
+  source_sent_confirmed?: boolean;
   sent_at?: string | null;
   delivery_status?: string | null;
 };
@@ -296,7 +301,7 @@ function buildUniqueContactKey(contact: RecruiterContactRow) {
     return `phone:${phone}`;
   }
 
-  const name = contact.recruiter_name?.trim().toLowerCase();
+  const name = contact.recruiter_name?.trim().toLowerCase().replace(/\s+/g, " ");
   return name ? `name:${name}` : `contact:${contact.id ?? Math.random()}`;
 }
 
@@ -349,7 +354,7 @@ export function mapJobsWithUserState(
       jobLink: job.job_link ?? "",
       category: categoryName ?? categoryFallback,
       postedAt: job.posted_at,
-      matchScore: job.match_score ?? 80,
+      matchScore: job.source === "duplicate-sheet" ? job.match_score : job.match_score ?? 80,
       tags: job.tags ?? [],
       description: job.description,
       isSaved: savedJobIds.has(job.id) || Boolean(application?.is_saved),
@@ -536,7 +541,7 @@ export function buildTrackerSummaryFromApplications(
       }
     }
 
-    if (contact.contact_date || (contact.response_status && contact.response_status !== "no_response")) {
+    if (contact.contact_date || (contact.source === "duplicate-sheet" && contact.source_outreach_confirmed === true) || (contact.response_status && contact.response_status !== "no_response")) {
       contactKeys.add(buildUniqueContactKey(contact));
     }
   }
@@ -639,7 +644,7 @@ export function buildTrackerSummaryFromApplications(
 
   const coldEmailsSent = coldEmails.filter((email) => {
     const deliveryStatus = email.delivery_status?.toLowerCase() ?? "";
-    return Boolean(email.sent_at) && !["draft", "failed"].includes(deliveryStatus);
+    return (Boolean(email.sent_at) || (email.source === "duplicate-sheet" && email.source_sent_confirmed === true)) && !["draft", "failed"].includes(deliveryStatus);
   }).length;
 
   return {

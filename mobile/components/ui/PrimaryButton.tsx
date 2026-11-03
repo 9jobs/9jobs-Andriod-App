@@ -40,7 +40,7 @@ export function PrimaryButton({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 56,
+    minHeight: 48,
     borderRadius: radii.pill,
     alignItems: "center",
     justifyContent: "center",
@@ -62,10 +62,10 @@ const styles = StyleSheet.create({
   label: {
     color: colors.text,
     ...typography.title,
-    fontSize: 16,
-  },
+    fontSize: 14,
+   fontFamily: "Inter_400Regular" },
   ghostLabel: {
     color: colors.mutedText,
     fontSize: 14,
-  },
+   fontFamily: "Inter_400Regular" },
 });

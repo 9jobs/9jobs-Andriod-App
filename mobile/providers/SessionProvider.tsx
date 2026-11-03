@@ -9,17 +9,17 @@ import {
   useState,
 } from "react";
 import { isClerkConfigured } from "@/lib/clerk/config";
-import { clearBackendAuthTokenCache, getBackendAuthToken } from "@/lib/data/backend-auth-token";
+import { clearBackendAuthTokenCache, getBackendAuthToken, registerBackendSession, hasBackendSession } from "@/lib/data/backend-auth-token";
 import { previewMobileUser } from "@/lib/data/preview-user";
 import { fetchCandidateQuestionnaireStatus, getCachedCandidateQuestionnaire } from "@/lib/data/candidate-questionnaire";
 import { connectSocket } from "@/lib/socket/socketService";
-import { supabase } from "@/lib/supabase/client";
 import { queryKeys } from "@/lib/queries";
 import { storageKeys } from "@/lib/utils/storage";
 import type { SessionUser } from "@/types/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { clearInMemoryTokenCache, getLocalSyncSnapshot } from "@/lib/data/mobile-sync-repository";
 import { InteractionManager } from "react-native";
+import { registerSheetSession } from "@/lib/data/sheet-records";
 
 const shouldEnableLiveTransport =
   process.env.NODE_ENV === "test" ||
@@ -47,7 +47,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
 }
 
 async function syncBackendToken(sessionUser: SessionUser | null) {
-  if (!sessionUser) {
+  if (!sessionUser || !hasBackendSession(sessionUser.id)) {
     return;
   }
   try {
@@ -78,41 +78,7 @@ async function syncBackendToken(sessionUser: SessionUser | null) {
   }
 }
 
-async function syncSupabaseProfile(sessionUser: SessionUser | null) {
-  if (!sessionUser || !supabase) {
-    return;
-  }
 
-  try {
-    const profilePayload = {
-      id: sessionUser.id,
-      email: sessionUser.email,
-      full_name: sessionUser.fullName,
-      phone_number: sessionUser.phoneNumber || "",
-      role: "client",
-      account_status: "active",
-      subscription_plan: "free",
-    };
-
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .upsert([profilePayload], { onConflict: "id" });
-
-    if (profileError) {
-      throw profileError;
-    }
-
-    const { error: subscriptionError } = await supabase
-      .from("user_subscriptions")
-      .upsert([{ user_id: sessionUser.id, plan_id: "free", status: "active" }], { onConflict: "user_id" });
-
-    if (subscriptionError) {
-      throw subscriptionError;
-    }
-  } catch (err) {
-    console.warn("[SessionProvider] Sync: Error syncing profile to Supabase:", err);
-  }
-}
 
 async function clearPreviewSnapshotCache() {
   clearBackendAuthTokenCache();
@@ -175,7 +141,6 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     syncBackendToken(user);
-    syncSupabaseProfile(user);
   }, [user]);
 
   const value = useMemo<SessionContextValue>(
@@ -216,13 +181,19 @@ function MissingClerkSessionProvider({ children }: PropsWithChildren) {
 }
 
 function ClerkSessionProvider({ children }: PropsWithChildren) {
-  const { isLoaded: authLoaded, isSignedIn, signOut: authSignOut } = useAuth();
+  const { isLoaded: authLoaded, isSignedIn, signOut: authSignOut, getToken } = useAuth();
   const { isLoaded: userLoaded, user } = useUser();
   const [isOnboardingLoaded, setIsOnboardingLoaded] = useState(false);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [isQuestionnaireStatusLoaded, setIsQuestionnaireStatusLoaded] = useState(false);
   const [isLocallySignedOut, setIsLocallySignedOut] = useState(false);
   const [localFallbackUser, setLocalFallbackUser] = useState<SessionUser | null>(null);
+  useEffect(() => {
+    if (!isSignedIn || !user?.id || isLocallySignedOut || localFallbackUser) return;
+    const clearSheet = registerSheetSession(user.id, () => getToken());
+    const clearBackend = registerBackendSession(user.id, () => getToken());
+    return () => { clearSheet(); clearBackend(); };
+  }, [isSignedIn, getToken, user?.id, isLocallySignedOut, localFallbackUser]);
   let queryClient: any = null;
   try {
     queryClient = useQueryClient();
@@ -412,7 +383,6 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     syncBackendToken(sessionUser);
-    syncSupabaseProfile(sessionUser);
   }, [sessionUser]);
 
   const value = useMemo<SessionContextValue>(

@@ -2,6 +2,7 @@ import { PropsWithChildren, ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { AnimatedScreenShell } from "@/components/motion/AnimatedScreenShell";
 import { CTAReveal } from "@/components/motion/CTAReveal";
+import { FadeInView } from "@/components/motion/FadeInView";
 import { Screen } from "@/components/ui/Screen";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 
@@ -25,7 +26,7 @@ export function PremiumScaffold({
 }: PremiumScaffoldProps) {
   return (
     <Screen scroll={scroll}>
-      <AnimatedScreenShell>
+      <FadeInView type="fade-down">
         <View style={styles.header}>
           <View style={styles.copy}>
             {kicker ? <Text style={styles.kicker}>{kicker}</Text> : null}
@@ -34,7 +35,7 @@ export function PremiumScaffold({
           </View>
           {rightSlot}
         </View>
-      </AnimatedScreenShell>
+      </FadeInView>
       {hero ? (
         <CTAReveal>
           <View style={styles.hero}>{hero}</View>
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     gap: spacing.md,
-    marginTop: spacing.sm,
+    marginTop: 8,
     alignItems: "flex-start",
   },
   copy: {
@@ -81,13 +82,13 @@ const styles = StyleSheet.create({
   title: {
     ...typography.display,
     color: colors.text,
-    fontSize: 30,
-    lineHeight: 34,
-  },
+    fontSize: 28,
+    lineHeight: 36,
+   fontFamily: "PlusJakartaSans_600SemiBold" },
   subtitle: {
     ...typography.body,
     color: colors.mutedText,
-    maxWidth: 320,
+    maxWidth: undefined,
   },
   hero: {
     gap: spacing.md,
@@ -103,17 +104,17 @@ const styles = StyleSheet.create({
   },
   darkHero: {
     backgroundColor: colors.dark,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
+    borderRadius: 20,
+    padding: 24,
     gap: spacing.md,
     ...shadows.float,
   },
   panel: {
     backgroundColor: colors.surfaceRaised,
-    borderRadius: radii.lg,
+    borderRadius: 16,
     padding: spacing.lg,
     gap: spacing.md,
-    borderWidth: 1,
+    borderWidth: 0,
     borderColor: colors.borderStrong,
     ...shadows.card,
   },

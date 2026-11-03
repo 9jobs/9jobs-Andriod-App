@@ -11,4 +11,4 @@ const InterviewFeedbackSchema = new mongoose.Schema({
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
 
 const mongoModel = mongoose.models.InterviewFeedback || mongoose.model('InterviewFeedback', InterviewFeedbackSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('InterviewFeedback') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('InterviewFeedback') : mongoModel;

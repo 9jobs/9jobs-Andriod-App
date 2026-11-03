@@ -46,4 +46,4 @@ const InvoiceSchema = new mongoose.Schema(
 );
 
 const mongoModel = mongoose.models.Invoice || mongoose.model('Invoice', InvoiceSchema);
-export default process.env.DATABASE_PROVIDER === 'supabase' ? getSupabaseModel('Invoice') : mongoModel;
+export default ['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER) ? getSupabaseModel('Invoice') : mongoModel;

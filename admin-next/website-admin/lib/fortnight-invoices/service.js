@@ -8,11 +8,12 @@ import { constantTimeCompare, generateSecureToken, hashToken } from '@/utils/cry
 import { getStripeClient } from '@/lib/billing/stripe';
 import { getHostedCheckoutCustomerCaptureConfig } from '@/lib/billing/checkout';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
+import { getNeonRecordClient } from '@/lib/storage/neon-client';
 
 async function getLatestFortnightInvoiceNumber() {
-  if (process.env.DATABASE_PROVIDER === 'supabase') {
+  if (['supabase', 'neon'].includes(process.env.DATABASE_PROVIDER)) {
     // Fetch only the newest invoice row instead of loading every stored record.
-    const { data, error } = await getSupabaseServerClient()
+    const { data, error } = await (process.env.DATABASE_PROVIDER === 'neon' ? getNeonRecordClient() : getSupabaseServerClient())
       .from('website_admin_records')
       .select('payload')
       .eq('model', 'FortnightInvoice')

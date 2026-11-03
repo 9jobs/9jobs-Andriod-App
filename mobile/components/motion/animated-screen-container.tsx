@@ -11,7 +11,7 @@ export function AnimatedScreenContainer({
   style,
 }: AnimatedScreenContainerProps) {
   return (
-    <StableEntranceView direction="none" duration={520} style={style}>
+    <StableEntranceView direction="up" distance={6} duration={280} revealOnScroll={false} style={style}>
       {children}
     </StableEntranceView>
   );
