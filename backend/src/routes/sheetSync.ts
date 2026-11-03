@@ -4,6 +4,7 @@ import { readSheetJobs, sheetDb, sheetEnabled, sheetVersion, SHEET_ID } from "..
 import { lookupVerifiedAccount, persistVerifiedAccount } from "../services/verifiedAccount";
 import { approveClientEmails,reviewClientEmails } from "../services/clientEmailAssociations";
 import { requestLocalSheetRefresh } from "../services/localSyncFreshness";
+import {readSheetActivity} from "../services/sheetApplications";
 export function createSheetRouter(database: typeof sheetDb = sheetDb) {
 const router = Router();
 router.use((req,res,next)=>sheetEnabled() ? next() : next("router"));
@@ -16,6 +17,14 @@ router.get("/mobile/sheet-records/version",sheetIdentity,async(req:SheetRequest,
     res.setHeader("Cache-Control","private, no-store");
     return res.json(await sheetVersion(req.sheetPrincipal!.userId,database()));
   } catch {return res.status(503).json({error:"Sheet version is temporarily unavailable"});}
+});
+router.get("/mobile/sheet-records/activity",sheetIdentity,async(req:SheetRequest,res)=>{
+  try {
+    res.setHeader("Cache-Control","private, no-store");
+    const userId=req.sheetPrincipal!.userId;
+    // Ownership is resolved by the existing verified mapping, never URL parameters.
+    return res.json({userId,...await readSheetActivity(userId,database())});
+  } catch {return res.status(503).json({error:"Authorized application data is temporarily unavailable"});}
 });
 router.get(["/admin/sheet-sync/records","/mobile/sheet-records"],sheetIdentity,async(req:SheetRequest,res)=>{
   const adminPath=req.path.startsWith("/admin/");

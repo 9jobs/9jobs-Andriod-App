@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const net = require('node:net');
 const {spawn, execFileSync} = require('node:child_process');
-const {localConfig} = require('./localhost-e2e-config.cjs');
+const {runtimeConfig:localConfig} = require('./localhost-runtime-config.cjs');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function listening(port) {
  return new Promise(resolve => {
@@ -16,14 +16,14 @@ function listening(port) {
 async function isolatedHealth() {
  try {
   const response = await fetch('http://127.0.0.1:3100/health', {signal:AbortSignal.timeout(1500)});
-  return response.ok && (await response.json()).localTestEnvironment === true;
+  const health=await response.json();return response.ok && health.localTestEnvironment===true && health.databaseMode===localConfig().config.LOCAL_DATABASE_MODE;
  } catch {return false;}
 }
 async function ensureLocalhostRuntime() {
  const {root, directory, config} = localConfig();
  if (await isolatedHealth()) return;
  if (await listening(3100)) throw new Error('Port 3100 is occupied by an unverified backend; it was not changed.');
- if (!await listening(55439)) {
+ if (config.LOCAL_DATABASE_MODE==='isolated-e2e' && !await listening(55439)) {
   const data = path.join(root,'.work/client-id-postgres');
   const pgCtl = 'C:/Program Files/PostgreSQL/18/bin/pg_ctl.exe';
   if (!fs.existsSync(path.join(data,'PG_VERSION')) || !fs.existsSync(pgCtl))

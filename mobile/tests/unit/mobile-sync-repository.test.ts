@@ -20,6 +20,50 @@ type MockQueryResult = {
   insert: (...args: any[]) => Promise<{ data: any; error: any }>;
 };
 
+describe("independent published success stories", () => {
+  beforeEach(() => { jest.resetModules(); jest.clearAllMocks(); });
+  test("loads a saved active testimonial independently of the mobile snapshot", async () => {
+    const token = jest.spyOn(require("@/lib/data/backend-auth-token"), "getBackendAuthToken").mockResolvedValue("unit-test-only");
+    const row = { id: "saved-story", name: "Test Client", position: "Engineer", year: "2026", message: "Saved testimonial", story_rate: 5, is_active: true, display_order: 1 };
+    const query: any = createQuery([row]); query.abortSignal = jest.fn(() => query);
+    const read = jest.spyOn(mockSupabase, "from").mockReturnValue(query);
+    const { fetchPublishedSuccessStories } = require("@/lib/data/mobile-sync-repository");
+    const result = await fetchPublishedSuccessStories({ id: "unit-client", email: "unit@example.com", fullName: "Test" });
+    expect(token).toHaveBeenCalled(); expect(read).toHaveBeenCalledWith("success_stories");
+    expect(result).toEqual([expect.objectContaining({ id: "saved-story", name: "Test Client", message: "Saved testimonial", storyRate: 5 })]);
+    expect(query.abortSignal).toHaveBeenCalled();read.mockRestore();token.mockRestore();
+  });
+  test("does not show inactive testimonials", () => {
+    const { mapSuccessStories } = require("@/lib/data/mobile-sync-repository");
+    expect(mapSuccessStories([{ id: "hidden", is_active: false }])).toEqual([]);
+  });
+  test("does not read stories without authentication", async () => {
+    const token=jest.spyOn(require("@/lib/data/backend-auth-token"), "getBackendAuthToken").mockResolvedValue(null);
+    const read=jest.spyOn(mockSupabase,"from");
+    const { fetchPublishedSuccessStories } = require("@/lib/data/mobile-sync-repository");
+    await expect(fetchPublishedSuccessStories({id:"unit-client"})).rejects.toThrow("Please sign in");
+    expect(read).not.toHaveBeenCalled();read.mockRestore();token.mockRestore();
+  });
+});
+
+describe("authorized Sheet recovery after snapshot failure",()=>{
+  beforeEach(()=>{jest.resetModules();jest.clearAllMocks();});
+  test("restores 66 genuine applied records from 72 source jobs without duplicating them",async()=>{
+    const {getLocalSyncSnapshot,applyAuthorizedSheetActivity}=require("@/lib/data/mobile-sync-repository");
+    const user={id:"user_source_recovery_test",email:"unit@example.com",fullName:"Unit Client"};
+    const snapshot=await getLocalSyncSnapshot(user);
+    const jobs=Array.from({length:72},(_,i)=>({id:`sheet:${i}`,title:`Role ${i}`,company:"Company",location:"",description:"",job_link:"",posted_at:"2026-09-14",tags:[],source:"duplicate-sheet"}));
+    const applications=jobs.slice(0,66).map((job:any,i:number)=>({id:-i-1,user_id:user.id,job_id:job.id,status:"applied",source:"duplicate-sheet",application_date:"2026-09-14",created_at:"2026-09-14"}));
+    const source={userId:user.id,jobs,applications,recruiterContacts:[],coldEmails:[],sourceActivity:{records:72,emailsSent:0,contactsAdded:0,messagesSent:0,messagesShared:0}};
+    const recovered=applyAuthorizedSheetActivity(snapshot,source,user.id);
+    expect(recovered.jobs).toHaveLength(72);expect(recovered.homeMetrics.totalApplications).toBe(66);
+    expect(recovered.trackerSummary.offers).toBe(0);expect(recovered.trackerSummary.interviewing).toBe(0);
+    const repeated=applyAuthorizedSheetActivity(recovered,source,user.id);
+    expect(repeated.rawApplications).toHaveLength(66);expect(repeated.jobs).toHaveLength(72);
+    expect(()=>applyAuthorizedSheetActivity(snapshot,{...source,userId:"other"},user.id)).toThrow("identity mismatch");
+  });
+});
+
 function createQuery(initialData: any): MockQueryResult {
   const query: MockQueryResult = {
     data: initialData,

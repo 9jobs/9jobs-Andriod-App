@@ -1,4 +1,4 @@
-const {localConfig}=require('./localhost-e2e-config.cjs');const {config}=localConfig();Object.assign(process.env,config);
+const {runtimeConfig}=require('./localhost-runtime-config.cjs');const {config}=runtimeConfig();Object.assign(process.env,config);
 require('ts-node/register');
 // Initialize additive local-only metadata before accepting authenticated requests.
 (async()=>{

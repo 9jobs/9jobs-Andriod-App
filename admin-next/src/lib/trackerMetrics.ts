@@ -26,6 +26,8 @@ type FollowUpRow = {
 };
 
 type RecruiterContactRow = {
+  source?: string;
+  source_outreach_confirmed?: boolean;
   id?: number;
   application_id?: number | null;
   email?: string | null;
@@ -36,6 +38,8 @@ type RecruiterContactRow = {
 };
 
 type ColdEmailRow = {
+  source?: string;
+  source_sent_confirmed?: boolean;
   sent_at?: string | null;
   delivery_status?: string | null;
 };
@@ -341,7 +345,7 @@ export function calculateTrackerMetrics(input: {
 
   const contactKeys = new Set<string>();
   recruiterContacts.forEach((contact) => {
-    if (contact.contact_date || (contact.response_status && contact.response_status !== "no_response")) {
+    if (contact.contact_date || (contact.source === "duplicate-sheet" && contact.source_outreach_confirmed === true) || (contact.response_status && contact.response_status !== "no_response")) {
       contactKeys.add(buildContactKey(contact));
     }
   });
@@ -407,7 +411,7 @@ export function calculateTrackerMetrics(input: {
     }).length,
     aiMatchScore: Math.max(0, Math.min(100, Math.round(Number(latestAiScore ?? 0)))),
     atsScore: Math.max(0, Math.min(100, Math.round(Number(latestAtsScore ?? 0)))),
-    coldEmailsSent: coldEmails.filter((email) => Boolean(email.sent_at) && !["draft", "failed"].includes((email.delivery_status ?? "").toLowerCase())).length,
+    coldEmailsSent: coldEmails.filter((email) => (Boolean(email.sent_at) || (email.source === "duplicate-sheet" && email.source_sent_confirmed === true)) && !["draft", "failed"].includes((email.delivery_status ?? "").toLowerCase())).length,
     contactsReached: contactKeys.size,
     lastUpdatedAt: new Date().toISOString(),
   };

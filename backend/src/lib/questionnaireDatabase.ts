@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import {assertDevelopmentDatabase} from './database';
 
 // Standalone connection for the resume fix: does not change other API adapters.
 export function usesQuestionnaireDatabase() {
@@ -13,8 +14,19 @@ export function usesQuestionnaireDatabase() {
 }
 
 export function createQuestionnairePool() {
+  if(process.env.LOCAL_DATABASE_MODE==='neon-development')assertDevelopmentDatabase();
   if (!usesQuestionnaireDatabase()) throw new Error("Approved questionnaire database is not configured");
   const url = new URL(process.env.DATABASE_URL!);
   if (url.hostname.endsWith(".neon.tech")) url.searchParams.set("sslmode", "verify-full");
   return new Pool({ connectionString: url.toString(), max: 3, connectionTimeoutMillis: 10000, idleTimeoutMillis: 10000 });
+}
+
+// Keep authenticated API reads on warm connections between 15-second polls.
+let sharedPool: Pool | undefined;
+export function questionnairePool() {
+  if (!sharedPool) {
+    sharedPool = createQuestionnairePool();
+    sharedPool.options.idleTimeoutMillis = 60000;
+  }
+  return sharedPool;
 }

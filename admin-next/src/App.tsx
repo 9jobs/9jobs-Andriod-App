@@ -2,8 +2,12 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./lib/supabase";
-import { previewAdminCredentials, resolveAdminAccess, requestAdminPasswordToken } from "./lib/adminAuth";
+import { previewAdminCredentials, requestClerkAdminToken, requestAdminPasswordToken } from "./lib/adminAuth";
 import { calculateTrackerMetrics } from "./lib/trackerMetrics";
+import { RowActionsMenu } from "./components/RowActionsMenu";
+import { combineOpportunityPage, matchesOpportunity } from "./lib/opportunityPagination";
+import { LatestOpportunityRequest } from "./lib/latestOpportunityRequest";
+import { SingleFlight } from "./lib/singleFlight";
 import { PlatformCredentialsPanel } from "./components/PlatformCredentialsPanel";
 import { parseHiringManagersCsv } from "./lib/hiringManagers";
 import { io } from "socket.io-client";
@@ -697,7 +701,7 @@ import {
   ReceiptText
 } from "lucide-react";
 
-import { useUser, useAuth, useSignIn } from "@clerk/clerk-react";
+import { useUser, useAuth, useSignIn, useClerk } from "@clerk/clerk-react";
 
 // Tab types
 type Tab =
@@ -776,6 +780,7 @@ function renderChatMessageContent(message: any) {
 }
 
 export default function App() {
+  const dataRefreshRef = useRef(new SingleFlight());
   const realtimeTables = [
     "profiles",
     "jobs",
@@ -793,6 +798,7 @@ export default function App() {
   // Clerk hooks
   const { isLoaded: userLoaded, isSignedIn, user } = useUser();
   const { signOut: clerkSignOut, getToken: getClerkToken } = useAuth();
+  const clerk=useClerk();
   const { isLoaded: signInLoaded, signIn, setActive } = useSignIn();
 
   // Auth state
@@ -808,15 +814,19 @@ export default function App() {
   const [emailInput] = useState<string>(previewAdminCredentials.email);
   const [passwordInput, setPasswordInput] = useState<string>(previewAdminCredentials.password);
   const [authError, setAuthError] = useState("");
+  const adminVerificationRequestRef=useRef(0);
   const [showPassword, setShowPassword] = useState(false);
   const [schemaWarning, setSchemaWarning] = useState("");
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<Tab>("dashboard");
+  const applicationsRequestRef=useRef(new LatestOpportunityRequest());
+  const applicationsContextRef=useRef({tab:activeTab,userId:user?.id||""});
+  applicationsContextRef.current={tab:activeTab,userId:user?.id||""};
   const [websiteAdminPath, setWebsiteAdminPath] = useState("dashboard");
   const [settingsSubsection, setSettingsSubsection] = useState<"personal_information" | "notifications">("personal_information");
   const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(true);
-  const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(true);
+  const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(false);
   const [isWebsiteAdminDropdownOpen, setIsWebsiteAdminDropdownOpen] = useState(false);
   const [isAgreementsDropdownOpen, setIsAgreementsDropdownOpen] = useState(false);
   const [isInvoicesDropdownOpen, setIsInvoicesDropdownOpen] = useState(false);
@@ -844,6 +854,9 @@ export default function App() {
   const [interviewPrepSessions, setInterviewPrepSessions] = useState<any[]>([]);
   const [interviewPrepResponses, setInterviewPrepResponses] = useState<any[]>([]);
   const [selectedTrackerClientId, setSelectedTrackerClientId] = useState("");
+  const selectedTrackerClientRef=useRef(selectedTrackerClientId);
+  selectedTrackerClientRef.current=selectedTrackerClientId;
+  const trackerRequestRef=useRef(new LatestOpportunityRequest());
   const [trackerSection, setTrackerSection] = useState<"overview" | "applications" | "interviews" | "follow_ups" | "contacts" | "cold_emails" | "scores" | "activity">("overview");
   const [isInterviewManagementOpen, setIsInterviewManagementOpen] = useState(false);
   const [coverLetters, setCoverLetters] = useState<any[]>([]);
@@ -867,6 +880,19 @@ export default function App() {
 
   // Search & Filters
   const [searchQuery, setSearchQuery] = useState("");
+  const [opportunityPage, setOpportunityPage] = useState(1);
+  const [opportunityPageSize, setOpportunityPageSize] = useState(25);
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize, setUserPageSize] = useState(25);
+  const [applicationPage, setApplicationPage] = useState(1);
+  const [applicationPageSize, setApplicationPageSize] = useState(25);
+  const [opportunityTotal, setOpportunityTotal] = useState(0);
+  const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
+  const [opportunitiesLoadError, setOpportunitiesLoadError] = useState("");
+  const opportunityLoaderRef = useRef(new LatestOpportunityRequest());
+  const loadedOpportunityKeyRef = useRef("");
+  const opportunityPaginationRef = useRef({ page: opportunityPage, size: opportunityPageSize, query: searchQuery });
+  opportunityPaginationRef.current = { page: opportunityPage, size: opportunityPageSize, query: searchQuery };
   const sheetSearchRef = useRef(searchQuery);
   sheetSearchRef.current = searchQuery;
   const sheetJobsRequestRef = useRef(0);
@@ -976,7 +1002,7 @@ export default function App() {
         const normalizedPayload = payload.replace(/-/g, "+").replace(/_/g, "/");
         const decoded = JSON.parse(atob(normalizedPayload));
         const expiresAtMs = Number(decoded?.exp || 0) * 1000;
-        if (expiresAtMs > Date.now() + 30_000 && (!sheetIntegrationEnabled || isSignedIn || decoded.sheet_verified === true)) {
+        if (expiresAtMs > Date.now() + 30_000 && decoded.role==="admin" && (!isSignedIn || decoded.userId===user?.id) && (!sheetIntegrationEnabled || isSignedIn || decoded.sheet_verified === true)) {
           return existingToken;
         }
       } catch (error) {
@@ -989,23 +1015,9 @@ export default function App() {
     const clerkAdminEmail = user?.primaryEmailAddress?.emailAddress?.trim();
     if (isSignedIn && user && clerkAdminEmail) {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getClerkToken()}` },
-          body: JSON.stringify({
-            email: clerkAdminEmail,
-            userId: user.id,
-            role: "admin",
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.token) {
-            localStorage.setItem("admin_auth_token", data.token);
-            return data.token as string;
-          }
-        }
+        const token=await requestClerkAdminToken(user.id,()=>getClerkToken(),BACKEND_URL);
+        localStorage.setItem("admin_auth_token",token);
+        return token;
       } catch (error) {
         console.warn("[Admin Auth] Clerk admin token refresh failed:", error);
       }
@@ -1033,40 +1045,13 @@ export default function App() {
         setIsInitialLoading(false);
       }
     }
-  }, [userLoaded, isSignedIn, user]);
+  }, [userLoaded, isSignedIn, user?.id]);
 
   useEffect(() => {
     if (isPreviewAuthenticated) {
       void ensureAdminToken();
     }
   }, [isPreviewAuthenticated]);
-
-  // Exchange Clerk session for backend JWT token
-  useEffect(() => {
-    async function exchangeClerkToken() {
-      if (isSignedIn && user) {
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/auth/token`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${await getClerkToken()}` },
-            body: JSON.stringify({
-              email: user.primaryEmailAddress?.emailAddress || "admin@9jobs.app",
-              userId: user.id,
-              role: "admin",
-            }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            localStorage.setItem("admin_auth_token", data.token);
-            console.log("[Admin Auth] Swapped Clerk session for backend JWT.");
-          }
-        } catch (err) {
-          console.warn("[Admin Auth] Clerk session token swap failed:", err);
-        }
-      }
-    }
-    void exchangeClerkToken();
-  }, [isSignedIn, user]);
 
   // Connect to Socket.IO and listen to live events
   useEffect(() => {
@@ -1135,20 +1120,24 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (isAdmin) {
+    // A restored admin flag can precede Clerk verification. Fetch immediately
+    // when verification finishes instead of waiting for the 15-second poll.
+    if (isAdmin && !authLoading && userLoaded) {
       fetchData();
     }
-  }, [activeTab, isAdmin]);
+  }, [activeTab, isAdmin, authLoading, userLoaded, user?.id]);
 
   useEffect(() => {
     if (!sheetIntegrationEnabled || !isAdmin || activeTab !== "jobs") return;
     const timer = setTimeout(() => { void fetchJobs().catch((error) => showError(error.message)); }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, isAdmin, activeTab]);
+  }, [searchQuery, opportunityPage, opportunityPageSize, isAdmin, activeTab]);
+
+  useEffect(() => { setOpportunityPage(1); }, [searchQuery]);
 
   useEffect(() => {
     if (isAdmin && (activeTab === "job_tracker" || activeTab === "hiring_managers") && selectedTrackerClientId) {
-      void fetchTrackerClientData(selectedTrackerClientId);
+      void fetchTrackerClientData(selectedTrackerClientId).catch(error=>showError(error.message));
     }
     if (isAdmin && activeTab === "interview_preparation") {
       void fetchInterviewPreparationData(selectedTrackerClientId || undefined);
@@ -1163,7 +1152,7 @@ export default function App() {
       (modalType === "follow_up" || modalType === "interview" || modalType === "cold_email" || modalType === "score") &&
       applications.length === 0
     ) {
-      void fetchTrackerClientData(selectedTrackerClientId);
+      void fetchTrackerClientData(selectedTrackerClientId).catch(error=>showError(error.message));
     }
   }, [applications.length, isAdmin, isModalOpen, modalType, selectedTrackerClientId]);
 
@@ -1207,10 +1196,21 @@ export default function App() {
         "postgres_changes",
         { event: "*", schema: "public", table },
         () => {
-          void fetchData();
-          if (activeTab === "dashboard") {
-            void fetchDashboardStats();
+          // All synthetic table notifications arrive together every 15 seconds.
+          // The jobs loader coalesces this burst and retains the displayed page.
+          if (activeTab === "jobs" && sheetIntegrationEnabled) {
+            void fetchJobs().catch((error) => showError(error.message));
+            return;
           }
+          if (sheetIntegrationEnabled && (activeTab === "job_tracker" || activeTab === "hiring_managers") && selectedTrackerClientRef.current) {
+            void fetchTrackerClientData(selectedTrackerClientRef.current).catch(error=>showError(error.message));
+            return;
+          }
+          if(activeTab==="applications"){
+            void fetchApplications().catch(error=>showError(error.message));
+            return;
+          }
+          void fetchData();
           if (activeTab === "messages" && activeChatUser?.id) {
             void fetchChatMessages(activeChatUser.id);
           }
@@ -1273,43 +1273,28 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, activeChatUser]);
 
-  const checkAdminStatus = async (clerkUser: any) => {
+  const checkAdminStatus = async (clerkUser: any, tokenGetter:()=>Promise<string|null>=()=>getClerkToken()) => {
+    const requestId=++adminVerificationRequestRef.current;
+    const sessionId=clerk.session?.id;
+    setAuthLoading(true);
     try {
-      const email = clerkUser.primaryEmailAddress?.emailAddress;
-      if (!email) throw new Error("Clerk user has no primary email address.");
-
-      // Fetch admins count
-      const { data: adminList, error: countError } = await supabase.from("admins").select("*");
-      const access = resolveAdminAccess(email, adminList, countError);
-
-      // Bootstrapping: If there are no admins in the DB, make the first logged-in user the admin!
-      if (access.shouldBootstrap) {
-        const { error: insertError } = await supabase
-          .from("admins")
-          .insert([{ email }]);
-        if (insertError) throw insertError;
-        setIsAdmin(true);
-        setAuthLoading(false);
-        return;
-      }
-
-      if (access.fallbackReason === "missing-admins-table") {
-        console.warn("Admins table missing in Supabase. Allowing authenticated admin preview access.");
-      }
-
-      // Check if user is in admin list
-      const isUserAdmin = access.isAdmin;
-      setIsAdmin(isUserAdmin);
-      if (!isUserAdmin) {
-        setAuthError(`Access denied. ${email} is not authorized in the 9Jobs Admin list.`);
-        await clerkSignOut();
-      }
+      const token=await requestClerkAdminToken(clerkUser.id,tokenGetter,BACKEND_URL);
+      if(requestId!==adminVerificationRequestRef.current || (sessionId && clerk.session?.id!==sessionId) || clerk.user?.id!==clerkUser.id)return;
+      localStorage.setItem("admin_auth_token",token);
+      localStorage.removeItem("admin_preview_authenticated");
+      setIsPreviewAuthenticated(false);
+      setAuthError("");
+      setPasswordInput("");
+      setIsAdmin(true);
     } catch (err: any) {
-      console.error("Admin check failed:", err.message);
-      setAuthError("Failed to verify admin status: " + err.message);
+      if(requestId!==adminVerificationRequestRef.current)return;
+      localStorage.removeItem("admin_auth_token");
+      localStorage.removeItem("admin_preview_authenticated");
+      setIsPreviewAuthenticated(false);
+      setIsAdmin(false);
+      setAuthError(err.message || "Failed to verify your existing admin session.");
     } finally {
-      setAuthLoading(false);
-      setIsInitialLoading(false);
+      if(requestId===adminVerificationRequestRef.current){setAuthLoading(false);setIsInitialLoading(false);}
     }
   };
 
@@ -1318,6 +1303,13 @@ export default function App() {
     setAuthLoading(true);
     setAuthError("");
     try {
+      // An active Clerk session must be verified, rather than signed in again.
+      if(clerk.session && clerk.user){
+        const session=clerk.session;
+        await checkAdminStatus(clerk.user,()=>session.getToken());
+        return;
+      }
+      if(isSignedIn && user){await checkAdminStatus(user);return;}
       const passwordToken = await requestAdminPasswordToken(emailInput,passwordInput,BACKEND_URL).catch(()=>null);
       if (passwordToken) {
         localStorage.setItem("admin_auth_token",passwordToken);
@@ -1336,6 +1328,11 @@ export default function App() {
 
         if (result.status === "complete" && result.createdSessionId) {
           await setActive({ session: result.createdSessionId });
+          if(clerk.session && clerk.user){
+            const session=clerk.session;
+            await checkAdminStatus(clerk.user,()=>session.getToken());
+            return;
+          }
           setAuthLoading(false);
           return;
         }
@@ -1348,6 +1345,11 @@ export default function App() {
       setAuthError("Password is incorrect. Try again with the approved local admin password.");
       setAuthLoading(false);
     } catch (err: any) {
+      if(clerk.session && clerk.user){
+        const session=clerk.session;
+        await checkAdminStatus(clerk.user,()=>session.getToken());
+        return;
+      }
       setAuthError(err.errors?.[0]?.longMessage || err.message);
       setAuthLoading(false);
     }
@@ -1498,7 +1500,12 @@ export default function App() {
   };
 
   // Centralized data fetch controller
-  const fetchData = async () => {
+  const fetchData = () => dataRefreshRef.current.run(
+    JSON.stringify([user?.id || "", activeTab, selectedTrackerClientId]),
+    loadData,
+  );
+
+  const loadData = async () => {
     setSchemaWarning("");
 
     try {
@@ -1523,10 +1530,10 @@ export default function App() {
           await fetchApplications();
           break;
         case "job_tracker":
-          await Promise.all([fetchApplications(), fetchUsers(), fetchJobs(), fetchResumeScores()]);
+          await Promise.all([fetchUsers(), fetchJobs(), fetchResumeScores()]);
           if (selectedTrackerClientId) {
             await fetchTrackerClientData(selectedTrackerClientId);
-          }
+          }else await fetchApplications();
           break;
         case "hiring_managers":
           await fetchUsers();
@@ -1787,10 +1794,6 @@ export default function App() {
       profileMap.set(profile.id, { ...profileMap.get(profile.id), ...profile });
     }
 
-    if (process.env.NODE_ENV === "development" && !profileMap.has(previewTrackerClient.id)) {
-      profileMap.set(previewTrackerClient.id, previewTrackerClient);
-    }
-
     const candidateIds = new Set<string>();
     for (const profile of profileMap.values()) {
       candidateIds.add(profile.id);
@@ -1817,7 +1820,10 @@ export default function App() {
       }
     }
 
-    const enrichedUsers = Array.from(candidateIds).map((candidateId) => {
+    // Deleted preview profiles must not be recreated by leftover demo activity.
+    const enrichedUsers = Array.from(candidateIds)
+      .filter((candidateId) => candidateId !== previewTrackerClient.id || profileMap.has(candidateId))
+      .map((candidateId) => {
       const profile = profileMap.get(candidateId) || {
         id: candidateId,
         full_name: candidateId === previewTrackerClient.id ? previewTrackerClient.full_name : `Client (${candidateId.substring(0, 8)})`,
@@ -1859,12 +1865,34 @@ export default function App() {
   };
 
   const fetchJobs = async () => {
+    const key = JSON.stringify(opportunityPaginationRef.current);
+    return opportunityLoaderRef.current.run(key, signal => loadJobsPage(signal));
+  };
+
+  const loadJobsPage = async (signal: AbortSignal) => {
     const requestId = ++sheetJobsRequestRef.current;
     const sourceQuery = sheetSearchRef.current;
+    const pagination = opportunityPaginationRef.current;
+    const requestKey = JSON.stringify(pagination);
+    const isCurrentRequest = () => !signal.aborted && requestId === sheetJobsRequestRef.current && requestKey === JSON.stringify(opportunityPaginationRef.current);
+    const finishLoading = () => {
+      if (requestId === sheetJobsRequestRef.current && requestKey === JSON.stringify(opportunityPaginationRef.current)) {
+        setOpportunitiesLoading(false);
+        if (signal.aborted && signal.reason?.name === "TimeoutError") setOpportunitiesLoadError("Loading timed out. Please retry.");
+      }
+    };
+    signal.addEventListener("abort", finishLoading, { once: true });
+    if (sheetIntegrationEnabled) {
+      setOpportunitiesLoading(loadedOpportunityKeyRef.current !== requestKey);
+      setOpportunitiesLoadError("");
+    }
     try {
       const token = await ensureAdminToken();
+      if (signal.aborted) return;
+      if (sheetIntegrationEnabled && (!token || !BACKEND_URL)) throw new Error("Please sign in again before loading opportunities.");
       if (token && BACKEND_URL) {
         const response = await fetch(`${BACKEND_URL}/api/admin/tracker/jobs`, {
+          signal,
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -1878,24 +1906,37 @@ export default function App() {
         let sourceJobs: any[] = [];
         if (sheetIntegrationEnabled) {
           const privateToken = isSignedIn ? await getClerkToken() : token;
-          const sourceResponse = await fetch(`${BACKEND_URL}/api/admin/sheet-sync/records?q=${encodeURIComponent(sourceQuery)}&limit=200`, {
+          const sourceResponse = await fetch(`${BACKEND_URL}/api/admin/sheet-sync/records?q=${encodeURIComponent(sourceQuery)}&limit=${pagination.size}&offset=${(pagination.page - 1) * pagination.size}`, {
+            signal,
             headers: { Authorization: `Bearer ${privateToken}` },
           });
           if (!sourceResponse.ok) throw new Error("Private sheet records could not be loaded");
           const source = await sourceResponse.json();
-          sourceJobs = source.jobs || [];
+          const combined = combineOpportunityPage({jobs: source.jobs || [], total: Number(source.total || 0)}, payload?.jobs || [], sourceQuery, pagination.page, pagination.size);
+          sourceJobs = combined.jobs;
+          if (isCurrentRequest()) {
+            setOpportunityTotal(combined.total);
+            const lastPage = Math.max(1, Math.ceil(combined.total / pagination.size));
+            if (pagination.page > lastPage) setOpportunityPage(lastPage);
+          }
         }
-        if (!sheetIntegrationEnabled || requestId === sheetJobsRequestRef.current) {
-          setJobs([...sourceJobs, ...(payload?.jobs || [])] as any[]);
+        if (!sheetIntegrationEnabled || isCurrentRequest()) {
+          setJobs((sheetIntegrationEnabled ? sourceJobs : payload?.jobs || []) as any[]);
+          loadedOpportunityKeyRef.current = requestKey;
         }
         return;
       }
     } catch (backendError) {
       console.warn("fetchJobs backend load failed, falling back to direct Supabase query:", backendError);
       if (sheetIntegrationEnabled) {
-        if (requestId !== sheetJobsRequestRef.current) return;
+        if (!isCurrentRequest()) return;
+        setOpportunitiesLoadError("Opportunities could not be loaded. Please retry.");
         throw backendError;
       }
+    } finally {
+      // A timeout also ends loading; an obsolete request must not alter the new page.
+      signal.removeEventListener("abort", finishLoading);
+      finishLoading();
     }
 
     const { data: jobsData, error: jobsError } = await supabase.from("jobs").select("*").order("created_at", { ascending: false });
@@ -1916,12 +1957,27 @@ export default function App() {
   };
 
   const fetchApplications = async () => {
+    const context=JSON.stringify(applicationsContextRef.current);
+    try{await applicationsRequestRef.current.run(context,async signal=>{
+      const token=await ensureAdminToken();
+      if(signal.aborted)return;
+      if(token && BACKEND_URL){
+        const response=await fetch(`${BACKEND_URL}/api/admin/tracker/applications`,{headers:{Authorization:`Bearer ${token}`},signal});
+        if(!response.ok)throw new Error("Applications could not be refreshed. Please retry.");
+        const payload=await response.json();
+        if(signal.aborted||context!==JSON.stringify(applicationsContextRef.current))return;
+        setApplications(dedupeAdminApplications(payload.applications||[]));
+        return;
+      }
+      if(sheetIntegrationEnabled)throw new Error("Please sign in again to load approved applications.");
     const { data, error } = await supabase
       .from("applications")
       .select("*, profiles(*), jobs(*)")
       .order("created_at", { ascending: false });
     if (error) throw error;
+    if(signal.aborted||context!==JSON.stringify(applicationsContextRef.current))return;
     setApplications(dedupeAdminApplications(data || []));
+    });}catch(error){if((error as Error)?.name!=="AbortError")throw error;}
   };
 
   const fetchSavedJobs = async () => {
@@ -2088,11 +2144,18 @@ export default function App() {
   };
 
   const fetchTrackerClientData = async (clientId: string) => {
+    try {await trackerRequestRef.current.run(clientId,signal=>loadTrackerClientData(clientId,signal));}
+    catch(error){if((error as Error)?.name!=="AbortError")throw error;}
+  };
+
+  const loadTrackerClientData = async (clientId:string,signal:AbortSignal) => {
     const token = await ensureAdminToken();
+    if(signal.aborted)return;
     if (token && BACKEND_URL) {
       const response = await fetch(
         `${BACKEND_URL}/api/admin/tracker/client-data?clientId=${encodeURIComponent(clientId)}`,
         {
+          signal,
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -2101,6 +2164,7 @@ export default function App() {
 
       if (response.ok) {
         const payload = await response.json();
+        if(signal.aborted||selectedTrackerClientRef.current!==clientId)return;
         setApplications(dedupeAdminApplications(payload.applications || []));
         setTrackerInterviews(payload.interviews || []);
         setTrackerFollowUps(payload.followUps || []);
@@ -2110,7 +2174,9 @@ export default function App() {
         setTrackerActivities(payload.activity || []);
         return;
       }
+      if(sheetIntegrationEnabled)throw new Error("Client tracker data could not be refreshed; last loaded data retained.");
     }
+    if(sheetIntegrationEnabled)throw new Error("Please sign in again to load the approved client data.");
 
     const fetchTrackerDataset = async (path: string, fallbackQuery: () => Promise<{ data: any; error: any }>, key: string) => {
       const directResult = await fallbackQuery();
@@ -2199,6 +2265,7 @@ export default function App() {
     const firstError = results.find((result) => result.error)?.error;
     if (firstError) throw firstError;
 
+    if(signal.aborted||selectedTrackerClientRef.current!==clientId)return;
     setApplications(dedupeAdminApplications(applicationsResult.data || []));
     setTrackerInterviews(interviewsResult.data || []);
     setTrackerFollowUps(followUpsResult.data || []);
@@ -4561,16 +4628,16 @@ export default function App() {
     return matchesSearch && u.subscription_plan === filterType;
   });
   const filteredClientInformation = filteredUsers.filter((user) => Boolean(user.questionnaire));
+  const userPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
+  const currentUserPage = Math.min(userPage, userPages);
+  const userOffset = (currentUserPage - 1) * userPageSize;
+  const visibleUsers = filteredUsers.slice(userOffset, userOffset + userPageSize);
 
-  const filteredJobs = jobs.filter((j) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      j.title?.toLowerCase().includes(query) ||
-      j.company?.toLowerCase().includes(query) ||
-      j.user_name?.toLowerCase?.().includes(query) ||
-      j.user_email?.toLowerCase?.().includes(query)
-    );
-  });
+  const filteredJobs = jobs.filter(j => matchesOpportunity(j, searchQuery));
+  const opportunityCount = sheetIntegrationEnabled ? opportunityTotal : filteredJobs.length;
+  const opportunityPages = Math.max(1, Math.ceil(opportunityCount / opportunityPageSize));
+  const opportunityOffset = (opportunityPage - 1) * opportunityPageSize;
+  const visibleOpportunities = sheetIntegrationEnabled ? filteredJobs : filteredJobs.slice(opportunityOffset, opportunityOffset + opportunityPageSize);
 
   const selectedTrackerClient = users.find((candidate) => candidate.id === selectedTrackerClientId) || null;
   const existingTrackerApplicationIds = new Set(
@@ -4647,7 +4714,7 @@ export default function App() {
       "interview_scheduled", "second_interview", "reference_check", "interviewing",
     ];
 
-    if (trackerMetricFilter === "all") return true;
+    if (activeTab !== "job_tracker" || trackerMetricFilter === "all") return true;
     if (trackerMetricFilter === "active") {
       return a.is_active !== false && !["hired", "rejected", "withdrawn", "closed"].includes(normalizedStatus);
     }
@@ -4697,6 +4764,11 @@ export default function App() {
     }
     return normalizedStatus === trackerMetricFilter || normalizedStage === trackerMetricFilter;
   });
+
+  const applicationPages = Math.max(1, Math.ceil(filteredApplications.length / applicationPageSize));
+  const currentApplicationPage = Math.min(applicationPage, applicationPages);
+  const applicationOffset = (currentApplicationPage - 1) * applicationPageSize;
+  const visibleApplications = filteredApplications.slice(applicationOffset, applicationOffset + applicationPageSize);
 
   const filteredSavedJobs = savedJobEntries.filter((application) => {
     const query = searchQuery.toLowerCase();
@@ -4812,12 +4884,7 @@ export default function App() {
         <div className="app-loader-logo-wrapper">
           <div className="app-loader-ring-glow"></div>
           <div className="app-loader-ring"></div>
-          <img
-            className="app-loader-logo"
-            src="https://hzpzpdjmmuoesxhmdiqn.supabase.co/storage/v1/object/public/assets/logo.png"
-            onError={(e) => { e.currentTarget.src = "https://placehold.co/60x60/000000/ffffff?text=9JOBS" }}
-            alt="9Jobs Logo"
-          />
+          <span className="app-loader-logo" aria-label="9Jobs Logo">9JOBS</span>
         </div>
         <h2 className="app-loader-text">9Jobs Admin</h2>
         <span className="app-loader-subtext">Connecting Careers...</span>
@@ -4904,15 +4971,17 @@ export default function App() {
               className={`sidebar-item ${activeTab === "users" || activeTab === "client_information" ? "active" : ""}`}
               onClick={() => {
                 setActiveTab("users");
-                setIsUsersDropdownOpen((previous) => (activeTab === "users" || activeTab === "client_information" ? !previous : true));
+                setIsUsersDropdownOpen((previous) => activeTab === "users" ? !previous : true);
               }}
+              aria-expanded={isUsersDropdownOpen}
+              aria-controls="users-submenu"
             >
               <Users size={18} />
               <span style={{ flex: 1 }}>Users</span>
               <span style={{ fontSize: "12px", opacity: 0.9 }}>{isUsersDropdownOpen ? "▾" : "▸"}</span>
             </a>
             {isUsersDropdownOpen && (
-              <div style={{ marginTop: "8px", paddingLeft: "22px" }}>
+              <div id="users-submenu" style={{ marginTop: "8px", paddingLeft: "22px" }}>
                 <a
                   className={`sidebar-item ${activeTab === "client_information" ? "active" : ""}`}
                   onClick={() => {
@@ -5311,12 +5380,12 @@ export default function App() {
                   placeholder="Search candidates by name or email..."
                   className="form-input search-input"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setUserPage(1); setSearchQuery(e.target.value); }}
                 />
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <Filter size={16} style={{ color: "var(--text-secondary)" }} />
-                <select className="form-input" style={{ width: "160px" }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                <select className="form-input" style={{ width: "160px" }} value={filterType} onChange={(e) => { setUserPage(1); setFilterType(e.target.value); }}>
                   <option value="all">All Plans</option>
                   <option value="free">Free Starter</option>
                   <option value="pro">Pro Candidate</option>
@@ -5325,14 +5394,23 @@ export default function App() {
               </div>
             </div>
 
+            <div className="opportunity-page-size">
+              <label htmlFor="user-page-size">Show</label>
+              <select id="user-page-size" className="form-input" value={userPageSize} onChange={(event) => { setUserPageSize(Number(event.target.value)); setUserPage(1); }}>
+                {[25, 50, 75, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+              <span>entries</span>
+            </div>
+
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Avatar</th><th>User ID</th><th>Client</th><th>Phone</th><th>Questionnaire</th><th>Status</th><th>Assigned Consultant</th><th>Total Applications</th><th>Active Roles</th><th>Interviews</th><th>Offers</th><th>Hired</th><th>Last Activity</th><th>Actions</th></tr>
+                  <tr><th>S. No.</th><th>Avatar</th><th>User ID</th><th>Client</th><th>Phone</th><th>Questionnaire</th><th>Status</th><th>Assigned Consultant</th><th>Total Applications</th><th>Active Roles</th><th>Interviews</th><th>Offers</th><th>Hired</th><th>Last Activity</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.map((u) => (
+                  {visibleUsers.map((u, index) => (
                     <tr key={u.id}>
+                      <td>{userOffset + index + 1}</td>
                       <td><img src={u.avatar_url || "https://randomuser.me/api/portraits/men/32.jpg"} alt="" className="chat-user-item-avatar" /></td>
                       <td><code style={{ fontSize: "11px", background: "rgba(0,0,0,0.05)", padding: "2px 6px", borderRadius: "4px", fontFamily: "monospace", wordBreak: "break-all" }}>{u.id}</code></td>
                       <td><strong>{u.full_name}</strong><br /><span style={{ fontSize: "11px", color: "#888" }}>{u.email}</span></td>
@@ -5350,20 +5428,28 @@ export default function App() {
                       <td><strong>{u.offersCount ?? 0}</strong></td>
                       <td><strong>{u.hiredCount ?? 0}</strong></td>
                       <td>{u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString() : "—"}</td>
-                      <td>
+                      <td><RowActionsMenu>
                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                           <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => { setSelectedTrackerClientId(u.id); setActiveTab("job_tracker"); }} title="Open Tracker">Open Tracker</button>
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("user", u)} title="Edit User"><Edit size={14} /></button>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("profiles", u.id)} title="Delete User"><Trash2 size={14} /></button>
                         </div>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={14} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No clients found match search queries.</td></tr>
+                    <tr><td colSpan={15} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No clients found match search queries.</td></tr>
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="opportunity-pagination" aria-label="Users pagination">
+              <span aria-live="polite">{filteredUsers.length === 0 ? 0 : userOffset + 1}–{Math.min(userOffset + visibleUsers.length, filteredUsers.length)} of {filteredUsers.length.toLocaleString()} entries</span>
+              <div className="opportunity-pagination-buttons">
+                <button type="button" className="btn btn-secondary" disabled={currentUserPage <= 1} onClick={() => setUserPage(Math.max(1, currentUserPage - 1))}>Previous</button>
+                <span>Page {currentUserPage} of {userPages.toLocaleString()}</span>
+                <button type="button" className="btn btn-secondary" disabled={currentUserPage >= userPages} onClick={() => setUserPage(Math.min(userPages, currentUserPage + 1))}>Next</button>
+              </div>
             </div>
           </div>
         )}
@@ -5476,35 +5562,54 @@ export default function App() {
                   placeholder="Search openings by position, company, or user..."
                   className="form-input search-input"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setOpportunitiesLoading(sheetIntegrationEnabled); setOpportunityPage(1); setSearchQuery(e.target.value); }}
                 />
               </div>
+            </div>
+
+            <div className="opportunity-page-size">
+              <label htmlFor="opportunity-page-size">Show</label>
+              <select id="opportunity-page-size" className="form-input" value={opportunityPageSize} onChange={event => { setOpportunitiesLoading(sheetIntegrationEnabled); setOpportunityPageSize(Number(event.target.value)); setOpportunityPage(1); }}>
+                {[25, 50, 75, 100].map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+              <span>entries</span>
             </div>
 
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Company</th><th>Position</th><th>User Name</th><th>Actions</th></tr>
+                  <tr><th>S. No.</th><th>Company</th><th>Position</th><th>User Name</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                  {filteredJobs.map((j) => (
+                  {!opportunitiesLoading && (!sheetIntegrationEnabled || loadedOpportunityKeyRef.current === JSON.stringify(opportunityPaginationRef.current)) && visibleOpportunities.map((j, index) => (
                     <tr key={j.id}>
+                      <td>{opportunityOffset + index + 1}</td>
                       <td><strong>{j.company}</strong></td>
                       <td>{j.title}</td>
                       <td>{j.user_name || "General opportunity"}</td>
-                      <td>
+                      <td><RowActionsMenu>
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("job", j)}><Edit size={14} /></button>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("jobs", j.id)}><Trash2 size={14} /></button>
                         </div>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
-                  {filteredJobs.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No opportunities listed matching search.</td></tr>
+                  {opportunitiesLoading && <tr><td colSpan={5} style={{ textAlign: "center", padding: "30px" }}>Loading opportunities…</td></tr>}
+                  {!opportunitiesLoading && opportunitiesLoadError && <tr><td colSpan={5} style={{ textAlign: "center", padding: "20px" }}>{opportunitiesLoadError} <button type="button" className="btn btn-secondary" onClick={() => { void fetchJobs().catch(error => showError(error.message)); }}>Retry</button></td></tr>}
+                  {!opportunitiesLoading && !opportunitiesLoadError && visibleOpportunities.length === 0 && (
+                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No opportunities listed matching search.</td></tr>
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="opportunity-pagination" aria-label="Opportunities pagination">
+              <span aria-live="polite">{opportunitiesLoading ? "Loading…" : `${opportunityCount === 0 ? 0 : opportunityOffset + 1}–${Math.min(opportunityOffset + visibleOpportunities.length, opportunityCount)} of ${opportunityCount.toLocaleString()} entries`}</span>
+              <div className="opportunity-pagination-buttons">
+                <button type="button" className="btn btn-secondary" disabled={opportunitiesLoading || opportunityPage <= 1} onClick={() => { setOpportunitiesLoading(sheetIntegrationEnabled); setOpportunityPage(page => Math.max(1, page - 1)); }}>Previous</button>
+                <span>Page {opportunityPage} of {opportunityPages.toLocaleString()}</span>
+                <button type="button" className="btn btn-secondary" disabled={opportunitiesLoading || opportunityPage >= opportunityPages} onClick={() => { setOpportunitiesLoading(sheetIntegrationEnabled); setOpportunityPage(page => Math.min(opportunityPages, page + 1)); }}>Next</button>
+              </div>
             </div>
           </div>
         )}
@@ -5656,7 +5761,7 @@ export default function App() {
                         </td>
                         <td><span className="badge badge-success">{item.status || "saved"}</span></td>
                         <td>{salary}</td>
-                        <td>
+                        <td><RowActionsMenu>
                           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                             {jobLink ? (
                               <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={jobLink} target="_blank" rel="noreferrer">
@@ -5674,7 +5779,7 @@ export default function App() {
                               <Trash2 size={14} />
                             </button>
                           </div>
-                        </td>
+                        </RowActionsMenu></td>
                       </tr>
                     );
                   })}
@@ -5751,12 +5856,12 @@ export default function App() {
                         </span>
                       </td>
                       <td>{story.display_order ?? 0}</td>
-                      <td>
+                      <td><RowActionsMenu>
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("success_story", story)} title="Edit Story"><Edit size={14} /></button>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("success_stories", story.id)} title="Delete Story"><Trash2 size={14} /></button>
                         </div>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
                   {filteredSuccessStories.length === 0 && (
@@ -5783,12 +5888,12 @@ export default function App() {
                   placeholder="Search tracker by candidate name or job title..."
                   className="form-input search-input"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setApplicationPage(1); setSearchQuery(e.target.value); }}
                 />
               </div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                 <Filter size={16} style={{ color: "var(--text-secondary)" }} />
-                <select className="form-input" style={{ width: "160px" }} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                <select className="form-input" style={{ width: "160px" }} value={filterType} onChange={(e) => { setApplicationPage(1); setFilterType(e.target.value); }}>
                   <option value="all">All Stages</option>
                   <option value="applied">Applied</option>
                   <option value="interviewing">Interviewing</option>
@@ -5799,14 +5904,23 @@ export default function App() {
               </div>
             </div>
 
+            <div className="opportunity-page-size">
+              <label htmlFor="application-page-size">Show</label>
+              <select id="application-page-size" className="form-input" value={applicationPageSize} onChange={(event) => { setApplicationPageSize(Number(event.target.value)); setApplicationPage(1); }}>
+                {[25, 50, 75, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+              <span>entries</span>
+            </div>
+
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Candidate</th><th>Job Title</th><th>Company</th><th>Tracker Status</th><th>Applied Date</th><th>Actions</th></tr>
+                  <tr><th>S. No.</th><th>Candidate</th><th>Job Title</th><th>Company</th><th>Tracker Status</th><th>Applied Date</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                  {filteredApplications.map((a) => (
+                  {visibleApplications.map((a, index) => (
                     <tr key={a.id}>
+                      <td>{applicationOffset + index + 1}</td>
                       <td><strong>{a.profiles?.full_name}</strong><br /><span style={{ fontSize: "11px", color: "#888" }}>{a.profiles?.email}</span></td>
                       <td>{a.jobs?.title}</td>
                       <td>{a.jobs?.company}</td>
@@ -5825,16 +5939,24 @@ export default function App() {
                         </select>
                       </td>
                       <td>{new Date(a.created_at).toLocaleDateString()}</td>
-                      <td>
+                      <td><RowActionsMenu>
                         <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("applications", String(a.id))}><Trash2 size={14} /></button>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
                   {filteredApplications.length === 0 && (
-                    <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No applications logged.</td></tr>
+                    <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No applications logged.</td></tr>
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="opportunity-pagination" aria-label="Applications pagination">
+              <span aria-live="polite">{filteredApplications.length === 0 ? 0 : applicationOffset + 1}–{Math.min(applicationOffset + visibleApplications.length, filteredApplications.length)} of {filteredApplications.length.toLocaleString()} entries</span>
+              <div className="opportunity-pagination-buttons">
+                <button type="button" className="btn btn-secondary" disabled={currentApplicationPage <= 1} onClick={() => setApplicationPage(Math.max(1, currentApplicationPage - 1))}>Previous</button>
+                <span>Page {currentApplicationPage} of {applicationPages.toLocaleString()}</span>
+                <button type="button" className="btn btn-secondary" disabled={currentApplicationPage >= applicationPages} onClick={() => setApplicationPage(Math.min(applicationPages, currentApplicationPage + 1))}>Next</button>
+              </div>
             </div>
           </div>
         )}
@@ -6062,7 +6184,7 @@ export default function App() {
                         <td>{a.before_screenshot_url ? <a href={a.before_screenshot_url} target="_blank" rel="noreferrer">View</a> : "—"}</td>
                         <td>{a.after_screenshot_url ? <a href={a.after_screenshot_url} target="_blank" rel="noreferrer">View</a> : "—"}</td>
                         <td>{a.notes || "—"}</td>
-                        <td className="tracker-actions-column">
+                        <td className="tracker-actions-column"><RowActionsMenu>
                           <div style={{ display: "flex", gap: "8px" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("tracker", a)} title="Edit tracker">
                               <Edit size={14} />
@@ -6074,7 +6196,7 @@ export default function App() {
                               <Trash2 size={14} />
                             </button>
                           </div>
-                        </td>
+                        </RowActionsMenu></td>
                       </tr>
                     ))}
                     {filteredApplications.length === 0 && (
@@ -6104,7 +6226,7 @@ export default function App() {
                           <td>{new Date(item.interview_date).toLocaleString()}</td>
                           <td><span className="badge badge-info">{item.status}</span></td>
                           <td>{item.interviewer_name || "—"}</td>
-                          <td><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("interview", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interviews", String(item.id))}><Trash2 size={14} /></button></div></td>
+                          <td><RowActionsMenu><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("interview", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interviews", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
                       {trackerInterviews.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No interviews logged.</td></tr>}
@@ -6332,7 +6454,7 @@ export default function App() {
                           <td>{item.email || "—"}</td>
                           <td>{item.company_name || "—"}</td>
                           <td><span className="badge badge-info">{item.response_status}</span></td>
-                          <td><div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>{item.linkedin_url ? <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={item.linkedin_url} target="_blank" rel="noreferrer">View Profile</a> : <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => openEditModal("contact", item)}>Add Profile</button>}<button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button></div></td>
+                          <td><RowActionsMenu><div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>{item.linkedin_url ? <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={item.linkedin_url} target="_blank" rel="noreferrer">View Profile</a> : <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => openEditModal("contact", item)}>Add Profile</button>}<button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
                       {trackerContacts.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No hiring managers added yet. Select a client, then add Name, Email, Position and LinkedIn profile.</td></tr>}
@@ -6355,7 +6477,7 @@ export default function App() {
                           <td>{item.sent_at ? new Date(item.sent_at).toLocaleString() : "—"}</td>
                           <td><span className="badge badge-success">{item.delivery_status}</span></td>
                           <td><span className="badge badge-info">{item.response_status}</span></td>
-                          <td><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("cold_email", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("cold_emails", String(item.id))}><Trash2 size={14} /></button></div></td>
+                          <td><RowActionsMenu><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("cold_email", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("cold_emails", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
                       {trackerColdEmails.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No cold emails logged.</td></tr>}
@@ -6375,7 +6497,7 @@ export default function App() {
                           <td><strong>{item.ai_match_score ?? 0}%</strong></td>
                           <td>{item.score_reason || "—"}</td>
                           <td>{item.calculated_at ? new Date(item.calculated_at).toLocaleString() : "—"}</td>
-                          <td><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("score", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("client_scores", String(item.id))}><Trash2 size={14} /></button></div></td>
+                          <td><RowActionsMenu><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("score", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("client_scores", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
                       {trackerScores.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No score history available.</td></tr>}
@@ -6456,7 +6578,7 @@ export default function App() {
                       <td>{item.email || "—"}</td>
                       <td>{item.company_name || "—"}</td>
                       <td><span className="badge badge-info">{item.response_status}</span></td>
-                      <td>
+                      <td><RowActionsMenu>
                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                           {item.linkedin_url ? (
                             <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={item.linkedin_url} target="_blank" rel="noreferrer">
@@ -6470,7 +6592,7 @@ export default function App() {
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button>
                         </div>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
                   {trackerContacts.length === 0 && (
@@ -6552,9 +6674,9 @@ export default function App() {
                         <td>{session.current_question_index + 1} / {session.question_total}</td>
                         <td>{session.last_feedback || "No answer yet."}</td>
                         <td>{new Date(session.updated_at).toLocaleString()}</td>
-                        <td>
+                        <td><RowActionsMenu>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interview_prep_sessions", String(session.id))} title="Delete Session"><Trash2 size={14} /></button>
-                        </td>
+                        </RowActionsMenu></td>
                       </tr>
                     );
                   })}
@@ -6596,12 +6718,12 @@ export default function App() {
                         <td><strong>{item.clarity_score}</strong></td>
                         <td><strong>{item.impact_score}</strong></td>
                         <td><strong>{item.structure_score}</strong></td>
-                        <td>
+                        <td><RowActionsMenu>
                           <div style={{ display: "flex", gap: "8px" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("interview_prep_response", item)} title="Edit Response"><Edit size={14} /></button>
                             <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interview_prep_responses", String(item.id))} title="Delete Response"><Trash2 size={14} /></button>
                           </div>
-                        </td>
+                        </RowActionsMenu></td>
                       </tr>
                     );
                   })}
@@ -6956,10 +7078,10 @@ export default function App() {
                         )}
                       </td>
                       <td>{new Date(r.updated_at).toLocaleDateString()}</td>
-                      <td>
+                      <td><RowActionsMenu>
                         <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("resume", r)} title="Edit AI score"><Edit size={14} /></button>
                         <button className="btn btn-secondary" style={{ padding: "6px", marginLeft: "5px" }} onClick={() => openEditModal("cover_letter", r)} title="View Cover Letter"><FileText size={14} /></button>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
                   {resumeScores.length === 0 && (
@@ -7086,7 +7208,7 @@ export default function App() {
                           </div>
                         </td>
                         <td>{new Date(cl.updated_at || cl.created_at).toLocaleDateString()}</td>
-                        <td>
+                        <td><RowActionsMenu>
                           <div style={{ display: "flex", gap: "6px" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px 10px", fontSize: "12px" }} onClick={() => handleCopyText()} title="Copy Cover Letter Text">
                               Copy
@@ -7101,7 +7223,7 @@ export default function App() {
                               <Trash2 size={14} />
                             </button>
                           </div>
-                        </td>
+                        </RowActionsMenu></td>
                       </tr>
                     );
                   })}
@@ -7133,12 +7255,12 @@ export default function App() {
                       <td><strong>{p.name}</strong></td>
                       <td><span className="badge badge-success">{p.price}</span></td>
                       <td>{p.features?.join(" | ") || "No features added"}</td>
-                      <td>
+                      <td><RowActionsMenu>
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("plan", p)}><Edit size={14} /></button>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("pricing_plans", p.id)}><Trash2 size={14} /></button>
                         </div>
-                      </td>
+                      </RowActionsMenu></td>
                     </tr>
                   ))}
                 </tbody>
@@ -7279,12 +7401,12 @@ export default function App() {
                           <td>{u.email || "—"}</td>
                           <td>{u.phone_number || "—"}</td>
                           <td><span className="badge badge-success">{u.subscription_plan || "free"}</span></td>
-                          <td>
+                          <td><RowActionsMenu>
                             <div style={{ display: "flex", gap: "8px" }}>
                               <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("user", u)} title="Edit personal information"><Edit size={14} /></button>
                               <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("profiles", u.id)} title="Delete personal information"><Trash2 size={14} /></button>
                             </div>
-                          </td>
+                          </RowActionsMenu></td>
                         </tr>
                       ))}
                       {users.length === 0 && (
@@ -7319,12 +7441,12 @@ export default function App() {
                         <td>{n.profiles?.full_name || n.user_id || "Unknown client"}</td>
                         <td><span className={`badge ${n.status === "read" ? "badge-success" : "badge-warning"}`}>{n.status}</span></td>
                         <td>{n.sent_at ? new Date(n.sent_at).toLocaleString() : "—"}</td>
-                        <td>
+                        <td><RowActionsMenu>
                           <div style={{ display: "flex", gap: "8px" }}>
                             <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("notification", n)} title="Edit notification"><Edit size={14} /></button>
                             <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("notifications", String(n.id))} title="Delete notification"><Trash2 size={14} /></button>
                           </div>
-                        </td>
+                        </RowActionsMenu></td>
                       </tr>
                     ))}
                     {notifications.length === 0 && (

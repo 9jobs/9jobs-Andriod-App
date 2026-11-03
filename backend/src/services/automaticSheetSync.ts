@@ -1,12 +1,12 @@
 import {createHash,randomUUID} from "node:crypto";
 import type {Pool} from "pg";
+import {assertDevelopmentDatabase} from "../lib/database";
 import {SHEET_ID,prepareSheetRows,clientRegistrySchema} from "./sheetStore";
 import {sourceDateCandidates} from "./sheetApplications";
 const {acceptsValidation,acceptsIndependentValidation}=require('../../scripts/sheet-source-consistency.cjs');
 const hash=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 export function assertIsolatedSyncTarget(){
- const u=new URL(process.env.DATABASE_URL||'http://invalid');
- if(process.env.LOCAL_DATABASE_MODE!=='isolated-e2e'||u.hostname!=='127.0.0.1'||u.port!=='55439'||u.username!=='client_id_test'||!/^\/9jobs_local_e2e_[a-z0-9_]+$/.test(u.pathname))throw new Error('Isolated localhost database required');
+ assertDevelopmentDatabase();
 }
 export async function initializeAutomaticSync(db:Pool){
  assertIsolatedSyncTarget();await db.query(clientRegistrySchema);

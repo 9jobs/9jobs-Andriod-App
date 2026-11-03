@@ -50,7 +50,7 @@ export async function readSheetActivity(userId: string, db: Pool) {
     if (!page.jobs.length) throw new Error("Incomplete sheet application pagination");
   } while (true);
   if (new Set(result.map(row=>row.id)).size !== result.length) throw new Error("Source application identity collision");
-  return { applications: result, ...sheetActivity(jobs) };
+  return { jobs, applications: result, ...sheetActivity(jobs) };
 }
 
 export function sheetActivity(jobs: any[]) {

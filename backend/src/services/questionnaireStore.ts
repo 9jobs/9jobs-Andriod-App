@@ -1,12 +1,10 @@
-import { createQuestionnairePool } from "../lib/questionnaireDatabase";
+import { questionnairePool } from "../lib/questionnaireDatabase";
 import { ownsDocumentPath } from "./questionnaireDocuments";
 
 export async function readStoredQuestionnaires(userId?: string) {
-  const pool = createQuestionnairePool();
-  try {
-    return (await pool.query("select * from candidate_questionnaires" +
+  const pool = questionnairePool();
+  return (await pool.query("select * from candidate_questionnaires" +
       (userId ? " where user_id=$1" : " order by completed_at desc"), userId ? [userId] : [])).rows;
-  } finally { await pool.end(); }
 }
 
 export async function saveStoredQuestionnaire(userId: string, email: string, row: Record<string, unknown>) {
@@ -14,7 +12,7 @@ export async function saveStoredQuestionnaire(userId: string, email: string, row
       (row.visa_path && !ownsDocumentPath(userId, String(row.visa_path), "visa"))) throw new Error("Invalid questionnaire ownership");
   // This explicit allowlist prevents unexpected input from becoming SQL identifiers.
   const columns = "user_id full_name contact_number working_rights full_address date_of_birth gender expected_salary preferred_job_locations work_types notice_period preferred_roles resume_path resume_name visa_type visa_path visa_name completed_at updated_at".split(" ");
-  const pool = createQuestionnairePool();
+  const pool = questionnairePool();
   const client = await pool.connect();
   try {
     await client.query("begin");
@@ -34,5 +32,5 @@ export async function saveStoredQuestionnaire(userId: string, email: string, row
     await client.query("commit");
     return result.rows[0];
   } catch (error) { await client.query("rollback"); throw error; }
-  finally { client.release(); await pool.end(); }
+  finally { client.release(); }
 }

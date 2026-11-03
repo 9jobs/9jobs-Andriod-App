@@ -19,6 +19,7 @@ import { getMessagesHistory } from "../services/messageService";
 import { hydrateVerifiedProfiles } from "../services/verifiedAccount";
 import { sheetDb, sheetEnabled } from "../services/sheetStore";
 import { readSheetActivity } from "../services/sheetApplications";
+import {readAdminSheetTracker,readApprovedAdminSheetApplications} from "../services/adminSheetTracker";
 
 const router = Router();
 const SUCCESS_STORY_BUCKET = "assets";
@@ -501,14 +502,14 @@ async function getCachedSnapshotResource<T>(
 
   const inFlight = loader()
     .then((value) => {
-      snapshotResourceCache.set(cacheKey, {
+      if (snapshotResourceCache.get(cacheKey)?.inFlight === inFlight) snapshotResourceCache.set(cacheKey, {
         value,
         expiresAt: Date.now() + ttlMs,
       });
       return value;
     })
     .catch((error) => {
-      snapshotResourceCache.delete(cacheKey);
+      if (snapshotResourceCache.get(cacheKey)?.inFlight === inFlight) snapshotResourceCache.delete(cacheKey);
       throw error;
     });
 
@@ -2553,6 +2554,19 @@ router.post("/admin/tracker/scores", authMiddleware, async (req: AuthenticatedRe
   }
 });
 
+router.get("/admin/tracker/applications",authMiddleware,async(req:AuthenticatedRequest,res:Response)=>{
+  if(!ensureAdminRole(req,res))return;
+  try{
+    const [manual,source]=await Promise.all([
+      supabase.from("applications").select("*, profiles(*), jobs(*)").order("created_at",{ascending:false}),
+      sheetEnabled()?readApprovedAdminSheetApplications(sheetDb()):Promise.resolve([]),
+    ]);
+    if(manual.error)throw manual.error;
+    res.setHeader("Cache-Control","private, no-store");
+    return res.json({applications:dedupeApplicationsByRole([...(manual.data||[]),...source])});
+  }catch{return res.status(503).json({error:"Applications could not be refreshed. Existing records have been retained."});}
+});
+
 router.get("/admin/tracker/client-data", authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   if (!ensureAdminRole(req, res)) {
     return;
@@ -2572,6 +2586,7 @@ router.get("/admin/tracker/client-data", authMiddleware, async (req: Authenticat
       coldEmailsResult,
       scoresResult,
       activityResult,
+      source,
     ] = await Promise.all([
       supabase
         .from("applications")
@@ -2608,6 +2623,7 @@ router.get("/admin/tracker/client-data", authMiddleware, async (req: Authenticat
         .select("*")
         .eq("client_id", clientId)
         .order("created_at", { ascending: false }),
+      sheetEnabled() ? readAdminSheetTracker(clientId,sheetDb()) : Promise.resolve({applications:[],recruiterContacts:[],coldEmails:[],sourceActivity:null}),
     ]);
 
     const results = [
@@ -2625,11 +2641,12 @@ router.get("/admin/tracker/client-data", authMiddleware, async (req: Authenticat
     }
 
     return res.json({
-      applications: dedupeApplicationsByRole((applicationsResult.data ?? []) as any[]),
+      applications: dedupeApplicationsByRole([...(applicationsResult.data ?? []),...source.applications] as any[]),
       interviews: interviewsResult.data ?? [],
       followUps: followUpsResult.data ?? [],
-      contacts: contactsResult.data ?? [],
-      coldEmails: coldEmailsResult.data ?? [],
+      contacts: [...(contactsResult.data ?? []),...source.recruiterContacts],
+      coldEmails: [...(coldEmailsResult.data ?? []),...source.coldEmails],
+      sourceActivity:source.sourceActivity,
       scores: scoresResult.data ?? [],
       activity: activityResult.data ?? [],
     });
@@ -4043,6 +4060,7 @@ router.post("/admin/success-stories", authMiddleware, async (req: AuthenticatedR
   try {
     if (hasUsableDatabaseUrl()) {
       const story = await upsertSuccessStoryWithPostgres(normalizedStory);
+      snapshotResourceCache.delete("snapshot:success-stories");
       return res.json({ success: true, story });
     }
 
@@ -4054,6 +4072,7 @@ router.post("/admin/success-stories", authMiddleware, async (req: AuthenticatedR
         .single();
 
       if (!error) {
+        snapshotResourceCache.delete("snapshot:success-stories");
         return res.json({ success: true, story: data });
       }
 
@@ -4063,6 +4082,7 @@ router.post("/admin/success-stories", authMiddleware, async (req: AuthenticatedR
     }
 
     const story = await upsertLocalSuccessStory(normalizedStory);
+    snapshotResourceCache.delete("snapshot:success-stories");
     return res.json({ success: true, story, mode: "local_preview" });
   } catch (err: any) {
     console.error("[Tracker Route] POST /admin/success-stories failed:", err);
@@ -4078,12 +4098,14 @@ router.delete("/admin/success-stories/:id", authMiddleware, async (req: Authenti
   try {
     if (hasUsableDatabaseUrl()) {
       await deleteSuccessStoryWithPostgres(String(req.params.id));
+      snapshotResourceCache.delete("snapshot:success-stories");
       return res.json({ success: true });
     }
 
     if ((isNeonDatabase() || process.env.SUPABASE_SERVICE_ROLE_KEY)) {
       const { error } = await supabase.from("success_stories").delete().eq("id", String(req.params.id));
       if (!error) {
+        snapshotResourceCache.delete("snapshot:success-stories");
         return res.json({ success: true });
       }
 
@@ -4093,6 +4115,7 @@ router.delete("/admin/success-stories/:id", authMiddleware, async (req: Authenti
     }
 
     const deleted = await deleteLocalSuccessStory(String(req.params.id));
+    snapshotResourceCache.delete("snapshot:success-stories");
     return res.json({ success: deleted, mode: "local_preview" });
   } catch (err: any) {
     console.error("[Tracker Route] DELETE /admin/success-stories/:id failed:", err);

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
-import { createQuestionnairePool as createDatabasePool, usesQuestionnaireDatabase } from "../lib/questionnaireDatabase";
+import { questionnairePool as createDatabasePool, usesQuestionnaireDatabase } from "../lib/questionnaireDatabase";
 
 export const usesDatabaseDocuments = () => usesQuestionnaireDatabase();
 export const MAX_DOCUMENT_BYTES = 12 * 1024 * 1024;
@@ -21,9 +21,10 @@ export function ownsDocumentPath(userId: string, storagePath: string, kind?: str
     /^[a-zA-Z0-9._-]+$/.test(parts[2]) && ![".", ".."].includes(parts[2]);
 }
 
-export async function withDocumentDatabase<T>(work: (pool: ReturnType<typeof createDatabasePool>) => Promise<T>) {
-  const pool = createDatabasePool();
-  try {
+let documentSchemaReady: Promise<void> | undefined;
+async function ensureDocumentSchema(pool: ReturnType<typeof createDatabasePool>) {
+  if (!documentSchemaReady) {
+    documentSchemaReady = (async () => {
     const client = await pool.connect();
     try {
       await client.query("begin");
@@ -38,8 +39,15 @@ export async function withDocumentDatabase<T>(work: (pool: ReturnType<typeof cre
       await client.query("commit");
     } catch (error) { await client.query("rollback"); throw error; }
     finally { client.release(); }
-    return await work(pool);
-  } finally { await pool.end(); }
+    })().catch(error => { documentSchemaReady = undefined; throw error; });
+  }
+  await documentSchemaReady;
+}
+
+export async function withDocumentDatabase<T>(work: (pool: ReturnType<typeof createDatabasePool>) => Promise<T>) {
+  const pool = createDatabasePool();
+  await ensureDocumentSchema(pool);
+  return work(pool);
 }
 
 export async function storeDocument(userId: string, storagePath: string, mimeType: string, content: Buffer) {

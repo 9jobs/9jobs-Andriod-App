@@ -1,19 +1,28 @@
-import { Pressable, StyleSheet, Text, View, Image, InteractionManager } from "react-native";
+import { Pressable, StyleSheet, Text, View, Image } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import Svg, { Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
-import { usePreviewSyncQuery } from "@/features/mobile-sync/hooks";
+import { useQuery } from "@tanstack/react-query";
+import { fetchPublishedSuccessStories } from "@/lib/data/mobile-sync-repository";
+import { resolveBackendUrl } from "@/lib/data/backend-auth-token";
+import { useSession } from "@/providers/SessionProvider";
 import { colors, radii, shadows, spacing, typography } from "@/theme";
 import { useCallback } from "react";
 
 export default function StoriesScreen() {
-  const { data: stories = [], refetch } = usePreviewSyncQuery(false, {
-    select: (snapshot) => snapshot.successStories,
+  const { user } = useSession();
+  const { data: stories = [], refetch } = useQuery({
+    queryKey: ["published-success-stories", resolveBackendUrl(), user?.id],
+    queryFn: () => fetchPublishedSuccessStories(user!),
+    enabled: Boolean(user),
+    staleTime: 0,
+    retry: 1,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
     refetchInterval: 10000,
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
   });
-
-
+  useFocusEffect(useCallback(() => { if (user) void refetch(); }, [user?.id, refetch]));
 
   return (
     <Screen contentStyle={styles.screenContent}>

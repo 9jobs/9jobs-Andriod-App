@@ -241,8 +241,13 @@ export default function HomeScreen() {
             style={styles.heroButton}
             onPress={() => router.push("/(app)/pricing" as never)}
             scaleTo={0.97}
+            accessibilityRole="button"
+            accessibilityLabel="Activate Hiring Manager Outreach"
           >
-            <Text style={styles.heroButtonText}>Activate Hiring Manager Outreach →</Text>
+            <Text numberOfLines={1} style={styles.heroButtonText}>Activate Outreach</Text>
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" accessible={false}>
+              <Path d="M5 12h14m-6-6 6 6-6 6" stroke={colors.dark} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
           </AnimatedPressable>
 
           <View pointerEvents="none" style={styles.preservedRocket}><RocketLaunchGlow /></View>
@@ -548,21 +553,24 @@ borderColor: colors.border,},
    fontFamily: "Inter_400Regular" },
   heroButton: {
     backgroundColor: colors.accent,
-    borderRadius: radii.pill,
-    paddingVertical: 14,
+    borderRadius: 14,
+    paddingVertical: 12,
+    flexDirection: "row",
+    gap: 8,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 8,
 
-    minHeight: 64,
-    paddingHorizontal: 20,
+    minHeight: 48,
+    paddingHorizontal: 16,
   },
   heroButtonText: {
     color: colors.dark,
     fontSize: 14,
     fontWeight: "600",
 
-    lineHeight: 22,
+    lineHeight: 20,
+    flexShrink: 1,
     textAlign: "center",
    fontFamily: "Inter_600SemiBold" },
   sectionHeader: {

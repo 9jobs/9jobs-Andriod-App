@@ -31,6 +31,7 @@ import { Text } from "react-native";
 import TestRenderer, { act } from "react-test-renderer";
 import { storageKeys } from "@/lib/utils/storage";
 import { SessionProvider, useSession } from "@/providers/SessionProvider";
+import { QueryClient,QueryClientProvider } from "@tanstack/react-query";
 
 function SessionProbe() {
   const { user } = useSession();
@@ -51,6 +52,30 @@ describe("SessionProvider in Clerk mode", () => {
     await AsyncStorage.clear();
     clerkState.isSignedIn = false;
     clerkState.user = null;
+  });
+
+  test("same-account renders keep session registration stable and preserve fresh query data",async()=>{
+    clerkState.isSignedIn=true;
+    clerkState.user={id:"unit-stable-account",fullName:"Unit Client",primaryEmailAddress:{emailAddress:"unit@example.com"},emailAddresses:[{emailAddress:"unit@example.com"}]};
+    const sheet=jest.spyOn(require("@/lib/data/sheet-records"),"registerSheetSession");
+    const backend=jest.spyOn(require("@/lib/data/backend-auth-token"),"registerBackendSession");
+    const query=new QueryClient();
+    const key=["preview-sync",clerkState.user.id];
+    query.setQueryData(key,{homeMetrics:{totalApplications:66}});
+    let tree!:TestRenderer.ReactTestRenderer;
+    const content=()=> <QueryClientProvider client={query}><SessionProvider><SessionProbe /></SessionProvider></QueryClientProvider>;
+    try{
+      await act(async()=>{tree=TestRenderer.create(content());});
+      const initialSheet=sheet.mock.calls.length,initialBackend=backend.mock.calls.length;
+      expect(initialSheet).toBe(1);expect(initialBackend).toBe(1);
+      // useAuth's test getter is a NEW function on each render, like an SDK update.
+      await act(async()=>{tree.update(content());});
+      expect(sheet.mock.calls.length).toBe(initialSheet);expect(backend.mock.calls.length).toBe(initialBackend);
+      expect(query.getQueryData(key)).toEqual({homeMetrics:{totalApplications:66}});
+      clerkState.isSignedIn=false;clerkState.user=null;
+      await act(async()=>{tree.update(content());});
+      expect(require("@/lib/data/backend-auth-token").hasBackendSession("unit-stable-account")).toBe(false);
+    }finally{await act(async()=>{tree?.unmount();});sheet.mockRestore();backend.mockRestore();query.clear();}
   });
 
   test("clears the legacy demo session when Clerk is configured", async () => {

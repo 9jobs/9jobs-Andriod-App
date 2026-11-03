@@ -59,3 +59,18 @@ export async function requestAdminPasswordToken(email: string, password: string,
   const body=await response.json();
   return body?.user?.role==="admin" && typeof body.token==="string" && body.token ? body.token : null;
 }
+
+export async function requestClerkAdminToken(userId:string,getToken:()=>Promise<string|null>,backendUrl:string,fetcher:typeof fetch=fetch):Promise<string>{
+  const sessionToken=await getToken();
+  if(!sessionToken)throw new Error("Your session is unavailable. Please sign in again.");
+  const response=await fetcher(`${backendUrl}/api/auth/token`,{
+    method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${sessionToken}`},
+    body:JSON.stringify({role:"admin"}),signal:AbortSignal.timeout(30000),
+  });
+  const payload=await response.json().catch(()=>null);
+  if(!response.ok)throw new Error("The backend could not verify your admin session. Please retry.");
+  if(payload?.user?.role!=="admin" || payload?.user?.userId!==userId || typeof payload?.token!=="string" || !payload.token){
+    throw new Error("This signed-in account is not authorized for the Admin Panel.");
+  }
+  return payload.token;
+}

@@ -2,6 +2,16 @@ import { describe, expect, test } from "vitest";
 import { calculateTrackerMetrics } from "./trackerMetrics";
 
 describe("calculateTrackerMetrics", () => {
+  test("counts explicit Sheet outreach without fabricating dates or interview milestones",()=>{
+    const metrics=calculateTrackerMetrics({
+      applications:Array.from({length:66},(_,i)=>({id:-i-1,status:"applied",created_at:"2026-09-14",application_date:"2026-09-14"})),
+      coldEmails:Array.from({length:10},()=>({source:"duplicate-sheet",source_sent_confirmed:true,sent_at:null,delivery_status:"sent"})),
+      recruiterContacts:[...Array.from({length:10},(_,i)=>({source:"duplicate-sheet",source_outreach_confirmed:true,recruiter_name:`Contact ${i}`,contact_date:null,response_status:null})),{source:"duplicate-sheet",source_outreach_confirmed:false,recruiter_name:"Added only",contact_date:null}],
+    });
+    expect(metrics.totalApplications).toBe(66);expect(metrics.applied).toBe(66);
+    expect(metrics.coldEmailsSent).toBe(10);expect(metrics.contactsReached).toBe(10);
+    expect(metrics.interviewing).toBe(0);expect(metrics.offers).toBe(0);expect(metrics.responseRate).toBe(0);
+  });
   test("returns safe zero values without records", () => {
     const metrics = calculateTrackerMetrics({ applications: [] });
 

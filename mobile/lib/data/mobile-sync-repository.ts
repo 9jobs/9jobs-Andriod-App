@@ -10,7 +10,7 @@ import type { SessionUser } from "@/types/auth";
 import { storageKeys } from "@/lib/utils/storage";
 import { clearBackendAuthTokenCache, getBackendAuthToken, resolveBackendUrl } from "@/lib/data/backend-auth-token";
 import { startTrackedRequest } from "@/lib/perf/livePerf";
-import { fetchAuthorizedSheetJobs } from "./sheet-records";
+import { fetchAuthorizedSheetJobs, fetchAuthorizedSheetActivity } from "./sheet-records";
 import {
   latestApplicationsByJob,
   mergeApplicationScreenshotsFromActivity,
@@ -313,7 +313,7 @@ const supportWelcomeMessage = "Welcome to the live 9Jobs preview. This thread is
 const fallbackSupportReply =
   "Thanks for contacting 9Jobs. Your message has been received and shared with our support team. An admin will respond shortly.";
 const SNAPSHOT_CACHE_SCHEMA_VERSION = "2026-07-30-screenshots-2";
-const SNAPSHOT_REQUEST_TIMEOUT_MS = 3500;
+const SNAPSHOT_REQUEST_TIMEOUT_MS = 30000;
 
 export type LiveServiceCard = {
   id: string;
@@ -683,7 +683,7 @@ export function selectServiceCatalog(snapshot: Pick<MobileSyncSnapshot, "service
   return snapshot.services;
 }
 
-function mapSuccessStories(stories: SuccessStoryRow[]): LiveSuccessStory[] {
+export function mapSuccessStories(stories: SuccessStoryRow[]): LiveSuccessStory[] {
   return stories
     .filter((story) => story.is_active !== false)
     .slice()
@@ -957,15 +957,15 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
       },
     );
   } catch (error) {
+    clearTimeout(timeoutId);
     tracker.fail(error, {
       user_id: activeUser.id,
     });
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 
   if (!res.ok) {
+    clearTimeout(timeoutId);
     tracker.finish({
       status: res.status,
       user_id: activeUser.id,
@@ -973,7 +973,7 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
     throw new Error(`Backend mobile snapshot failed with HTTP ${res.status}`);
   }
 
-  const payload = await res.json();
+  const payload = await res.json().finally(() => clearTimeout(timeoutId));
   tracker.finish({
     status: res.status,
     user_id: activeUser.id,
@@ -985,6 +985,21 @@ async function fetchBackendSnapshot(activeUser: ReturnType<typeof resolveActiveU
     server_ms: Number(res.headers?.get?.("x-9jobs-snapshot-ms") || 0),
   });
   return payload;
+}
+
+// Stories must not wait for unrelated jobs/tracker/snapshot requests to complete.
+export async function fetchPublishedSuccessStories(sessionUser: SessionUser): Promise<LiveSuccessStory[]> {
+  const token = await getBackendAuthToken(sessionUser);
+  if (!token) throw new Error("Please sign in to load success stories");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const {data,error} = await supabase.from("success_stories").select("*")
+      .eq("is_active",true).order("display_order",{ascending:true})
+      .order("created_at",{ascending:false}).abortSignal(controller.signal);
+    if(error) throw new Error("Success stories are temporarily unavailable");
+    return mapSuccessStories((data || []) as SuccessStoryRow[]);
+  } finally { clearTimeout(timer); }
 }
 
 let inFlightSnapshotPromise: Promise<MobileSyncSnapshot> | null = null;
@@ -1283,6 +1298,30 @@ async function applySeenStatusToMessages(messages: LiveMessage[]): Promise<LiveM
   }
 }
 
+export function applyAuthorizedSheetActivity(snapshot:MobileSyncSnapshot,source:any,userId:string):MobileSyncSnapshot {
+  if(source.userId!==userId || snapshot.profile.id && snapshot.profile.id!==userId)throw new Error("Private application identity mismatch");
+  const applications=latestApplicationsByJob([
+    ...snapshot.rawApplications.filter(row=>(row as any).source!=="duplicate-sheet"),
+    ...source.applications,
+  ]);
+  const contacts=[...(snapshot.trackerRecruiterContacts||[]).filter(row=>(row as any).source!=="duplicate-sheet"),...(source.recruiterContacts||[])];
+  const emails=[...(snapshot.trackerColdEmails||[]).filter(row=>(row as any).source!=="duplicate-sheet"),...(source.coldEmails||[])];
+  const now=new Date().toISOString(),resumeScore=snapshot.homeMetrics.resumeScore,timezone=snapshot.profile.timezone||"Australia/Melbourne";
+  const summary=buildTrackerSummaryFromApplications(applications,snapshot.trackerSummary.saved,resumeScore,now,{
+    timezone,interviews:snapshot.trackerInterviews,followUps:snapshot.trackerFollowUps,
+    recruiterContacts:contacts,coldEmails:emails,activityLogs:snapshot.trackerActivityLogs,
+  });
+  return {...snapshot,
+    cacheContext:{backendUrl:resolveBackendUrl(),source:"server"},
+    jobs:[...mapJobsWithUserState(source.jobs,applications,[],{}),...snapshot.jobs.filter(job=>!String(job.id).startsWith("sheet:"))],
+    rawApplications:applications,trackerRecruiterContacts:contacts,trackerColdEmails:emails,
+    outreachContacts:contacts.map(contact=>({id:contact.id,name:contact.recruiter_name?.trim()||"Hiring Manager",email:contact.email?.trim()||"",position:contact.company_name?.trim()||"",profileLink:contact.linkedin_url?.trim()||"",responseStatus:contact.response_status?.trim()||"no_response"})),
+    sourceActivity:source.sourceActivity,
+    homeMetrics:buildUserHomeMetrics(applications,resumeScore,now,timezone),
+    trackerSummary:{...summary,aiMatchScore:snapshot.trackerSummary.aiMatchScore,atsResumeScore:snapshot.trackerSummary.atsResumeScore},
+  };
+}
+
 export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null): Promise<MobileSyncSnapshot> {
   const activeUser = resolveActiveUser(sessionUser);
   if (inFlightSnapshotPromise && inFlightSnapshotUserId === activeUser.id) {
@@ -1341,6 +1380,17 @@ export async function fetchMobileSyncSnapshot(sessionUser?: SessionUser | null):
       }
     } catch (backendErr) {
       console.warn("Backend mobile snapshot failed, falling back to direct Supabase fetch:", backendErr);
+      // A catalog/snapshot failure must not turn approved Sheet records into zero.
+      const source=await fetchAuthorizedSheetActivity(activeUser.id).catch(()=>null);
+      if(source){
+        const local=await getLocalSyncSnapshot(sessionUser);
+        const snapshot=applyAuthorizedSheetActivity(local,source,activeUser.id);
+        inMemoryStore=snapshot;
+        const cachePayload=JSON.stringify(snapshot);
+        await AsyncStorage.multiSet([[getSnapshotCacheKey(activeUser.id),cachePayload],[storageKeys.snapshotCache,cachePayload]]);
+        return snapshot;
+      }
+      if(process.env.EXPO_PUBLIC_SHEET_INTEGRATION_ENABLED==="true")throw new Error("Private source refresh failed; retaining the last account cache");
     }
 
     const client = requireSupabase();

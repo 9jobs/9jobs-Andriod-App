@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import dns from "node:dns/promises";
 import dotenv from "dotenv";
 
-if(process.env.LOCAL_DATABASE_MODE!=="isolated-e2e")dotenv.config();
+if(!['isolated-e2e','neon-development'].includes(process.env.LOCAL_DATABASE_MODE||''))dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL || "https://hzpzpdjmmuoesxhmdiqn.supabase.co";
 const supabaseKey =
@@ -24,7 +24,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
       if (isNeonDatabase() && new URL(request.url).pathname.startsWith("/rest/v1/")) {
         return handleNeonRest(request);
       }
-      if(process.env.LOCAL_DATABASE_MODE==="isolated-e2e")throw new Error("External Supabase auth/storage is disabled during localhost testing");
+      if(['isolated-e2e','neon-development'].includes(process.env.LOCAL_DATABASE_MODE||''))throw new Error("External Supabase auth/storage is disabled during localhost testing");
       return fetch(request);
     },
   },

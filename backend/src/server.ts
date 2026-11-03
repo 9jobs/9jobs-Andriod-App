@@ -9,7 +9,7 @@ import { createApp } from "./app";
 import { isNeonDatabase } from "./lib/database";
 import { markNeonMessagesSeen } from "./services/neonChat";
 
-if(process.env.LOCAL_DATABASE_MODE!=="isolated-e2e"){
+if(!['isolated-e2e','neon-development'].includes(process.env.LOCAL_DATABASE_MODE||'')){
   dotenv.config({ path: ".env.contact.local" });
   dotenv.config();
 }
@@ -222,7 +222,7 @@ io.on("connection", (socket: Socket) => {
 });
 
 // Start the server
-const host=process.env.LOCAL_DATABASE_MODE==="isolated-e2e"?"127.0.0.1":"0.0.0.0";
+const host=['isolated-e2e','neon-development'].includes(process.env.LOCAL_DATABASE_MODE||'')?"127.0.0.1":"0.0.0.0";
 server.listen(port, host as any, () => {
   const address = server.address();
   const boundPort = address && typeof address === "object" ? address.port : port;

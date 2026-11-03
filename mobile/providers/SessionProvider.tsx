@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { isClerkConfigured } from "@/lib/clerk/config";
@@ -188,12 +189,17 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   const [isQuestionnaireStatusLoaded, setIsQuestionnaireStatusLoaded] = useState(false);
   const [isLocallySignedOut, setIsLocallySignedOut] = useState(false);
   const [localFallbackUser, setLocalFallbackUser] = useState<SessionUser | null>(null);
+  const clerkTokenGetterRef=useRef(getToken);
+  clerkTokenGetterRef.current=getToken;
+  const hasLocalFallbackUser=Boolean(localFallbackUser);
   useEffect(() => {
     if (!isSignedIn || !user?.id || isLocallySignedOut || localFallbackUser) return;
-    const clearSheet = registerSheetSession(user.id, () => getToken());
-    const clearBackend = registerBackendSession(user.id, () => getToken());
+    // Getter identity can change on an ordinary Clerk render. Keep the session
+    // registration stable until the actual account/sign-in state changes.
+    const clearSheet = registerSheetSession(user.id, () => clerkTokenGetterRef.current());
+    const clearBackend = registerBackendSession(user.id, () => clerkTokenGetterRef.current());
     return () => { clearSheet(); clearBackend(); };
-  }, [isSignedIn, getToken, user?.id, isLocallySignedOut, localFallbackUser]);
+  }, [isSignedIn, user?.id, isLocallySignedOut, hasLocalFallbackUser]);
   let queryClient: any = null;
   try {
     queryClient = useQueryClient();
@@ -267,16 +273,20 @@ function ClerkSessionProvider({ children }: PropsWithChildren) {
   }, [isLocallySignedOut, isSignedIn, localFallbackUser, user]);
 
   useEffect(() => {
-    if (sessionUser) {
+    let cancelled=false;
+    if (sessionUser && queryClient) {
+      const key=["preview-sync",sessionUser.id];
+      if(queryClient.getQueryData(key))return;
       getLocalSyncSnapshot(sessionUser).then((cachedData) => {
-        if (cachedData) {
-          queryClient.setQueryData(["preview-sync", sessionUser.id], cachedData);
+        if (cachedData && !cancelled && !queryClient.getQueryData(key)) {
+          queryClient.setQueryData(key, cachedData);
         }
       }).catch((e) => {
         console.warn("Failed to warm previewSync cache on user session change:", e);
       });
     }
-  }, [sessionUser, queryClient]);
+    return ()=>{cancelled=true;};
+  }, [sessionUser?.id, queryClient]);
 
   useEffect(() => {
     let active = true;

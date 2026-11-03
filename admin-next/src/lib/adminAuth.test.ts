@@ -5,6 +5,7 @@ import {
   previewAdminCredentials,
   resolveAdminAccess,
   requestAdminPasswordToken,
+  requestClerkAdminToken,
 } from "./adminAuth";
 
 describe("isMissingAdminsTableError", () => {
@@ -81,5 +82,30 @@ describe("server-only password authentication", () => {
   it("uses the existing endpoint and returns a confirmed admin token", async () => {
     const confirmed=(async(url:unknown,options:RequestInit)=>{expect(String(url)).toBe("http://127.0.0.1/api/auth/token");expect(options.method).toBe("POST");return{ok:true,json:async()=>({token:"admin-token",user:{role:"admin"}})};}) as unknown as typeof fetch;
     expect(await requestAdminPasswordToken("admin@example.invalid","fixture-password","http://127.0.0.1",confirmed)).toBe("admin-token");
+  });
+});
+
+describe("existing Clerk admin session",()=>{
+  it("exchanges the existing session and requires a server-confirmed matching admin identity",async()=>{
+    const response=(async(url:unknown,options:RequestInit)=>{
+      expect(url).toBe("http://127.0.0.1:3100/api/auth/token");
+      expect((options.headers as Record<string,string>).Authorization).toBe("Bearer unit-clerk-session");
+      expect(JSON.parse(String(options.body))).not.toHaveProperty("password");
+      expect(JSON.parse(String(options.body))).not.toHaveProperty("email");
+      return {ok:true,json:async()=>({token:"unit-backend-token",user:{role:"admin",userId:"unit-admin"}})};
+    }) as unknown as typeof fetch;
+    expect(await requestClerkAdminToken("unit-admin",async()=>"unit-clerk-session","http://127.0.0.1:3100",response)).toBe("unit-backend-token");
+  });
+  it.each([{role:"client",userId:"unit-admin"},{role:"admin",userId:"different-user"}])("rejects unauthorized or mismatched identities %j",async user=>{
+    const response=(async()=>({ok:true,json:async()=>({token:"unit-token",user})})) as unknown as typeof fetch;
+    await expect(requestClerkAdminToken("unit-admin",async()=>"unit-session","http://localhost",response)).rejects.toThrow("not authorized");
+  });
+  it("rejects missing sessions and does not contact the backend",async()=>{
+    const response=(()=>{throw Error("must not be called")}) as unknown as typeof fetch;
+    await expect(requestClerkAdminToken("unit-admin",async()=>null,"http://localhost",response)).rejects.toThrow("session is unavailable");
+  });
+  it("handles backend failures and HTML responses without granting access",async()=>{
+    const response=(async()=>({ok:false,json:async()=>{throw Error("Unexpected token <")}})) as unknown as typeof fetch;
+    await expect(requestClerkAdminToken("unit-admin",async()=>"unit-session","http://localhost",response)).rejects.toThrow("could not verify");
   });
 });

@@ -49,7 +49,7 @@ export function createApp() {
   app.use("/api", lazyRouter(() => import("./routes/payments")));
 
   app.get("/health", (req, res) => {
-    res.json({ status: "healthy", time: new Date().toISOString(), ...(process.env.LOCAL_DATABASE_MODE === "isolated-e2e" ? {localTestEnvironment:true} : {}) });
+    res.json({ status: "healthy", time: new Date().toISOString(), ...(['isolated-e2e','neon-development'].includes(process.env.LOCAL_DATABASE_MODE||'') ? {localTestEnvironment:true,databaseProvider:process.env.LOCAL_DATABASE_MODE==='neon-development'?'neon':'local-postgres',databaseMode:process.env.LOCAL_DATABASE_MODE} : {}) });
   });
 
   return app;

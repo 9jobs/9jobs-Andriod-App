@@ -1,3 +1,4 @@
+import {requiresPostgresLegacyStore,legacyTransactionActive,readPostgresLegacyState,writePostgresLegacyState,withPostgresLegacyStore} from "./postgresLegacyStore";
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
@@ -216,6 +217,7 @@ let lastLocalDbSyncAttemptAt = 0;
 let lastLocalDbSyncSucceededAt = 0;
 
 function readDb(): LocalDbSchema {
+  if(requiresPostgresLegacyStore()) return readPostgresLegacyState();
   try {
     ensureLocalDbFile();
 
@@ -278,6 +280,7 @@ function readDb(): LocalDbSchema {
 }
 
 function writeDb(data: LocalDbSchema) {
+  if(requiresPostgresLegacyStore()){writePostgresLegacyState(data);return;}
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
 
@@ -295,6 +298,7 @@ function writeDb(data: LocalDbSchema) {
 }
 
 export async function getLocalMessages(conversationId: string): Promise<LocalMessage[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalMessages(conversationId));
   const db = readDb();
   return db.messages.filter(
     (m) =>
@@ -305,6 +309,7 @@ export async function getLocalMessages(conversationId: string): Promise<LocalMes
 }
 
 export async function insertLocalMessage(msg: Omit<LocalMessage, "id" | "created_at">): Promise<LocalMessage> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => insertLocalMessage(msg));
   const db = readDb();
   const newId = db.messages.length > 0 ? Math.max(...db.messages.map((m) => m.id)) + 1 : 1;
   const lastMessagePreview = msg.text || msg.attachment_name || (msg.message_type === "image" ? "Photo" : "Attachment");
@@ -353,16 +358,19 @@ export async function insertLocalMessage(msg: Omit<LocalMessage, "id" | "created
 }
 
 export async function getLocalConversations(): Promise<LocalConversation[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalConversations());
   const db = readDb();
   return db.conversations;
 }
 
 export async function getLocalConversation(id: string): Promise<LocalConversation | undefined> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalConversation(id));
   const db = readDb();
   return db.conversations.find((c) => c.id === id);
 }
 
 export async function updateLocalConversation(id: string, updates: Partial<LocalConversation>): Promise<LocalConversation | undefined> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => updateLocalConversation(id, updates));
   const db = readDb();
   const conv = db.conversations.find((c) => c.id === id);
   if (conv) {
@@ -374,6 +382,7 @@ export async function updateLocalConversation(id: string, updates: Partial<Local
 }
 
 export async function deleteLocalMessage(id: number | string): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalMessage(id));
   const db = readDb();
   const idStr = String(id);
   const idNum = Number(id);
@@ -394,6 +403,7 @@ export async function deleteLocalMessage(id: number | string): Promise<boolean> 
 }
 
 export async function updateLocalMessage(id: number | string, text: string): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => updateLocalMessage(id, text));
   const db = readDb();
   const idStr = String(id);
   const idNum = Number(id);
@@ -420,6 +430,7 @@ export async function updateLocalMessage(id: number | string, text: string): Pro
 
 
 export async function deleteLocalConversation(id: string): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalConversation(id));
   const db = readDb();
   const index = db.conversations.findIndex((c) => c.id === id);
   if (index !== -1) {
@@ -437,6 +448,7 @@ export async function deleteLocalConversation(id: string): Promise<boolean> {
 }
 
 export async function clearLocalConversation(conversationId: string): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => clearLocalConversation(conversationId));
   const db = readDb();
   db.messages = db.messages.filter(
     (m) =>
@@ -459,6 +471,7 @@ export async function clearLocalConversation(conversationId: string): Promise<bo
 }
 
 export async function getLocalRecruiterContacts(clientId?: string): Promise<LocalRecruiterContact[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalRecruiterContacts(clientId));
   const db = readDb();
   const rows = clientId
     ? db.recruiter_contacts.filter((contact) => contact.client_id === clientId)
@@ -480,6 +493,7 @@ export async function upsertLocalRecruiterContact(
     linkedin_url?: string;
   },
 ): Promise<LocalRecruiterContact> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => upsertLocalRecruiterContact(contact));
   const db = readDb();
   const now = new Date().toISOString();
   const existingIndex = typeof contact.id === "number"
@@ -536,6 +550,7 @@ export async function upsertLocalRecruiterContact(
 }
 
 export async function deleteLocalRecruiterContact(id: number): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalRecruiterContact(id));
   const db = readDb();
   const originalLength = db.recruiter_contacts.length;
   db.recruiter_contacts = db.recruiter_contacts.filter((item) => item.id !== id);
@@ -549,6 +564,7 @@ export async function deleteLocalRecruiterContact(id: number): Promise<boolean> 
 }
 
 export async function getLocalSuccessStories(): Promise<LocalSuccessStory[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalSuccessStories());
   const db = readDb();
   return [...db.success_stories].sort((a, b) => {
     if (a.display_order !== b.display_order) {
@@ -574,6 +590,7 @@ export async function upsertLocalSuccessStory(
     is_active?: boolean;
   },
 ): Promise<LocalSuccessStory> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => upsertLocalSuccessStory(story));
   const db = readDb();
   const existingIndex = db.success_stories.findIndex((item) => item.id === story.id);
   const now = new Date().toISOString();
@@ -613,6 +630,7 @@ export async function upsertLocalSuccessStory(
 }
 
 export async function deleteLocalSuccessStory(id: string): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalSuccessStory(id));
   const db = readDb();
   const originalLength = db.success_stories.length;
   db.success_stories = db.success_stories.filter((item) => item.id !== id);
@@ -625,6 +643,7 @@ export async function deleteLocalSuccessStory(id: string): Promise<boolean> {
 }
 
 export async function getLocalProfiles(): Promise<LocalProfile[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalProfiles());
   const db = readDb();
   return [...db.profiles].sort((a, b) => {
     const aTime = new Date(a.updated_at || a.created_at).getTime();
@@ -634,6 +653,7 @@ export async function getLocalProfiles(): Promise<LocalProfile[]> {
 }
 
 export async function getLocalProfile(id: string): Promise<LocalProfile | undefined> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalProfile(id));
   const db = readDb();
   return db.profiles.find((profile) => profile.id === id);
 }
@@ -645,6 +665,7 @@ export async function upsertLocalProfile(
     email: string;
   },
 ): Promise<LocalProfile> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => upsertLocalProfile(profile));
   const db = readDb();
   const existingIndex = db.profiles.findIndex((item) => item.id === profile.id);
   const now = new Date().toISOString();
@@ -680,6 +701,7 @@ export async function upsertLocalProfile(
 }
 
 export async function deleteLocalProfile(id: string): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalProfile(id));
   const db = readDb();
   const originalLength = db.profiles.length;
   db.profiles = db.profiles.filter((item) => item.id !== id);
@@ -706,12 +728,14 @@ export async function deleteLocalProfile(id: string): Promise<boolean> {
 }
 
 export async function getLocalCandidateQuestionnaire(userId: string): Promise<LocalCandidateQuestionnaire | undefined> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalCandidateQuestionnaire(userId));
   const db = readDb();
   const questionnaire = db.candidate_questionnaires.find((item) => item.user_id === userId);
   return questionnaire ? { ...questionnaire, visa_type: questionnaire.visa_type ?? "" } : undefined;
 }
 
 export async function getLocalCandidateQuestionnaires(): Promise<LocalCandidateQuestionnaire[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalCandidateQuestionnaires());
   const db = readDb();
   return db.candidate_questionnaires.map((item) => ({
     ...item,
@@ -729,6 +753,7 @@ export async function upsertLocalCandidateQuestionnaire(
     updated_at?: string;
   },
 ): Promise<LocalCandidateQuestionnaire> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => upsertLocalCandidateQuestionnaire(questionnaire));
   const db = readDb();
   const existingIndex = db.candidate_questionnaires.findIndex((item) => item.user_id === questionnaire.user_id);
   const existing = existingIndex >= 0 ? db.candidate_questionnaires[existingIndex] : null;
@@ -771,6 +796,7 @@ export async function upsertLocalCandidateQuestionnaire(
 }
 
 export async function getLocalInterviewPrepSessions(clientId?: string): Promise<LocalInterviewPrepSession[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalInterviewPrepSessions(clientId));
   const db = readDb();
   const rows = clientId
     ? db.interview_prep_sessions.filter((session) => session.client_id === clientId)
@@ -784,6 +810,7 @@ export async function getLocalInterviewPrepSessions(clientId?: string): Promise<
 }
 
 export async function getLocalInterviewPrepSession(clientId: string): Promise<LocalInterviewPrepSession | undefined> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalInterviewPrepSession(clientId));
   const sessions = await getLocalInterviewPrepSessions(clientId);
   return sessions[0];
 }
@@ -798,6 +825,7 @@ export async function upsertLocalInterviewPrepSession(
     question_total: number;
   },
 ): Promise<LocalInterviewPrepSession> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => upsertLocalInterviewPrepSession(session));
   const db = readDb();
   const now = new Date().toISOString();
   const existingIndex = typeof session.id === "number"
@@ -860,6 +888,7 @@ export async function upsertLocalInterviewPrepSession(
 }
 
 export async function getLocalInterviewPrepResponses(clientId?: string): Promise<LocalInterviewPrepResponse[]> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => getLocalInterviewPrepResponses(clientId));
   const db = readDb();
   const rows = clientId
     ? db.interview_prep_responses.filter((response) => response.client_id === clientId)
@@ -875,6 +904,7 @@ export async function getLocalInterviewPrepResponses(clientId?: string): Promise
 export async function createLocalInterviewPrepResponse(
   response: Omit<LocalInterviewPrepResponse, "id" | "created_at">,
 ): Promise<LocalInterviewPrepResponse> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => createLocalInterviewPrepResponse(response));
   const db = readDb();
   const newId =
     db.interview_prep_responses.length > 0
@@ -893,6 +923,7 @@ export async function createLocalInterviewPrepResponse(
 }
 
 export async function deleteLocalInterviewPrepResponse(id: number): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalInterviewPrepResponse(id));
   const db = readDb();
   const index = db.interview_prep_responses.findIndex((r) => r.id === id);
   if (index === -1) return false;
@@ -902,6 +933,7 @@ export async function deleteLocalInterviewPrepResponse(id: number): Promise<bool
 }
 
 export async function updateLocalInterviewPrepResponse(id: number, updates: Partial<LocalInterviewPrepResponse>): Promise<LocalInterviewPrepResponse | null> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => updateLocalInterviewPrepResponse(id, updates));
   const db = readDb();
   const index = db.interview_prep_responses.findIndex((r) => r.id === id);
   if (index === -1) return null;
@@ -912,6 +944,7 @@ export async function updateLocalInterviewPrepResponse(id: number, updates: Part
 }
 
 export async function deleteLocalInterviewPrepSession(id: number): Promise<boolean> {
+  if (requiresPostgresLegacyStore() && !legacyTransactionActive()) return withPostgresLegacyStore(() => deleteLocalInterviewPrepSession(id));
   const db = readDb();
   const index = db.interview_prep_sessions.findIndex((s) => s.id === id);
   if (index === -1) return false;

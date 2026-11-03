@@ -44,3 +44,19 @@ export async function fetchAuthorizedSheetJobs(expectedUserId: string): Promise<
     if (!data.jobs.length) throw new Error("Incomplete sheet pagination");
   }
 }
+
+export async function fetchAuthorizedSheetActivity(expectedUserId:string):Promise<any|null>{
+  if(process.env.EXPO_PUBLIC_SHEET_INTEGRATION_ENABLED!=="true")return null;
+  const current=session;
+  if(!current||current.userId!==expectedUserId)return null;
+  const token=await current.getToken();
+  if(!token||session!==current)return null;
+  const response=await fetch(`${resolveBackendUrl()}/api/mobile/sheet-records/activity`,{
+    headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(20000),
+  });
+  if(!response.ok)throw new Error("Authorized application data is temporarily unavailable");
+  const data=await response.json();
+  if(session!==current||data.userId!==expectedUserId)throw new Error("Login changed while loading private applications");
+  if(!Array.isArray(data.jobs)||!Array.isArray(data.applications))throw new Error("Invalid application response");
+  return data;
+}

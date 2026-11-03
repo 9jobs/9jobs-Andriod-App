@@ -1,6 +1,6 @@
 // Read-only Google access; writes are pinned to the existing isolated localhost DB.
 const fs=require('node:fs'),path=require('node:path');
-const {localConfig}=require('./localhost-e2e-config.cjs');
+const {runtimeConfig:localConfig}=require('./localhost-runtime-config.cjs');
 const {createReadOnlyClient,DUPLICATE_SPREADSHEET_ID}=require('./inspect-duplicate-sheet.cjs');
 const {readConsistentSource,acceptsValidation,acceptsIndependentValidation}=require('./sheet-source-consistency.cjs');
 

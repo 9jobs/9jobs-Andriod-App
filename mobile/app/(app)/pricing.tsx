@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 import { Screen } from "@/components/ui/Screen";
 import { colors, spacing, typography } from "@/theme";
 
@@ -150,7 +150,8 @@ function PricingCard({
   onPayNow: (plan: { id: string }) => Promise<void>;
   isPaying: boolean;
 }) {
-  const isDark = plan.accent === "dark";
+  // A consistent dark presentation for every existing plan; payment data is unchanged.
+  const isDark = true;
 
   return (
     <View
@@ -159,253 +160,265 @@ function PricingCard({
         isDark ? styles.planCardDark : styles.planCardLight,
       ]}
     >
-      {plan.badge ? (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{plan.badge}</Text>
-        </View>
-      ) : null}
-
-      <Text style={[styles.planTitle, isDark && styles.planTitleDark]}>{plan.title}</Text>
-      <Text style={[styles.planDescription, isDark && styles.planDescriptionDark]}>
-        {plan.description}
-      </Text>
-
-      {plan.highlights?.map((highlight) => (
-        <Text key={highlight} style={[styles.planDescription, isDark && styles.planDescriptionDark]}>{highlight}</Text>
-      ))}
-      <View style={styles.priceRow}>
-        <Text style={[styles.price, isDark && styles.priceDark]}>{plan.price}</Text>
-        <Text style={[styles.gstLabel, isDark && styles.cadenceDark]}>+ 10% GST</Text>
-      </View>
-      <Text style={[styles.cadence, isDark && styles.cadenceDark]}>{plan.cadence}</Text>
-
-      <View style={styles.featureList}>
-        {plan.features.map((feature) => (
-          <View key={feature} style={styles.featureRow}>
-            <Text style={[styles.check, isDark && styles.checkDark]}>✓</Text>
-            <Text style={[styles.featureText, isDark && styles.featureTextDark]}>{feature}</Text>
+      <View style={styles.cardOverview}>
+        <View style={styles.planHeadingRow}>
+          <Text style={[styles.planTitle, styles.planTitleDark]}>{plan.title}</Text>
+          {plan.badge ? (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{plan.badge}</Text>
+            </View>
+          ) : null}
           </View>
-        ))}
-      </View>
 
-      <View style={styles.buttonStack}>
-        <Pressable
-          style={[styles.primaryButton, isDark && styles.primaryButtonAccent]}
-          accessibilityLabel={`Pay for ${plan.title}`}
-          accessibilityRole="button"
-          disabled={isPaying}
-          onPress={() => void onPayNow({ id: plan.id })}
-        >
-          <Text style={[styles.primaryButtonText, isDark && styles.primaryButtonTextDark]}>
-            {isPaying ? "Processing..." : "Pay Now"}
+          <View style={styles.priceRow}>
+            <Text style={[styles.price, isDark && styles.priceDark]}>{plan.price}</Text>
+            <Text style={[styles.gstLabel, isDark && styles.cadenceDark]}>+ 10% GST</Text>
+          </View>
+          <Text style={[styles.cadence, isDark && styles.cadenceDark]}>{plan.cadence}</Text>
+
+          <Text style={[styles.planDescription, isDark && styles.planDescriptionDark]}>
+            {plan.description}
           </Text>
-          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M5 8.5H19M7 16.5H11M6 5H18C19.1046 5 20 5.89543 20 7V17C20 18.1046 19.1046 19 18 19H6C4.89543 19 4 18.1046 4 17V7C4 5.89543 4.89543 5 6 5Z"
-              stroke={isDark ? colors.dark : colors.surface}
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Svg>
-        </Pressable>
 
-        {plan.secondaryCta ? <Pressable
-          style={[styles.secondaryButton, isDark && styles.secondaryButtonDark]}
-          onPress={() => router.push("/(app)/contact")}
-        >
-          <Text style={[styles.secondaryButtonText, isDark && styles.secondaryButtonTextDark]}>
-            {plan.secondaryCta}
-          </Text>
-          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M5 12H19M19 12L12 5M19 12L12 19"
-              stroke={isDark ? colors.surface : colors.text}
-              strokeWidth={1.8}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </Svg>
-        </Pressable> : null}
-      </View>
-    </View>
-  );
-}
+          {plan.highlights?.map((highlight) => (
+            <Text key={highlight} style={[styles.planDescription, isDark && styles.planDescriptionDark]}>{highlight}</Text>
+          ))}
 
-const styles = StyleSheet.create({
-  screenContent: {
-    paddingTop: spacing.md,
-    gap: spacing.xl,
-  },
-  sectionHeader: {
-    gap: spacing.sm,
-  },
-  eyebrow: {
-    ...typography.label,
-    color: colors.accent,
-    letterSpacing: 1.2,
-    fontWeight: "800",
-   fontFamily: "Inter_600SemiBold" },
-  title: {
-    ...typography.display,
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: "800",
-    lineHeight: 34,
-   fontFamily: "PlusJakartaSans_700Bold" },
-  subtitle: {
-    ...typography.body,
-    color: colors.mutedText,
-    lineHeight: 24,
-  },
-  cardStack: {
-    gap: spacing.lg,
-  },
-  planCard: {
-    borderRadius: 0,
-    padding: spacing.lg,
-    gap: spacing.md,
-    borderWidth: 1,
-  },
-  planCardLight: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-  },
-  planCardDark: {
-    backgroundColor: colors.dark,
-    borderColor: colors.dark,
-  },
-  badge: {
-    alignSelf: "flex-start",
-    borderRadius: 0,
-    backgroundColor: "#D9FB63",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    ...typography.label,
-    color: colors.dark,
-    fontWeight: "800",
-   fontFamily: "Inter_600SemiBold" },
-  planTitle: {
-    ...typography.display,
-    color: colors.text,
-    fontSize: 24,
-    lineHeight: 30,
-   fontFamily: "PlusJakartaSans_600SemiBold" },
-  planTitleDark: {
-    color: colors.surface,
-  },
-  planDescription: {
-    ...typography.body,
-    color: colors.mutedText,
-    lineHeight: 24,
-  },
-  planDescriptionDark: {
-    color: colors.darkMuted,
-  },
-  priceRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  price: {
-    ...typography.display,
-    color: colors.text,
-    fontSize: 34,
-   fontFamily: "PlusJakartaSans_600SemiBold" },
-  priceDark: {
-    color: colors.surface,
-  },
-  cadence: {
-    ...typography.body,
-    color: colors.mutedText,
-    fontWeight: "700",
-    paddingBottom: 4,
-   fontFamily: "Inter_600SemiBold" },
-  cadenceDark: {
-    color: colors.darkMuted,
-  },
-  featureList: {
-    gap: spacing.sm,
-  },
-  gstLabel: {
-    ...typography.label,
-    color: colors.accentDark,
-    paddingBottom: 5,
-    fontSize: 11,
-  },
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-  },
-  check: {
-    color: colors.accentDark,
-    fontSize: 18,
-    fontWeight: "800",
-    marginTop: -1,
-   fontFamily: "PlusJakartaSans_700Bold" },
-  checkDark: {
-    color: colors.accent,
-  },
-  featureText: {
-    ...typography.body,
-    color: colors.text,
-    flex: 1,
-    lineHeight: 22,
-    fontWeight: "600",
-   fontFamily: "Inter_600SemiBold" },
-  featureTextDark: {
-    color: colors.surface,
-  },
-  buttonStack: {
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  primaryButton: {
-    minHeight: 50,
-    borderRadius: 0,
-    backgroundColor: colors.dark,
-    borderWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
-  primaryButtonAccent: {
-    backgroundColor: "#D9FB63",
-  },
-  primaryButtonText: {
-    ...typography.title,
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "700",
-   fontFamily: "Inter_600SemiBold" },
-  primaryButtonTextDark: {
-    color: colors.dark,
-  },
-  secondaryButton: {
-    minHeight: 50,
-    borderRadius: 0,
-    backgroundColor: "transparent",
-    borderWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-  },
-  secondaryButtonDark: {
-    backgroundColor: "transparent",
-  },
-  secondaryButtonText: {
-    ...typography.title,
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "700",
-   fontFamily: "Inter_600SemiBold" },
-  secondaryButtonTextDark: {
-    color: colors.surface,
-  },
-});
+          <View style={styles.buttonStack}>
+            <Pressable
+              style={[styles.primaryButton, isDark && styles.primaryButtonAccent]}
+              accessibilityLabel={`Pay for ${plan.title}`}
+              accessibilityRole="button"
+              disabled={isPaying}
+              onPress={() => void onPayNow({ id: plan.id })}
+            >
+              <Text style={[styles.primaryButtonText, isDark && styles.primaryButtonTextDark]}>
+                {isPaying ? "Processing..." : "Pay Now"}
+              </Text>
+              <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M5 8.5H19M7 16.5H11M6 5H18C19.1046 5 20 5.89543 20 7V17C20 18.1046 19.1046 19 18 19H6C4.89543 19 4 18.1046 4 17V7C4 5.89543 4.89543 5 6 5Z"
+                  stroke={isDark ? colors.dark : colors.surface}
+                  strokeWidth={1.8}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </Pressable>
+
+          </View>
+          </View>
+
+          <View style={styles.featureList}>
+            {plan.features.map((feature) => (
+              <View key={feature} style={styles.featureRow}>
+                <Svg width={17} height={17} viewBox="0 0 20 20" fill="none" accessible={false}>
+                  <Circle cx={10} cy={10} r={9} fill={colors.accent} />
+                  <Path d="m6 10 2.5 2.5L14 7" stroke="#101522" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+                <Text style={[styles.featureText, styles.featureTextDark]}>{feature}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      );
+    }
+
+    const styles = StyleSheet.create({
+      screenContent: {
+        paddingTop: spacing.md,
+        gap: spacing.xl,
+      },
+      sectionHeader: {
+        gap: spacing.sm,
+      },
+      eyebrow: {
+        ...typography.label,
+        color: colors.accent,
+        letterSpacing: 1.2,
+        fontWeight: "800",
+       fontFamily: "Inter_600SemiBold" },
+      title: {
+        ...typography.display,
+        color: colors.text,
+        fontSize: 28,
+        fontWeight: "800",
+        lineHeight: 34,
+       fontFamily: "PlusJakartaSans_700Bold" },
+      subtitle: {
+        ...typography.body,
+        color: colors.mutedText,
+        lineHeight: 24,
+      },
+      cardStack: {
+        gap: 16,
+      },
+      planCard: {
+        borderRadius: 16,
+        overflow: "hidden",
+        borderWidth: 1,
+      },
+      cardOverview: {
+        padding: 16,
+        gap: 8,
+      },
+      planHeadingRow: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 10,
+      },
+      planCardLight: {
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+      },
+      planCardDark: {
+        backgroundColor: "#0F1521",
+        borderColor: "#253044",
+      },
+      badge: {
+        alignSelf: "flex-start",
+        borderRadius: 20,
+        backgroundColor: colors.accent,
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+      },
+      badgeText: {
+        ...typography.label,
+        color: colors.dark,
+        fontWeight: "800",
+       fontFamily: "Inter_600SemiBold" },
+      planTitle: {
+        ...typography.display,
+        color: colors.text,
+        fontSize: 18,
+        lineHeight: 24,
+        flex: 1,
+       fontFamily: "PlusJakartaSans_600SemiBold" },
+      planTitleDark: {
+        color: colors.accent,
+      },
+      planDescription: {
+        ...typography.body,
+        color: colors.mutedText,
+        fontSize: 13,
+        lineHeight: 19,
+      },
+      planDescriptionDark: {
+        color: "#C1C9D6",
+      },
+      priceRow: {
+        flexDirection: "row",
+        alignItems: "flex-end",
+        flexWrap: "wrap",
+        gap: 6,
+      },
+      price: {
+        ...typography.display,
+        color: colors.text,
+        fontSize: 30,
+        lineHeight: 36,
+       fontFamily: "PlusJakartaSans_600SemiBold" },
+      priceDark: {
+        color: colors.surface,
+      },
+      cadence: {
+        ...typography.body,
+        color: colors.mutedText,
+        fontSize: 12,
+        lineHeight: 18,
+       fontFamily: "Inter_600SemiBold" },
+      cadenceDark: {
+        color: "#AEB9C9",
+      },
+      featureList: {
+        gap: 8,
+        padding: 16,
+        backgroundColor: "#131B29",
+        borderTopWidth: 1,
+        borderTopColor: "#293448",
+      },
+      gstLabel: {
+        ...typography.label,
+        color: colors.accentDark,
+        paddingBottom: 5,
+        fontSize: 11,
+      },
+      featureRow: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 9,
+      },
+      check: {
+        color: colors.accentDark,
+        fontSize: 18,
+        fontWeight: "800",
+        marginTop: -1,
+       fontFamily: "PlusJakartaSans_700Bold" },
+      checkDark: {
+        color: colors.accent,
+      },
+      featureText: {
+        ...typography.body,
+        color: colors.text,
+        flex: 1,
+        fontSize: 12,
+        lineHeight: 18,
+        fontWeight: "400",
+       fontFamily: "Inter_400Regular" },
+      featureTextDark: {
+        color: "#E1E7F0",
+      },
+      buttonStack: {
+        gap: 8,
+        marginTop: 4,
+      },
+      primaryButton: {
+        minHeight: 44,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        backgroundColor: colors.dark,
+        borderWidth: 0,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: spacing.sm,
+      },
+      primaryButtonAccent: {
+        backgroundColor: colors.accent,
+      },
+      primaryButtonText: {
+        ...typography.title,
+        color: colors.surface,
+        fontSize: 13,
+        fontWeight: "700",
+       fontFamily: "Inter_600SemiBold" },
+      primaryButtonTextDark: {
+        color: colors.dark,
+      },
+      secondaryButton: {
+        minHeight: 44,
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        backgroundColor: "transparent",
+        borderWidth: 0,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: spacing.sm,
+      },
+      secondaryButtonDark: {
+        backgroundColor: "#FFFFFF",
+      },
+      secondaryButtonText: {
+        ...typography.title,
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: "700",
+       fontFamily: "Inter_600SemiBold" },
+      secondaryButtonTextDark: {
+        color: "#101522",
+      },
+    });

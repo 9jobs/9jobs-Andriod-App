@@ -1,5 +1,5 @@
 jest.mock("@/lib/data/backend-auth-token", () => ({ resolveBackendUrl: () => "https://backend.invalid" }));
-import { fetchAuthorizedSheetJobs, registerSheetSession } from "@/lib/data/sheet-records";
+import { fetchAuthorizedSheetJobs, fetchAuthorizedSheetActivity, registerSheetSession } from "@/lib/data/sheet-records";
 
 describe("private sheet data binding", () => {
   let cleanup: (() => void) | undefined;
@@ -13,6 +13,19 @@ describe("private sheet data binding", () => {
   afterAll(() => {
     if (previousFlag === undefined) delete process.env.EXPO_PUBLIC_SHEET_INTEGRATION_ENABLED;
     else process.env.EXPO_PUBLIC_SHEET_INTEGRATION_ENABLED = previousFlag;
+  });
+
+  it("loads private activity using the registered real-session token interface",async()=>{
+    cleanup=registerSheetSession("client-a",async()=>"unit-session");
+    (globalThis.fetch as jest.Mock).mockResolvedValueOnce({ok:true,json:async()=>({userId:"client-a",jobs:[],applications:[]})});
+    expect(await fetchAuthorizedSheetActivity("client-a")).toMatchObject({userId:"client-a"});
+    expect((globalThis.fetch as jest.Mock).mock.calls[0][0]).toBe("https://backend.invalid/api/mobile/sheet-records/activity");
+    expect((globalThis.fetch as jest.Mock).mock.calls[0][1].headers.Authorization).toBe("Bearer unit-session");
+  });
+  it("rejects an activity response for another account",async()=>{
+    cleanup=registerSheetSession("client-a",async()=>"unit-session");
+    (globalThis.fetch as jest.Mock).mockResolvedValueOnce({ok:true,json:async()=>({userId:"client-b",jobs:[],applications:[]})});
+    await expect(fetchAuthorizedSheetActivity("client-a")).rejects.toThrow("Login changed");
   });
 
   it("does not fetch without a verified session for the active account", async () => {
