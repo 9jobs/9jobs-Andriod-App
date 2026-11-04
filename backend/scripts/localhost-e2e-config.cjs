@@ -18,7 +18,7 @@ function localConfig(){
  const vaultKeyFile=path.join(directory,'platform-credentials.key');
  if(!fs.existsSync(vaultKeyFile)){try{fs.writeFileSync(vaultKeyFile,crypto.randomBytes(32).toString('hex'),{flag:'wx',mode:0o600});}catch(error){if(error.code!=='EEXIST')throw error;}}
  config.PLATFORM_CREDENTIALS_KEY=fs.readFileSync(vaultKeyFile,'utf8').trim();
- Object.assign(config,{DATABASE_URL:`postgresql://client_id_test@127.0.0.1:55439/${state.database}`,LOCAL_DATABASE_MODE:'isolated-e2e',JWT_SECRET:state.jwtSecret,CLERK_ISSUER:'https://'+host,CLERK_AUTHORIZED_PARTIES:'http://localhost:3001,http://127.0.0.1:3001,http://localhost:8095,http://127.0.0.1:8095',SHEET_INTEGRATION_ENABLED:'true',PORT:'3100',NODE_ENV:'development',SUPABASE_URL:'http://127.0.0.1:3100',SUPABASE_KEY:'local-disabled-storage',SUPABASE_SERVICE_ROLE_KEY:'',STRIPE_SECRET_KEY:'',STRIPE_WEBHOOK_SECRET:''});
+ Object.assign(config,{DATABASE_URL:`postgresql://client_id_test@127.0.0.1:55439/${state.database}`,LOCAL_DATABASE_MODE:'isolated-e2e',JWT_SECRET:state.jwtSecret,CLERK_ISSUER:'https://'+host,CLERK_AUTHORIZED_PARTIES:'http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://localhost:8095,http://127.0.0.1:8095',SHEET_INTEGRATION_ENABLED:'true',PORT:'3100',NODE_ENV:'development',SUPABASE_URL:'http://127.0.0.1:3100',SUPABASE_KEY:'local-disabled-storage',SUPABASE_SERVICE_ROLE_KEY:'',STRIPE_SECRET_KEY:'',STRIPE_WEBHOOK_SECRET:''});
  config.LOCAL_AUTOMATIC_SHEET_SYNC='true';
  return {root,directory,state,config,publishableKey:key};
 }

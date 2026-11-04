@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { previewAdminCredentials, requestClerkAdminToken, requestAdminPasswordToken } from "./lib/adminAuth";
 import { calculateTrackerMetrics } from "./lib/trackerMetrics";
+import { RobotWelcome } from "./components/RobotWelcome";
 import { RowActionsMenu } from "./components/RowActionsMenu";
 import { combineOpportunityPage, matchesOpportunity } from "./lib/opportunityPagination";
 import { LatestOpportunityRequest } from "./lib/latestOpportunityRequest";
@@ -814,8 +815,14 @@ export default function App() {
   const [emailInput] = useState<string>(previewAdminCredentials.email);
   const [passwordInput, setPasswordInput] = useState<string>(previewAdminCredentials.password);
   const [authError, setAuthError] = useState("");
+  const [resetStep, setResetStep] = useState<"login" | "email" | "code">("login");
+  const [resetCode, setResetCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
   const adminVerificationRequestRef=useRef(0);
   const [showPassword, setShowPassword] = useState(false);
+  const [authPasswordFocused, setAuthPasswordFocused] = useState(false);
   const [schemaWarning, setSchemaWarning] = useState("");
 
   // Navigation tab
@@ -1303,13 +1310,9 @@ export default function App() {
     setAuthLoading(true);
     setAuthError("");
     try {
-      // An active Clerk session must be verified, rather than signed in again.
-      if(clerk.session && clerk.user){
-        const session=clerk.session;
-        await checkAdminStatus(clerk.user,()=>session.getToken());
-        return;
-      }
-      if(isSignedIn && user){await checkAdminStatus(user);return;}
+      if (emailInput.trim().toLowerCase() !== previewAdminCredentials.email) throw new Error("Only the approved 9Jobs admin email can sign in.");
+      // Clear a stale or different account before checking the entered credentials.
+      if (clerk.session) await clerk.signOut();
       const passwordToken = await requestAdminPasswordToken(emailInput,passwordInput,BACKEND_URL).catch(()=>null);
       if (passwordToken) {
         localStorage.setItem("admin_auth_token",passwordToken);
@@ -1345,16 +1348,38 @@ export default function App() {
       setAuthError("Password is incorrect. Try again with the approved local admin password.");
       setAuthLoading(false);
     } catch (err: any) {
-      if(clerk.session && clerk.user){
-        const session=clerk.session;
-        await checkAdminStatus(clerk.user,()=>session.getToken());
-        return;
-      }
       setAuthError(err.errors?.[0]?.longMessage || err.message);
       setAuthLoading(false);
     }
   };
 
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthNotice("");
+    setAuthLoading(true);
+    try {
+      if (!signInLoaded || !signIn || !setActive) throw new Error("Authentication is loading. Please retry.");
+      if (emailInput.trim().toLowerCase() !== previewAdminCredentials.email) throw new Error("Use the approved 9Jobs admin email.");
+      if (resetStep === "email") {
+        if (clerk.session) await clerk.signOut();
+        await signIn.create({ strategy: "reset_password_email_code", identifier: previewAdminCredentials.email });
+        setResetStep("code");
+        setAuthNotice("A verification code was sent to your 9Jobs admin email. Enter it below and choose a new password.");
+      } else {
+        if (newPassword !== confirmPassword) throw new Error("The passwords do not match.");
+        const result = await signIn.attemptFirstFactor({ strategy: "reset_password_email_code", code: resetCode.trim(), password: newPassword });
+        if (result.status !== "complete" || !result.createdSessionId) throw new Error("Additional account verification is required before sign-in can complete.");
+        setNewPassword(""); setConfirmPassword(""); setResetCode(""); setPasswordInput("");
+        setResetStep("login");
+        await setActive({ session: result.createdSessionId });
+        setAuthNotice("Password updated successfully. Verifying your admin access…");
+      }
+    } catch (err: any) {
+      setAuthError(err.errors?.[0]?.longMessage || err.message || "Could not reset your password.");
+    } finally { setAuthLoading(false); }
+  };
 
   const handleLogout = async () => {
     localStorage.removeItem("admin_auth_token");
@@ -4896,50 +4921,69 @@ export default function App() {
   if (!(isPreviewAuthenticated || (isSignedIn && isAdmin))) {
     return (
       <div className="auth-overlay">
-        <div className="auth-card">
-          <div className="auth-logo">
-            <img src="https://hzpzpdjmmuoesxhmdiqn.supabase.co/storage/v1/object/public/assets/logo.png" onError={(e) => { e.currentTarget.src = "https://placehold.co/60x60/000000/ffffff?text=9JOBS" }} alt="9Jobs Logo" />
-            <h1>9Jobs Admin</h1>
-          </div>
-          <h3>System Credentials</h3>
-          <p>Use the fixed local preview credentials for the 9Jobs admin panel.</p>
-          <form onSubmit={handleLogin}>
-            <div className="form-group" style={{ textAlign: "left" }}>
-              <label className="form-label" style={{ color: "#AAA" }}>Admin Email</label>
+        <div className="auth-card auth-split-card">
+          <RobotWelcome passwordFocused={authPasswordFocused} />
+          <div className="auth-form-panel">
+          <div className="auth-login-brand"><span className="auth-brand-badge" aria-label="9Jobs">9JOBS</span><span>9Jobs<span className="auth-brand-admin"> ADMIN</span></span></div>
+          <span className="auth-form-eyebrow">YOUR WORKSPACE AWAITS</span>
+          <h3>{resetStep === "login" ? "Welcome back" : "Reset password"}</h3>
+          <p>{resetStep === "login" ? "Sign in with the approved 9Jobs admin email." : "Verify your 9Jobs email to set a new password."}</p>
+          <form onSubmit={resetStep === "login" ? handleLogin : handlePasswordReset}>
+            <div className="form-group" >
+              <label className="form-label" htmlFor="admin-email">Admin Email</label>
               <input
+                id="admin-email"
                 type="email"
+                autoComplete="username"
                 className="form-input"
-                style={{ backgroundColor: "#1e1e1e", color: "white", borderColor: "#333" }}
+
                 value={emailInput}
                 readOnly
                 required
               />
             </div>
-            <div className="form-group" style={{ textAlign: "left" }}>
-              <label className="form-label" style={{ color: "#AAA" }}>Secret Password</label>
-              <div style={{ position: "relative" }}>
+            {resetStep === "login" && <div className="form-group" >
+              <label className="form-label" htmlFor="admin-password">Password</label>
+              <div className="auth-password-field">
                 <input
+                  id="admin-password"
+                  autoComplete="current-password"
+                  onFocus={() => setAuthPasswordFocused(true)}
+                  onBlur={() => setAuthPasswordFocused(false)}
                   type={showPassword ? "text" : "password"}
                   className="form-input"
-                  style={{ backgroundColor: "#1e1e1e", color: "white", borderColor: "#333", paddingRight: "45px" }}
+
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
                   required
                 />
                 <button
                   type="button"
-                  style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "#888", cursor: "pointer", display: "flex", alignItems: "center", padding: "4px" }}
+                  className="auth-password-toggle"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </div>
+            </div>}
+            {resetStep === "code" && <>
+              <div className="form-group"><label className="form-label" htmlFor="reset-code">Email verification code</label><input id="reset-code" className="form-input"  autoComplete="one-time-code" inputMode="numeric" value={resetCode} onChange={e => setResetCode(e.target.value)} required /></div>
+              <div className="form-group"><label className="form-label" htmlFor="new-password">New password</label><input id="new-password" className="form-input"  type="password" autoComplete="new-password" minLength={8} value={newPassword} onChange={e => setNewPassword(e.target.value)} required /></div>
+              <div className="form-group"><label className="form-label" htmlFor="confirm-password">Confirm password</label><input id="confirm-password" className="form-input"  type="password" autoComplete="new-password" minLength={8} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required /></div>
+            </>}
+            {authNotice && <p role="status" style={{ color: "#A3E635", fontSize: 14 }}>{authNotice}</p>}
             {authError && <div style={{ color: "#FF4D4D", fontSize: "14px", marginBottom: "16px" }}>{authError}</div>}
             <button type="submit" className="btn btn-primary" style={{ width: "100%" }} disabled={authLoading}>
-              {authLoading ? <Loader2 className="animate-spin" size={18} /> : "Authenticate Admin"}
+              {authLoading ? <Loader2 className="animate-spin" size={18} /> : resetStep === "login" ? "Sign in to your workspace" : resetStep === "email" ? "Send reset code" : "Update password"}
             </button>
           </form>
+          <button type="button" className="btn auth-recovery-button" disabled={authLoading}  onClick={() => { setResetStep(resetStep === "login" ? "email" : "login"); setAuthError(""); setAuthNotice(""); setResetCode(""); setNewPassword(""); setConfirmPassword(""); setPasswordInput(""); }}>
+            {resetStep === "login" ? "Forgot password?" : "Back to sign in"}
+          </button>
+          <span className="auth-form-footer">Your career, elevated.</span>
+          </div>
         </div>
       </div>
     );
@@ -5228,6 +5272,7 @@ export default function App() {
           </div>
           <button className="logout-btn" onClick={handleLogout} title="Log out">
             <LogOut size={16} />
+            <span>Log out</span>
           </button>
         </div>
       </aside>

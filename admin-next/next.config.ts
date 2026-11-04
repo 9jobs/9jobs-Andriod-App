@@ -7,7 +7,7 @@ const agreementsServiceUrl = (process.env.AGREEMENTS_SERVICE_URL || "http://127.
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   env: {
-    NEXT_PUBLIC_BACKEND_URL: process.env.VITE_BACKEND_URL,
+    NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || (process.env.NODE_ENV === "development" ? "http://127.0.0.1:3100" : process.env.VITE_BACKEND_URL),
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.VITE_CLERK_PUBLISHABLE_KEY,
     NEXT_PUBLIC_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY,

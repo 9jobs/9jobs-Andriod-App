@@ -7,6 +7,7 @@ function verifyBackendToken(token: string) {
   if (!secret || secret.length < 32) throw new Error("Authentication is not configured");
   const value = jwt.verify(token, secret, {algorithms:["HS256"],issuer:"9jobs-backend",audience:"9jobs-api"}) as jwt.JwtPayload;
   if (value.identity_verified !== true || typeof value.userId !== "string" || !["client","admin","staff"].includes(value.role)) throw new Error("Verified identity required");
+  if (value.role === "admin" && value.email !== "9jobsapplicationservice@gmail.com") throw new Error("Approved 9Jobs admin email required");
   return value as {userId:string;role:string;email:string};
 }
 

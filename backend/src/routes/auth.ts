@@ -17,6 +17,7 @@ export function createAuthRouter(database = sheetDb) {
    if (session) {
     const principal=await verifyClerkSession(session);
     const account=await lookupVerifiedAccount(principal.userId);
+    if ((req.body?.role === "admin" || principal.role === "admin") && (principal.role !== "admin" || account.email !== "9jobsapplicationservice@gmail.com")) return res.status(403).json({error:"Only the approved 9Jobs admin email can access this panel."});
     await persistVerifiedAccount(account,database(),principal.role);
     user={...account,role:principal.role};
    } else {
@@ -24,7 +25,7 @@ export function createAuthRouter(database = sheetDb) {
     const email=String(req.body?.email || "").trim().toLowerCase();
     const expectedEmail=process.env.ADMIN_LOGIN_EMAIL?.trim().toLowerCase();
     const password=process.env.ADMIN_LOGIN_PASSWORD;
-    if (!expectedEmail || !password || !email || !equal(email,expectedEmail) || !equal(String(req.body?.password || ""),password)) return res.status(401).json({error:"Verified login required"});
+    if (expectedEmail !== "9jobsapplicationservice@gmail.com" || !password || !email || !equal(email,expectedEmail) || !equal(String(req.body?.password || ""),password)) return res.status(401).json({error:"Verified login required"});
     user={userId:"admin",role:"admin",email:expectedEmail,fullName:"9Jobs Administrator"};
    }
    const token=jwt.sign({...user,identity_verified:true,auth_method:session?"clerk":"password"},secret,{algorithm:"HS256",issuer:"9jobs-backend",audience:"9jobs-api",expiresIn:"1h"});
