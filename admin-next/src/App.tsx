@@ -242,8 +242,7 @@ async function syncLocalSuccessStoriesToBackend(
 
   const syncedStories: any[] = [];
   for (const story of stories) {
-    const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
-        const response = await fetch(`${BACKEND_URL}/api/${officeMode?'office-admin':'admin'}/success-stories`, {
+    const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2089,8 +2088,7 @@ export default function App() {
           throw new Error("Admin auth token missing. Please sign in again.");
         }
 
-        const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
-        const response = await fetch(`${BACKEND_URL}/api/${officeMode?'office-admin':'admin'}/success-stories`, {
+        const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -2909,8 +2907,7 @@ export default function App() {
           throw new Error("Admin auth token missing. Please sign in again.");
         }
 
-        const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
-        const response = await fetch(`${BACKEND_URL}/api/${officeMode?'office-admin':'admin'}/success-stories`, {
+        const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

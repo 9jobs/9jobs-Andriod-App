@@ -135,6 +135,8 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
       else if(table==='jobs')conditions.push(`exists(select 1 from public.applications sa where sa.job_id=t.id and sa.user_id=any(${bind(scopedUsers)}::text[]))`);
       else return fail(403,"FORBIDDEN","No client ownership mapping");
     }
+    // Hidden stories are management drafts, never client-visible catalogue data.
+    if (!admin && table === "success_stories") conditions.push('t.is_active=true');
     const where = conditions.length ? " where " + conditions.join(" and ") : "";
     const prefer = request.headers.get("prefer") || "";
     const selection = url.searchParams.get("select") || "*";

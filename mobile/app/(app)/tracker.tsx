@@ -1509,10 +1509,12 @@ const styles = StyleSheet.create({
   },
   tapHint: {
     ...typography.label,
-    color: colors.accent,
+    color: "#426B0B",
     marginTop: 6,
-    fontSize: 10,
-   fontFamily: "Inter_400Regular" },
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: "Inter_500Medium",
+  },
   time: {
     ...typography.label,
     color: colors.mutedText,

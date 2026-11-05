@@ -40,6 +40,9 @@ async function cycle(db){
  const result=await publishAutomaticCandidates(plans,sample.sourceValidation.digest,held,db,sample.sourceValidation.confirmedAt);
  return {...result,state:result.held.length?'review_pending':'healthy',linkedClients:links.length};
 }
+async function acquireWorkerLease(client){
+ return (await client.query('select pg_try_advisory_lock(91035,68) locked')).rows[0].locked;
+}
 async function main(){
  const state=JSON.parse(fs.readFileSync(path.join(root,'.work/super-admin-local/runtime.json')));
  assert.match(state.database,/^9jobs_local_e2e_sa_[a-f0-9]{12}$/);
@@ -51,12 +54,13 @@ async function main(){
  const actual=(await db.query('select current_database() name,host(inet_server_addr()) host,inet_server_port() port')).rows[0];assert.deepEqual(actual,{name:state.database,host:'127.0.0.1',port:55439});
  const snapshot=await backup(state.database);assert.ok(snapshot.verified);console.log('Management sync: recoverable local backup verified.');
  await require('../src/services/automaticSheetSync').initializeAutomaticSync(db);
- const lease=await db.connect();const locked=(await lease.query('select pg_try_advisory_lock(91035,67) locked')).rows[0].locked;
+ // Worker lifetime lock must not collide with login/client-association transactions (91035,67).
+ const lease=await db.connect();const locked=await acquireWorkerLease(lease);
  if(!locked){lease.release();await db.end();console.log('Management sync worker already running.');return;}
  let stopping=false,timer;
  const statusFile=path.join(root,'.work/super-admin-local/sheet-sync-status.json');
  const status=value=>{const record={...value,database:state.database,at:new Date().toISOString(),readOnlyGoogle:true};fs.writeFileSync(statusFile,JSON.stringify(record,null,2));console.log(JSON.stringify(record));};
- const stop=async()=>{stopping=true;clearTimeout(timer);await lease.query('select pg_advisory_unlock(91035,67)').catch(()=>{});lease.release();await db.end();};
+ const stop=async()=>{stopping=true;clearTimeout(timer);await lease.query('select pg_advisory_unlock(91035,68)').catch(()=>{});lease.release();await db.end();};
  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>void stop());
  const prior=(await db.query('select last_success_at from sheet_sync.automation_status where source_id=$1',[DUPLICATE_SPREADSHEET_ID])).rows[0];
  let due=process.argv.includes('--watch')&&prior?.last_success_at?new Date(prior.last_success_at).getTime()+900000:0;
@@ -74,5 +78,5 @@ async function main(){
  }
  await tick();
 }
-module.exports={selectLinkedCandidates};
+module.exports={selectLinkedCandidates,acquireWorkerLease};
 if(require.main===module)main().catch(()=>{console.error('Management sheet sync stopped safely; no cloud/Sheet writes or production fallback.');process.exitCode=1;});

@@ -22,6 +22,10 @@ export async function authorizeOfficeRequest(req:Request,principal:ManagedPrinci
  const path=req.originalUrl.split('?')[0],read=['GET','HEAD'].includes(req.method);
  if(path==='/api/database/query'||path==='/api/office-admin/access')return;
  if(path==='/api/office-admin/success-stories'&&read)return;
+ // Active Office Admins manage the shared stories, as approved by the owner.
+ if((path==='/api/admin/success-stories'&&(read||req.method==='POST')) ||
+    (path==='/api/admin/success-stories/photo'&&req.method==='POST') ||
+    (/^\/api\/admin\/success-stories\/[^/]+$/.test(path)&&req.method==='DELETE'))return;
  if(!path.startsWith('/api/admin/'))throw Error('Office Admin cannot use client or owner APIs');
  if(path==='/api/admin/dashboard'&&read)return;
  // This existing handler reads resume_scores through the client-scoped data adapter.

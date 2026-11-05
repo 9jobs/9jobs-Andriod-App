@@ -118,19 +118,34 @@ test('isolated owner / two employees: management, HTTP, sockets, revocation and 
   assert.equal((await request('/admin/tracker/client-data?clientId=fixture-client-a',a)).status,403);
  });
  await t.test('permission denial is distinct from expired authentication and scoped resume reads remain available',async()=>{
-  const denied=await request('/admin/success-stories',b);assert.equal(denied.status,403);const body=await denied.json();assert.equal(body.code,'OFFICE_ACCESS_DENIED');assert.ok(!/expired token/i.test(body.error));
+  const denied=await request('/admin/notifications',b);assert.equal(denied.status,403);const body=await denied.json();assert.equal(body.code,'OFFICE_ACCESS_DENIED');assert.ok(!/expired token/i.test(body.error));
   await db.query("insert into resume_scores(user_id,score) values('fixture-client-a',71),('fixture-client-b',83)");
   const resume=await good('/admin/resume-scores',b);assert.deepEqual(resume.resumeScores.map(row=>row.user_id),['fixture-client-b']);assert.equal(resume.resumeScores[0].score,83);
   assert.equal((await good('/admin/resume-scores',owner)).resumeScores.length,2);
   assert.equal((await request('/admin/resume-scores','invalid-token')).status,401);
  });
- await t.test('employee reads published success stories but cannot read drafts or mutate stories',async()=>{
+ await t.test('active employees manage stories while client users only read published stories',async()=>{
   await db.query("insert into success_stories(id,name,position,year,message,is_active) values('fixture-public-story','Published','Role','2026','Published message',true),('fixture-hidden-story','Draft','Role','2026','Private draft',false)");
-  const result=await good('/office-admin/success-stories',b);assert.equal(result.readOnly,true);assert.deepEqual(result.stories.map(story=>story.id),['fixture-public-story']);
-  assert.equal((await request('/admin/success-stories',b,'POST',{story:{id:'fixture-public-story',message:'Changed'}})).status,403);
-  assert.equal((await request('/admin/success-stories/fixture-public-story',b,'DELETE')).status,403);
+  const result=await good('/office-admin/success-stories',b);assert.equal(result.readOnly,false);assert.equal(result.stories.length,2);
+  const story={id:'fixture-crud-story',name:'Test Story',position:'Engineer',year:'2026',message:'Created',story_rate:5,display_order:7,is_active:true,photo_url:''};
+  assert.equal((await good('/admin/success-stories',b,'POST',{story})).story.name,story.name);
+  assert.equal((await good('/admin/success-stories',b,'POST',{story:{...story,message:'Updated',is_active:false}})).story.message,'Updated');
+  assert.equal((await good('/admin/success-stories',b)).stories.find(x=>x.id===story.id).is_active,false);
+  const client=jwt.sign({userId:'fixture-client-b',role:'client',email:accounts['fixture-client-b'],identity_verified:true},process.env.JWT_SECRET,{issuer:'9jobs-backend',audience:'9jobs-api',expiresIn:'5m'});
+  assert.equal((await request('/admin/success-stories',client,'POST',{story})).status,403);
+  assert.equal((await request('/admin/success-stories/'+story.id,client,'DELETE')).status,403);
+  const visible=await query(client,'success_stories');assert.equal(visible.status,200);assert.deepEqual((await visible.json()).map(x=>x.id),['fixture-public-story']);
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=','base64');
+  const uploaded=await fetch(origin+'/api/admin/success-stories/photo',{method:'POST',headers:{Authorization:'Bearer '+b,'Content-Type':'image/png','x-file-name':'fixture.png','x-file-type':'image/png'},body:png});
+  assert.equal(uploaded.status,200);const photo=(await uploaded.json()).url;assert.ok(photo.startsWith('data:image/png;base64,'));
+  await good('/admin/success-stories',b,'POST',{story:{...story,photo_url:photo}});
+  assert.equal((await query(client,'success_stories').then(r=>r.json())).some(x=>x.id===story.id),true);
+  assert.equal((await good('/admin/success-stories/'+story.id,b,'DELETE')).success,true);
+  assert.equal((await db.query('select count(*)::int n from success_stories')).rows[0].n,2);
   assert.equal((await request('/office-admin/success-stories','invalid-token')).status,401);
-  assert.equal((await db.query("select count(*)::int n from success_stories")).rows[0].n,2);
+  await good('/super-admin/admins/'+adminB.id+'/disable',owner,'POST');
+  assert.equal((await request('/admin/success-stories',b,'POST',{story})).status,401);
+  await good('/super-admin/admins/'+adminB.id+'/activate',owner,'POST');
  });
  await t.test('disabled and revoked employees cannot reuse stale tokens or raw Clerk sessions',async()=>{await good('/super-admin/admins/'+adminA.id+'/disable',owner,'POST');assert.equal((await query(a,'profiles')).status,401);assert.equal((await request('/office-admin/session',clerkToken('fixture-a'),'POST')).status,403);await good('/super-admin/admins/'+adminA.id+'/activate',owner,'POST');await good('/super-admin/admins/'+adminA.id+'/revoke',owner,'POST');assert.equal((await query(a,'profiles')).status,401);});
  await t.test('revoked Clerk sessions are rejected independently of local grants',async()=>{banned=true;assert.equal((await request('/super-admin/clients',owner)).status,403);banned=false;});

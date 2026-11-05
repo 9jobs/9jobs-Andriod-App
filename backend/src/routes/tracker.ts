@@ -4144,6 +4144,13 @@ router.post(
     }
 
     try {
+      if (process.env.LOCAL_DATABASE_MODE === "isolated-e2e") {
+        // Keep local story images with the story; never write to cloud storage.
+        if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType) || body.length > 2 * 1024 * 1024) {
+          return res.status(400).json({ error: "Use a JPG, PNG or WebP photo up to 2 MB." });
+        }
+        return res.json({ success: true, url: `data:${mimeType};base64,${body.toString("base64")}` });
+      }
       await ensurePublicAssetBucket();
       const safeName = sanitizeAttachmentName(fileName);
       const storagePath = `success-stories/${Date.now()}-${safeName}`;
@@ -4803,7 +4810,7 @@ router.get("/mobile/snapshot", authMiddleware, async (req: AuthenticatedRequest,
       messages: messagesResult.data ?? [],
       services: servicesResult.data ?? [],
       pricingPlans: plansResult.data ?? [],
-      successStories: successStoriesResult.data ?? [],
+      successStories: (successStoriesResult.data ?? []).filter((story: any) => story.is_active === true),
       subscription: subscriptionResult.data,
       resumeScore: resumeScoreResult.data,
       systemSettings: systemSettingsResult.data,
