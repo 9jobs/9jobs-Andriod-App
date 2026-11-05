@@ -77,6 +77,26 @@ test('isolated owner / two employees: management, HTTP, sockets, revocation and 
  await assign(adminB,[{clientId:clientB.id,actions:['client.view','applications.view','applications.update']}]);
  const query=(token,table,method='GET',body,filter='')=>request('/database/query',token,'POST',{table,method,body,query:filter,prefer:'return=representation,count=exact'});
  await t.test('multiple assignments, lists/search/counts/nested rows scope before pagination',async()=>{const r=await query(a,'applications','GET',undefined,'select=*,profiles(*),jobs(*)&order=id.asc&limit=1');assert.equal(r.status,200);assert.equal(r.headers.get('content-range'),'0-0/1');const rows=await r.json();assert.equal(rows.length,1);assert.equal(rows[0].user_id,'fixture-client-a');assert.equal(rows[0].profiles.email,accounts['fixture-client-a']);assert.equal((await (await query(b,'applications')).json())[0].user_id,'fixture-client-b');assert.equal((await (await query(a,'applications','GET',undefined,'user_id=eq.fixture-client-b')).json()).length,0);});
+ await t.test('saved flag is visible in the assigned employee saved-jobs list',async()=>{
+  await assign(adminB,[{clientId:clientB.id,actions:['client.view','applications.view','applications.update','client.records.add','client.records.edit','jobs.manage']}]);
+  const previous=(await db.query('select * from applications where id=90002')).rows[0];
+  try{
+   const application={...previous,is_saved:true};
+   const saved=await good('/admin/tracker/applications',b,'POST',{application});assert.equal(saved.success,true);
+   const list=await good('/admin/tracker/saved-jobs',b);assert.equal(list.entries.length,1);assert.equal(list.entries[0].user_id,'fixture-client-b');assert.equal(list.entries[0].is_saved,true);
+   assert.equal((await good('/admin/tracker/saved-jobs',a)).entries.some(row=>row.user_id==='fixture-client-b'),false);
+   const newJob={id:'fixture-new-saved-job',title:'Saved role',company:'Fixture Company',location:'Local',salary:'Not disclosed',job_type:'Full-time',description:'Fixture only'};
+   try{
+    const added=await good('/admin/tracker/applications',b,'POST',{application:{...previous,id:undefined,job_id:newJob.id,status:'saved',current_stage:'saved',is_saved:true,is_active:false,applied_at:null},job:newJob});
+    assert.equal(added.application.is_saved,true);assert.equal(added.application.applied_at,null);
+    assert.equal((await good('/admin/tracker/saved-jobs',b)).entries.some(row=>row.job_id===newJob.id),true);
+    const client=jwt.sign({userId:'fixture-client-b',role:'client',identity_verified:true},process.env.JWT_SECRET,{issuer:'9jobs-backend',audience:'9jobs-api',expiresIn:'5m'});
+    assert.equal((await query(client,'saved_jobs').then(r=>r.json())).some(row=>row.job_id===newJob.id),true);
+    assert.equal((await request('/admin/tracker/applications',a,'POST',{application:{...previous,is_saved:true}})).ok,false);
+   }finally{await db.query("delete from saved_jobs where job_id='fixture-new-saved-job'");await db.query("delete from applications where job_id='fixture-new-saved-job'");await db.query("delete from jobs where id='fixture-new-saved-job'");}
+
+  }finally{await db.query('delete from saved_jobs where user_id=$1 and job_id=$2',[previous.user_id,previous.job_id]);await db.query('update applications set is_saved=$2 where id=$1',[previous.id,previous.is_saved]);await assign(adminB,[{clientId:clientB.id,actions:['client.view','applications.view','applications.update']}]);}
+ });
  await t.test('view-only cannot edit; permitted employee can update only assigned client',async()=>{assert.equal((await query(a,'applications','PATCH',{status:'applied'},'id=eq.90001')).status,403);assert.equal((await query(b,'applications','PATCH',{status:'applied'},'id=eq.90001')).status,403);assert.equal((await query(b,'applications','PATCH',{status:'applied'},'id=eq.90002')).status,200);assert.equal((await query(b,'profiles','PATCH',{role:'admin'},'id=eq.fixture-client-b')).status,403);assert.equal((await request('/mobile/profile',b,'POST',{profile:{id:'fixture-client-a'}})).status,403);});
  await t.test('employee cannot mutate shared jobs, accounts, source mapping or embedded billing access',async()=>{assert.equal((await request('/admin/client-email-associations',clerkToken('fixture-a'),'POST',{})).status,403);assert.equal((await request('/admin/tracker/jobs',a,'POST',{})).status,403);assert.equal((await request('/admin/personal-info/fixture-client-a',a,'DELETE')).status,403);assert.equal((await query(a,'admins')).status,403);});
  await t.test('existing admin dashboard and application pages retain response contracts with scoped results',async()=>{

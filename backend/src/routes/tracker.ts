@@ -1,4 +1,5 @@
 import { officePrincipal } from "../superAdmin/permissions";
+import { saveOfficeRole } from "../superAdmin/savedRole";
 import express, { Router, Response } from "express";
 import { Pool } from "pg";
 import { createDatabasePool, isNeonDatabase } from "../lib/database";
@@ -2277,6 +2278,10 @@ router.post("/admin/tracker/applications", authMiddleware, async (req: Authentic
 
   try {
     const normalizedJob = normalizeJobPayload(job);
+    const office = officePrincipal();
+    if (office && normalizedApplication.is_saved) {
+      return res.json(await saveOfficeRole(office, normalizedApplication, normalizedJob, application.id));
+    }
     const normalizedProfile = buildProfilePayload(application);
     let previousApplication: any = null;
     const performedBy = req.user?.email || req.user?.userId || "admin";

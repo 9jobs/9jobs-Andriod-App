@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { previewAdminCredentials, requestClerkAdminToken, requestAdminPasswordToken } from "./lib/adminAuth";
 import { calculateTrackerMetrics } from "./lib/trackerMetrics";
+import { jobSaveState } from "./lib/jobSaveState";
+import { paginateTrackerRows } from "./lib/trackerList";
 import { hasSuperAdminAccess, superAdminLoginUrl } from "./lib/superAdminEntry";
 import { resolveLocalAdminLoginRedirect } from "./lib/localAdminLogin";
 import { RobotWelcome } from "./components/RobotWelcome";
@@ -912,6 +914,13 @@ export default function App() {
   const [userPageSize, setUserPageSize] = useState(25);
   const [applicationPage, setApplicationPage] = useState(1);
   const [applicationPageSize, setApplicationPageSize] = useState(25);
+  const [hiringManagerSearch, setHiringManagerSearch] = useState("");
+  const [hiringManagerPage, setHiringManagerPage] = useState(1);
+  const [hiringManagerPageSize, setHiringManagerPageSize] = useState(25);
+  useEffect(() => {
+    setHiringManagerPage(1);
+    setHiringManagerSearch("");
+  }, [selectedTrackerClientId]);
   const [opportunityTotal, setOpportunityTotal] = useState(0);
   const [opportunitiesLoading, setOpportunitiesLoading] = useState(false);
   const [opportunitiesLoadError, setOpportunitiesLoadError] = useState("");
@@ -924,6 +933,11 @@ export default function App() {
   const sheetJobsRequestRef = useRef(0);
   const [filterType, setFilterType] = useState("all");
   const [trackerMetricFilter, setTrackerMetricFilter] = useState("all");
+  const [trackerListSearch, setTrackerListSearch] = useState("");
+  const [trackerListPage, setTrackerListPage] = useState(1);
+  const [trackerListPageSize, setTrackerListPageSize] = useState(25);
+  useEffect(() => { setTrackerListSearch(""); setTrackerListPage(1); }, [selectedTrackerClientId, trackerSection]);
+  useEffect(() => { setTrackerListPage(1); }, [trackerListSearch, trackerListPageSize, searchQuery, filterType, trackerMetricFilter]);
 
   // Chat state
   const [activeChatUser, setActiveChatUser] = useState<any>(null);
@@ -2736,6 +2750,9 @@ export default function App() {
   const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (activeTab === "saved_jobs" && !jobForm.user_id) {
+        throw new Error("Select a candidate to save this job.");
+      }
       const jobId = editItem?.id || jobForm.id || "job_" + Math.random().toString(36).substring(2, 10);
       const applicationId = jobForm.application_id ? Number(jobForm.application_id) : null;
       const payload = {
@@ -2759,29 +2776,17 @@ export default function App() {
             (entry.user_id === jobForm.user_id && entry.job_id === jobId)
           );
         });
-        const existingStatus = String(existingSavedJob?.status || "").trim().toLowerCase();
-        const trackerStatus = existingStatus && existingStatus !== "saved" ? existingSavedJob.status : "applied";
-        const trackerStage =
-          String(existingSavedJob?.current_stage || "").trim() && String(existingSavedJob?.current_stage || "").trim().toLowerCase() !== "saved"
-            ? existingSavedJob.current_stage
-            : trackerStatus;
         const trackerPayload = {
           ...(applicationId ? { id: applicationId } : {}),
           user_id: jobForm.user_id,
           client_id: jobForm.user_id,
           job_id: jobId,
-          status: trackerStatus,
-          current_stage: trackerStage,
-          is_saved: false,
-          is_active: !["hired", "rejected", "withdrawn", "closed"].includes(trackerStatus),
+          ...jobSaveState(activeTab === "saved_jobs", existingSavedJob,
+            jobForm.applied_at || existingSavedJob?.applied_at),
           application_date:
             jobForm.application_date ||
             existingSavedJob?.application_date ||
             existingSavedJob?.created_at ||
-            new Date().toISOString(),
-          applied_at:
-            jobForm.applied_at ||
-            existingSavedJob?.applied_at ||
             new Date().toISOString(),
           company_name: payload.company,
           job_title: payload.title,
@@ -4684,6 +4689,15 @@ export default function App() {
     return matchesSearch && u.subscription_plan === filterType;
   });
   const filteredClientInformation = filteredUsers.filter((user) => Boolean(user.questionnaire));
+  const hiringManagerQuery = hiringManagerSearch.trim().toLowerCase();
+  const filteredHiringManagers = trackerContacts.filter(item =>
+    [item.recruiter_name, item.email, item.company_name, item.response_status, item.linkedin_url]
+      .some(value => String(value || "").toLowerCase().includes(hiringManagerQuery)));
+  const hiringManagerPages = Math.max(1, Math.ceil(filteredHiringManagers.length / hiringManagerPageSize));
+  const currentHiringManagerPage = Math.min(hiringManagerPage, hiringManagerPages);
+  const hiringManagerOffset = (currentHiringManagerPage - 1) * hiringManagerPageSize;
+  const visibleHiringManagers = filteredHiringManagers.slice(hiringManagerOffset, hiringManagerOffset + hiringManagerPageSize);
+
   const userPages = Math.max(1, Math.ceil(filteredUsers.length / userPageSize));
   const currentUserPage = Math.min(userPage, userPages);
   const userOffset = (currentUserPage - 1) * userPageSize;
@@ -4825,6 +4839,11 @@ export default function App() {
   const currentApplicationPage = Math.min(applicationPage, applicationPages);
   const applicationOffset = (currentApplicationPage - 1) * applicationPageSize;
   const visibleApplications = filteredApplications.slice(applicationOffset, applicationOffset + applicationPageSize);
+  const trackerListSource: Record<string, any[]> = {
+    applications: filteredApplications, interviews: trackerInterviews, follow_ups: trackerFollowUps,
+    cold_emails: trackerColdEmails, scores: trackerScores, activity: trackerActivities,
+  };
+  const trackerList = paginateTrackerRows(trackerListSource[trackerSection] || [], trackerListSearch, trackerListPage, trackerListPageSize);
 
   const filteredSavedJobs = savedJobEntries.filter((application) => {
     const query = searchQuery.toLowerCase();
@@ -6162,6 +6181,17 @@ export default function App() {
                 ))}
               </div>
 
+              {!["overview","contacts","applications"].includes(trackerSection) && <>
+                <div className="controls-row"><div className="search-input-wrapper"><Search size={18}/>
+                  <input type="search" className="form-input search-input" aria-label="Search tracker records" placeholder="Search records..." value={trackerListSearch} onChange={event=>{setTrackerListSearch(event.target.value);setTrackerListPage(1);}}/>
+                </div></div>
+              <div className="opportunity-page-size">
+                <label htmlFor="tracker-list-page-size">Show</label>
+                <select id="tracker-list-page-size" className="form-input" value={trackerListPageSize} onChange={event=>{setTrackerListPageSize(Number(event.target.value));setTrackerListPage(1);}}>
+                  {[25,50,75,100].map(size=><option key={size} value={size}>{size}</option>)}
+                </select><span>entries</span>
+              </div>
+              </>}
               {trackerSection === "overview" && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px" }}>
                   <div style={{ border: "1px solid var(--border-color)", borderRadius: "16px", padding: "18px" }}>
@@ -6205,11 +6235,17 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="opportunity-page-size">
+                <label htmlFor="tracker-list-page-size">Show</label>
+                <select id="tracker-list-page-size" className="form-input" value={trackerListPageSize} onChange={event=>{setTrackerListPageSize(Number(event.target.value));setTrackerListPage(1);}}>
+                  {[25,50,75,100].map(size=><option key={size} value={size}>{size}</option>)}
+                </select><span>entries</span>
+              </div>
               <div className="table-responsive tracker-applications-table-wrap">
                 <table className="table tracker-applications-table">
                   <thead>
                     <tr>
-                      <th>Candidate</th>
+                      <th>S. No.</th><th>Candidate</th>
                       <th>Job Title</th>
                       <th>Company</th>
                       <th>Location</th>
@@ -6230,8 +6266,9 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredApplications.map((a) => (
+                    {trackerList.rows.map((a, index) => (
                       <tr key={a.id}>
+                        <td>{trackerList.offset + index + 1}</td>
                         <td>
                           <strong>{selectedTrackerClient?.full_name || a.profiles?.full_name}</strong>
                           <br />
@@ -6279,8 +6316,8 @@ export default function App() {
                         </RowActionsMenu></td>
                       </tr>
                     ))}
-                    {filteredApplications.length === 0 && (
-                      <tr><td colSpan={18} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No tracker records found.</td></tr>
+                    {trackerList.total === 0 && (
+                      <tr><td colSpan={19} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No tracker records found.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -6297,10 +6334,11 @@ export default function App() {
                 </div>
                 <div className="table-responsive">
                   <table className="table">
-                    <thead><tr><th>Type</th><th>Round</th><th>Date</th><th>Status</th><th>Interviewer</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>S. No.</th><th>Type</th><th>Round</th><th>Date</th><th>Status</th><th>Interviewer</th><th>Actions</th></tr></thead>
                     <tbody>
-                      {trackerInterviews.map((item) => (
+                      {trackerList.rows.map((item, index) => (
                         <tr key={item.id}>
+                          <td>{trackerList.offset + index + 1}</td>
                           <td>{item.interview_type}</td>
                           <td>{item.interview_round || "—"}</td>
                           <td>{new Date(item.interview_date).toLocaleString()}</td>
@@ -6309,7 +6347,7 @@ export default function App() {
                           <td><RowActionsMenu><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("interview", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("interviews", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
-                      {trackerInterviews.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No interviews logged.</td></tr>}
+                      {trackerList.total === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No interviews logged.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -6326,7 +6364,7 @@ export default function App() {
                 </div>
                 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "20px" }}>
-                  {trackerFollowUps.map((item) => {
+                  {trackerList.rows.map((item, index) => {
                     let notesText = item.notes || "";
                     let interviewType = "";
                     let company = "";
@@ -6371,6 +6409,7 @@ export default function App() {
                         }}
                       >
                         <div>
+                          <div style={{fontSize:"12px",color:"var(--text-secondary)",marginBottom:"8px"}}>S. No. {trackerList.offset + index + 1}</div>
                           {/* Card Header */}
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px", gap: "10px" }}>
                             <div style={{ fontWeight: 600, fontSize: "16px", color: "var(--text-primary)", wordBreak: "break-all" }}>
@@ -6493,7 +6532,7 @@ export default function App() {
                   })}
                 </div>
 
-                {trackerFollowUps.length === 0 && (
+                {trackerList.total === 0 && (
                   <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "40px", border: "1px dashed var(--border-color)", borderRadius: "16px", marginTop: "10px" }}>
                     No follow-ups or reminders logged.
                   </div>
@@ -6524,12 +6563,29 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+            <div className="controls-row">
+              <div className="search-input-wrapper">
+                <Search size={18} />
+                <input type="search" className="form-input search-input" aria-label="Search hiring managers"
+                  placeholder="Search hiring managers by name, email, or position..." value={hiringManagerSearch}
+                  onChange={event => { setHiringManagerSearch(event.target.value); setHiringManagerPage(1); }} />
+              </div>
+            </div>
+            <div className="opportunity-page-size">
+              <label htmlFor="tracker-hiring-manager-page-size">Show</label>
+              <select id="tracker-hiring-manager-page-size" className="form-input" value={hiringManagerPageSize}
+                onChange={event => { setHiringManagerPageSize(Number(event.target.value)); setHiringManagerPage(1); }}>
+                {[25, 50, 75, 100].map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+              <span>entries</span>
+            </div>
                 <div className="table-responsive">
                   <table className="table">
-                    <thead><tr><th>Name</th><th>Email</th><th>Position</th><th>Response</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>S. No.</th><th>Name</th><th>Email</th><th>Position</th><th>Response</th><th>Actions</th></tr></thead>
                     <tbody>
-                      {trackerContacts.map((item) => (
+                      {visibleHiringManagers.map((item, index) => (
                         <tr key={item.id}>
+                          <td>{hiringManagerOffset + index + 1}</td>
                           <td>{item.recruiter_name || "—"}</td>
                           <td>{item.email || "—"}</td>
                           <td>{item.company_name || "—"}</td>
@@ -6537,20 +6593,29 @@ export default function App() {
                           <td><RowActionsMenu><div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>{item.linkedin_url ? <a className="btn btn-dark" style={{ padding: "6px 10px" }} href={item.linkedin_url} target="_blank" rel="noreferrer">View Profile</a> : <button className="btn btn-dark" style={{ padding: "6px 10px" }} onClick={() => openEditModal("contact", item)}>Add Profile</button>}<button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("contact", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("recruiter_contacts", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
-                      {trackerContacts.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No hiring managers added yet. Select a client, then add Name, Email, Position and LinkedIn profile.</td></tr>}
+                      {filteredHiringManagers.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No hiring managers added yet. Select a client, then add Name, Email, Position and LinkedIn profile.</td></tr>}
                     </tbody>
                   </table>
                 </div>
+            <div className="opportunity-pagination" aria-label="Tracker hiring managers pagination">
+              <span>{filteredHiringManagers.length ? hiringManagerOffset + 1 : 0}–{Math.min(hiringManagerOffset + hiringManagerPageSize, filteredHiringManagers.length)} of {filteredHiringManagers.length} entries</span>
+              <div className="opportunity-pagination-buttons">
+                <button type="button" className="btn btn-secondary" disabled={currentHiringManagerPage <= 1} onClick={() => setHiringManagerPage(currentHiringManagerPage - 1)}>Previous</button>
+                <span>Page {currentHiringManagerPage} of {hiringManagerPages}</span>
+                <button type="button" className="btn btn-secondary" disabled={currentHiringManagerPage >= hiringManagerPages} onClick={() => setHiringManagerPage(currentHiringManagerPage + 1)}>Next</button>
+              </div>
+            </div>
                 </>
               )}
 
               {trackerSection === "cold_emails" && (
                 <div className="table-responsive">
                   <table className="table">
-                    <thead><tr><th>Recipient</th><th>Company</th><th>Subject</th><th>Sent At</th><th>Delivery</th><th>Response</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>S. No.</th><th>Recipient</th><th>Company</th><th>Subject</th><th>Sent At</th><th>Delivery</th><th>Response</th><th>Actions</th></tr></thead>
                     <tbody>
-                      {trackerColdEmails.map((item) => (
+                      {trackerList.rows.map((item, index) => (
                         <tr key={item.id}>
+                          <td>{trackerList.offset + index + 1}</td>
                           <td>{item.recipient_name || item.recipient_email}</td>
                           <td>{item.company_name || "—"}</td>
                           <td>{item.subject}</td>
@@ -6560,7 +6625,7 @@ export default function App() {
                           <td><RowActionsMenu><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("cold_email", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("cold_emails", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
-                      {trackerColdEmails.length === 0 && <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No cold emails logged.</td></tr>}
+                      {trackerList.total === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No cold emails logged.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -6569,10 +6634,11 @@ export default function App() {
               {trackerSection === "scores" && (
                 <div className="table-responsive">
                   <table className="table">
-                    <thead><tr><th>ATS Score</th><th>AI Match</th><th>Reason</th><th>Calculated At</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>S. No.</th><th>ATS Score</th><th>AI Match</th><th>Reason</th><th>Calculated At</th><th>Actions</th></tr></thead>
                     <tbody>
-                      {trackerScores.map((item) => (
+                      {trackerList.rows.map((item, index) => (
                         <tr key={item.id}>
+                          <td>{trackerList.offset + index + 1}</td>
                           <td><strong>{item.ats_score ?? 0}/100</strong></td>
                           <td><strong>{item.ai_match_score ?? 0}%</strong></td>
                           <td>{item.score_reason || "—"}</td>
@@ -6580,7 +6646,7 @@ export default function App() {
                           <td><RowActionsMenu><div style={{ display: "flex", gap: "8px" }}><button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("score", item)}><Edit size={14} /></button><button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("client_scores", String(item.id))}><Trash2 size={14} /></button></div></RowActionsMenu></td>
                         </tr>
                       ))}
-                      {trackerScores.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No score history available.</td></tr>}
+                      {trackerList.total === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No score history available.</td></tr>}
                     </tbody>
                   </table>
                 </div>
@@ -6589,10 +6655,11 @@ export default function App() {
               {trackerSection === "activity" && (
                 <div className="table-responsive">
                   <table className="table">
-                    <thead><tr><th>When</th><th>Type</th><th>Title</th><th>Description</th><th>By</th></tr></thead>
+                    <thead><tr><th>S. No.</th><th>When</th><th>Type</th><th>Title</th><th>Description</th><th>By</th></tr></thead>
                     <tbody>
-                      {trackerActivities.map((item) => (
+                      {trackerList.rows.map((item, index) => (
                         <tr key={item.id}>
+                          <td>{trackerList.offset + index + 1}</td>
                           <td>{new Date(item.created_at).toLocaleString()}</td>
                           <td>{item.activity_type}</td>
                           <td><strong>{item.title}</strong></td>
@@ -6600,11 +6667,19 @@ export default function App() {
                           <td>{item.performed_by || "admin"}</td>
                         </tr>
                       ))}
-                      {trackerActivities.length === 0 && <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No activity logged yet.</td></tr>}
+                      {trackerList.total === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No activity logged yet.</td></tr>}
                     </tbody>
                   </table>
                 </div>
               )}
+              {!["overview","contacts"].includes(trackerSection) && <div className="opportunity-pagination" aria-label="Tracker records pagination">
+                <span>{trackerList.total ? trackerList.offset+1 : 0}–{trackerList.offset+trackerList.rows.length} of {trackerList.total} entries</span>
+                <div className="opportunity-pagination-buttons">
+                  <button type="button" className="btn btn-secondary" disabled={trackerList.page<=1} onClick={()=>setTrackerListPage(trackerList.page-1)}>Previous</button>
+                  <span>Page {trackerList.page} of {trackerList.pages}</span>
+                  <button type="button" className="btn btn-secondary" disabled={trackerList.page>=trackerList.pages} onClick={()=>setTrackerListPage(trackerList.page+1)}>Next</button>
+                </div>
+              </div>}
             </div>
           </div>
         )}
@@ -6614,7 +6689,7 @@ export default function App() {
             <div className="controls-row" style={{ marginBottom: "20px" }}>
               <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
                 <label className="form-label">Select Client</label>
-                <select className="form-input" value={selectedTrackerClientId} onChange={(e) => setSelectedTrackerClientId(e.target.value)}>
+                <select className="form-input" value={selectedTrackerClientId} onChange={(e) => { setSelectedTrackerClientId(e.target.value); setHiringManagerPage(1); setHiringManagerSearch(""); }}>
                   <option value="">Choose client</option>
                   {users.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
@@ -6646,14 +6721,31 @@ export default function App() {
                 : "Select a client to manage hiring managers and sync them to the mobile app outreach screen."}
             </div>
 
+            <div className="controls-row">
+              <div className="search-input-wrapper">
+                <Search size={18} />
+                <input type="search" className="form-input search-input" aria-label="Search hiring managers"
+                  placeholder="Search hiring managers by name, email, or position..." value={hiringManagerSearch}
+                  onChange={event => { setHiringManagerSearch(event.target.value); setHiringManagerPage(1); }} />
+              </div>
+            </div>
+            <div className="opportunity-page-size">
+              <label htmlFor="hiring-manager-page-size">Show</label>
+              <select id="hiring-manager-page-size" className="form-input" value={hiringManagerPageSize}
+                onChange={event => { setHiringManagerPageSize(Number(event.target.value)); setHiringManagerPage(1); }}>
+                {[25, 50, 75, 100].map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+              <span>entries</span>
+            </div>
             <div className="table-responsive">
               <table className="table">
                 <thead>
-                  <tr><th>Name</th><th>Email</th><th>Position</th><th>Response</th><th>Actions</th></tr>
+                  <tr><th>S. No.</th><th>Name</th><th>Email</th><th>Position</th><th>Response</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                  {trackerContacts.map((item) => (
+                  {visibleHiringManagers.map((item, index) => (
                     <tr key={item.id}>
+                      <td>{hiringManagerOffset + index + 1}</td>
                       <td>{item.recruiter_name || "—"}</td>
                       <td>{item.email || "—"}</td>
                       <td>{item.company_name || "—"}</td>
@@ -6675,11 +6767,19 @@ export default function App() {
                       </RowActionsMenu></td>
                     </tr>
                   ))}
-                  {trackerContacts.length === 0 && (
-                    <tr><td colSpan={5} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>No hiring managers added yet.</td></tr>
+                  {filteredHiringManagers.length === 0 && (
+                    <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--text-muted)", padding: "30px" }}>{hiringManagerQuery ? "No hiring managers match your search." : "No hiring managers added yet."}</td></tr>
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="opportunity-pagination" aria-label="Hiring managers pagination">
+              <span>{filteredHiringManagers.length ? hiringManagerOffset + 1 : 0}–{Math.min(hiringManagerOffset + hiringManagerPageSize, filteredHiringManagers.length)} of {filteredHiringManagers.length} entries</span>
+              <div className="opportunity-pagination-buttons">
+                <button type="button" className="btn btn-secondary" disabled={currentHiringManagerPage <= 1} onClick={() => setHiringManagerPage(currentHiringManagerPage - 1)}>Previous</button>
+                <span>Page {currentHiringManagerPage} of {hiringManagerPages}</span>
+                <button type="button" className="btn btn-secondary" disabled={currentHiringManagerPage >= hiringManagerPages} onClick={() => setHiringManagerPage(currentHiringManagerPage + 1)}>Next</button>
+              </div>
             </div>
           </div>
         )}
@@ -7651,9 +7751,9 @@ export default function App() {
             {modalType === "job" && (
               <form onSubmit={handleSaveJob}>
                 <div className="form-group">
-                  <label className="form-label">Save For Candidate (Optional)</label>
-                  <select className="form-input" value={jobForm.user_id} onChange={(e) => setJobForm({ ...jobForm, user_id: e.target.value })}>
-                    <option value="">General opportunity only</option>
+                  <label className="form-label">{activeTab === "saved_jobs" ? "Save For Candidate" : "Save For Candidate (Optional)"}</label>
+                  <select className="form-input" required={activeTab === "saved_jobs"} value={jobForm.user_id} onChange={(e) => setJobForm({ ...jobForm, user_id: e.target.value })}>
+                    <option value="">{activeTab === "saved_jobs" ? "Select candidate" : "General opportunity only"}</option>
                     {users.map((candidate) => (
                       <option key={candidate.id} value={candidate.id}>
                         {candidate.full_name} ({candidate.email})
