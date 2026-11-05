@@ -1,0 +1,61 @@
+.sa-root { --sa-lime:#a3e635; min-height:100vh; background:#f5f5f5; color:#171717; font-family:Inter,system-ui,sans-serif; padding:28px max(20px,calc((100vw - 1240px)/2)); }
+.sa-root * { box-sizing:border-box; }
+.sa-root button,.sa-root input,.sa-root select { font:inherit; }
+.sa-root button { background:#a3e635; color:#171717; border:1px solid #98cf3d; border-radius:8px; padding:10px 16px; cursor:pointer; font-size:13px; font-weight:650; }
+.sa-root button:disabled { opacity:.5; cursor:wait; }
+.sa-root .sa-secondary { background:white; color:#333; border-color:#ddd; }
+.sa-root a { color:#354b16; text-decoration:none; }
+.sa-root a:hover { text-decoration:underline; }
+.sa-root input:not([type=checkbox]),.sa-root select { width:100%; background:white; color:#171717; border:1px solid #d4d4d4; border-radius:8px; padding:10px 12px; margin:7px 0 14px; }
+.sa-root input[type=checkbox] { width:17px; height:17px; accent-color:#76ad22; }
+.sa-root label { display:block; font-size:12px; font-weight:600; }
+.sa-root :focus-visible { outline:2px solid #79b32b; outline-offset:3px; }
+.sa-header,.sa-title,.sa-buttons { display:flex; gap:10px; align-items:center; justify-content:space-between; }
+.sa-header { margin-bottom:28px; }
+.sa-brand { color:#171717; font-size:25px; font-weight:800; letter-spacing:-1px; }
+.sa-brand > span { color:#5c8c18; }
+.sa-brand small { font-size:9px; letter-spacing:2px; margin-left:12px; color:#737373; }
+.sa-nav { display:flex; gap:6px; margin-bottom:22px; flex-wrap:wrap; }
+.sa-nav a { padding:11px 18px; font-size:13px; font-weight:600; border:1px solid #ddd; border-radius:8px; background:white; }
+.sa-nav a[aria-current=page] { background:#171717; color:white; border-color:#171717; }
+.sa-panel { background:white; border:1px solid #e3e3e3; border-radius:14px; padding:26px; }
+.sa-title { margin-bottom:24px; flex-wrap:wrap; }
+.sa-title h1 { font-size:24px; margin:0; letter-spacing:-.5px; }
+.sa-eyebrow { font-size:9px; letter-spacing:1.8px; color:#747474; margin:0 0 7px; }
+.sa-status { padding:6px 10px; background:#edf6df; color:#446520; border-radius:6px; font-size:9px; letter-spacing:1px; }
+.sa-editor { max-width:540px; padding:18px; background:#fafafa; border:1px solid #eee; border-radius:10px; margin-bottom:18px; }
+.sa-editor h2 { font-size:15px; margin:0 0 17px; }
+.sa-buttons { justify-content:flex-start; flex-wrap:wrap; }
+.sa-buttons button { font-size:11px; padding:6px 10px; text-transform:capitalize; }
+.sa-table-scroll { overflow-x:auto; margin:20px 0; }
+.sa-root table { border-collapse:collapse; width:100%; font-size:12px; }
+.sa-root th { color:#737373; font-size:10px; text-align:left; font-weight:600; background:#fafafa; }
+.sa-root th,.sa-root td { padding:12px 10px; border-bottom:1px solid #ededed; vertical-align:middle; }
+.sa-root td small { display:block; color:#8a8a8a; font-size:9px; margin-top:5px; overflow-wrap:anywhere; }
+.sa-muted { color:#737373; font-size:12px; line-height:1.7; }
+.sa-error { padding:12px; background:#fff1f0; color:#a22626; font-size:12px; border-radius:8px; }
+.sa-notice { padding:12px; background:#eff8e3; color:#43691d; font-size:12px; border-radius:8px; }
+.sa-tag { display:inline-block; padding:4px 7px; background:#f2f2f2; border-radius:5px; font-size:10px; }
+.sa-tag-active { color:#43691d; background:#edf7df; }
+.sa-tag-revoked,.sa-tag-archived { color:#8b4343; background:#fbefef; }
+.sa-login { display:grid; place-items:center; background:#171717; }
+.sa-login-card { width:100%; max-width:420px; padding:34px; background:#fff; border-radius:14px; box-shadow:0 24px 70px #0003; }
+.sa-login-card h1 { font-size:24px; letter-spacing:-.6px; margin:18px 0 10px; }
+.sa-login-card > p { font-size:12px; color:#777; margin-bottom:23px; }
+.sa-login-card button { width:100%; margin:7px 0; }
+.sa-login-card > a { display:block; margin:15px 0; font-size:12px; }
+.sa-login-card > small { color:#888; font-size:10px; line-height:1.7; }
+@media(max-width:640px){.sa-root{padding:20px 14px}.sa-panel{padding:16px}.sa-nav a{padding:9px 11px}.sa-brand small{display:none}.sa-login-card{padding:25px}}
+
+/* Keep staff table alignment isolated from clients and permission tables. */
+.sa-root .sa-admin-table { table-layout:fixed; min-width:1120px; line-height:1.5; }
+.sa-root .sa-admin-table th { white-space:nowrap; padding:13px 12px; }
+.sa-root .sa-admin-table td { vertical-align:top; padding:18px 12px; overflow-wrap:anywhere; }
+.sa-root .sa-admin-table td:first-child { font-weight:600; }
+.sa-root .sa-admin-table td small { margin-top:6px; font-size:10px; line-height:1.5; font-weight:400; }
+.sa-root .sa-admin-table td:nth-child(4) { white-space:nowrap; }
+.sa-root .sa-admin-table td:nth-child(5) > div + div { margin-top:14px; padding-top:12px; border-top:1px solid #ededed; }
+.sa-root .sa-admin-table td:nth-child(6) > a { display:inline-block; margin-top:8px; font-size:11px; line-height:1.5; }
+.sa-root .sa-admin-table .sa-buttons { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:8px; }
+.sa-root .sa-admin-table .sa-buttons button { min-height:30px; padding:6px 8px; line-height:1.35; }
+.sa-root .sa-admin-table .sa-buttons button:last-child:nth-child(odd) { grid-column:1/-1; }

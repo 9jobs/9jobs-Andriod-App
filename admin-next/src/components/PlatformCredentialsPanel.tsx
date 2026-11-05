@@ -12,9 +12,13 @@ export function PlatformCredentialsPanel({backendUrl,getToken}:{backendUrl:strin
   try{
    const token=await tokenGetter.current();if(!token)throw new Error();
    const r=await fetch(`${backendUrl}/api/admin/platform-credentials`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+   if(r.status===403){
+    setRows([]);revealSequence.current++;setRevealed(null);
+    setError("Platform credentials are restricted to authorized owners. Assigned client information is available below.");return;
+   }
    if(!r.ok)throw new Error();
    setRows((await r.json()).submissions);setError("");
-  }catch{setError("Unable to load credentials. A verified administrator login is required.");}
+  }catch{setRows([]);revealSequence.current++;setRevealed(null);setError("Unable to load platform credentials. Please retry or contact your Super Admin.");}
  },[backendUrl]);
  useEffect(()=>{void load();const interval=setInterval(()=>void load(),30000);return()=>{revealSequence.current++;clearInterval(interval);if(timer.current)clearTimeout(timer.current);};},[load]);
  useEffect(()=>{

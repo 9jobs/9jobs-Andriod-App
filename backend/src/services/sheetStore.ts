@@ -1,3 +1,4 @@
+import { allowedUsers } from "../superAdmin/permissions";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { Pool } from "pg";
@@ -173,6 +174,8 @@ export async function readSheetJobs(options: { userId?: string; admin?: boolean;
     params.push(options.userId);
     conditions.push("exists(select 1 from sheet_sync.client_record_owners o join sheet_sync.client_accounts a on a.client_id=o.client_id where o.snapshot_id=m.snapshot_id and o.record_id=m.record_id and a.user_id=$2 and a.revoked_at is null)");
   }
+  const officeUsers=options.admin?await allowedUsers('client.view'):null;
+  if(officeUsers){params.push(officeUsers);conditions.push(`exists(select 1 from sheet_sync.client_record_owners o join sheet_sync.client_accounts a on a.client_id=o.client_id where o.snapshot_id=m.snapshot_id and o.record_id=m.record_id and a.revoked_at is null and a.user_id=any($${params.length}::text[]))`);}
   if (options.query) {
     params.push(`%${options.query.slice(0,200)}%`);
     conditions.push(`(r.candidate_label ilike $${params.length} or r.fields->>3 ilike $${params.length} or r.fields->>4 ilike $${params.length})`);

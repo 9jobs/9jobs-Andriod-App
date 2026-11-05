@@ -1,3 +1,4 @@
+import { installManagedSockets } from "./superAdmin/socketAccess";
 import "./lib/env";
 import http from "http";
 import { Server, Socket } from "socket.io";
@@ -34,6 +35,7 @@ setMessageServiceIo(io);
 
 // Socket.IO authentication middleware
 io.use(socketAuthMiddleware);
+installManagedSockets(io);
 
 // Socket connection handler
 io.on("connection", (socket: Socket) => {
@@ -45,7 +47,7 @@ io.on("connection", (socket: Socket) => {
   socket.join(`user:${userId}`);
 
   // 2. Join admins room if role is admin or staff
-  if (role === "admin" || role === "staff") {
+  if ((role === "admin" || role === "staff") && socket.data.management_kind !== "office") {
     socket.join("admins");
     console.log(`[Socket Server] Admin ${userId} joined room "admins"`);
   }

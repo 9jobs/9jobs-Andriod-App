@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "./lib/supabase";
 import { previewAdminCredentials, requestClerkAdminToken, requestAdminPasswordToken } from "./lib/adminAuth";
 import { calculateTrackerMetrics } from "./lib/trackerMetrics";
+import { hasSuperAdminAccess, superAdminLoginUrl } from "./lib/superAdminEntry";
+import { resolveLocalAdminLoginRedirect } from "./lib/localAdminLogin";
 import { RobotWelcome } from "./components/RobotWelcome";
 import { RowActionsMenu } from "./components/RowActionsMenu";
 import { combineOpportunityPage, matchesOpportunity } from "./lib/opportunityPagination";
@@ -240,7 +242,8 @@ async function syncLocalSuccessStoriesToBackend(
 
   const syncedStories: any[] = [];
   for (const story of stories) {
-    const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+    const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
+        const response = await fetch(`${BACKEND_URL}/api/${officeMode?'office-admin':'admin'}/success-stories`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -812,6 +815,22 @@ export default function App() {
   const [isPreviewAuthenticated, setIsPreviewAuthenticated] = useState(() => {
     return localStorage.getItem("admin_preview_authenticated") === "true";
   });
+  const [showSuperAdminEntry, setShowSuperAdminEntry] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    setShowSuperAdminEntry(false);
+    if (!isAdmin || !userLoaded) return () => controller.abort();
+    // The original password-admin route can only offer a login shortcut; it
+    // never grants Super Admin access. Scoped employees use Clerk sessions.
+    if (!isSignedIn) {
+      setShowSuperAdminEntry(isPreviewAuthenticated && localStorage.getItem("9jobs_office_mode") !== "true");
+      return () => controller.abort();
+    }
+    void hasSuperAdminAccess(() => getClerkToken(), controller.signal).then(allowed => {
+      if (!controller.signal.aborted) setShowSuperAdminEntry(allowed);
+    });
+    return () => controller.abort();
+  }, [isAdmin, userLoaded, isSignedIn, user?.id, isPreviewAuthenticated, getClerkToken]);
   const [emailInput] = useState<string>(previewAdminCredentials.email);
   const [passwordInput, setPasswordInput] = useState<string>(previewAdminCredentials.password);
   const [authError, setAuthError] = useState("");
@@ -844,6 +863,7 @@ export default function App() {
   const [applications, setApplications] = useState<any[]>([]);
   const [savedJobEntries, setSavedJobEntries] = useState<any[]>([]);
   const [successStories, setSuccessStories] = useState<any[]>([]);
+  const [successStoriesReadOnly,setSuccessStoriesReadOnly]=useState(()=>localStorage.getItem('9jobs_office_mode')==='true');
   const [messages, setMessages] = useState<any[]>([]);
   const [editingMessage, setEditingMessage] = useState<any | null>(null);
   const [activeHeaderMenuOpen, setActiveHeaderMenuOpen] = useState(false);
@@ -1300,6 +1320,7 @@ export default function App() {
       setIsPreviewAuthenticated(false);
       setIsAdmin(false);
       setAuthError(err.message || "Failed to verify your existing admin session.");
+      if(localStorage.getItem('9jobs_office_mode')==='true')window.location.replace('/admin/login');
     } finally {
       if(requestId===adminVerificationRequestRef.current){setAuthLoading(false);setIsInitialLoading(false);}
     }
@@ -1310,6 +1331,10 @@ export default function App() {
     setAuthLoading(true);
     setAuthError("");
     try {
+      if(process.env.NODE_ENV==='development'){
+        const destination=await resolveLocalAdminLoginRedirect(BACKEND_URL,localStorage.getItem('9jobs_office_mode')==='true');
+        if(destination){window.location.assign(destination);return;}
+      }
       if (emailInput.trim().toLowerCase() !== previewAdminCredentials.email) throw new Error("Only the approved 9Jobs admin email can sign in.");
       // Clear a stale or different account before checking the entered credentials.
       if (clerk.session) await clerk.signOut();
@@ -1382,6 +1407,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
+    localStorage.removeItem('9jobs_office_mode');
     localStorage.removeItem("admin_auth_token");
     localStorage.removeItem("admin_preview_authenticated");
     if (isPreviewAuthenticated) {
@@ -1393,6 +1420,7 @@ export default function App() {
 
     await clerkSignOut();
     setIsAdmin(false);
+    if(officeMode)window.location.assign('/admin/login');
   };
 
 
@@ -1534,6 +1562,8 @@ export default function App() {
     setSchemaWarning("");
 
     try {
+      // Renew the shared backend token before parallel/direct data reads.
+      if(!await ensureAdminToken())throw new Error("Your admin session could not be renewed. Please sign in again.");
       switch (activeTab) {
         case "dashboard":
           await Promise.all([fetchDashboardStats(), fetchJobs(), fetchServices()]);
@@ -2059,7 +2089,8 @@ export default function App() {
           throw new Error("Admin auth token missing. Please sign in again.");
         }
 
-        const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+        const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
+        const response = await fetch(`${BACKEND_URL}/api/${officeMode?'office-admin':'admin'}/success-stories`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -2072,6 +2103,8 @@ export default function App() {
 
         const payload = await response.json();
         const backendStories = payload.stories || [];
+        setSuccessStoriesReadOnly(payload.readOnly===true);
+        if(payload.readOnly===true){setSuccessStories(backendStories);return;}
         const localStories = readLocalSuccessStories();
 
         if (localStories.length > 0) {
@@ -2876,7 +2909,8 @@ export default function App() {
           throw new Error("Admin auth token missing. Please sign in again.");
         }
 
-        const response = await fetch(`${BACKEND_URL}/api/admin/success-stories`, {
+        const officeMode=localStorage.getItem('9jobs_office_mode')==='true';
+        const response = await fetch(`${BACKEND_URL}/api/${officeMode?'office-admin':'admin'}/success-stories`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -5006,6 +5040,10 @@ export default function App() {
         </div>
 
         <nav className="sidebar-menu">
+          {showSuperAdminEntry && <a className="sidebar-item" href={superAdminLoginUrl} target="_blank" rel="noopener noreferrer">
+            <Shield size={18} />
+            <span>Super Admin</span>
+          </a>}
           <a className="sidebar-item" onClick={() => void openWebsiteAdmin("dashboard")}>
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
@@ -5289,7 +5327,7 @@ export default function App() {
             {activeTab === "users" && <button className="btn btn-primary" onClick={() => openAddModal("user")}><Plus size={16} /> Add Candidate</button>}
             {activeTab === "jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Opportunity</button>}
             {activeTab === "saved_jobs" && <button className="btn btn-primary" onClick={() => openAddModal("job")}><Plus size={16} /> Add Saved Job</button>}
-            {activeTab === "success_stories" && <button className="btn btn-primary" onClick={() => openAddModal("success_story")}><Plus size={16} /> Add Success Story</button>}
+            {activeTab === "success_stories" && !successStoriesReadOnly && <button className="btn btn-primary" onClick={() => openAddModal("success_story")}><Plus size={16} /> Add Success Story</button>}
             {activeTab === "job_tracker" && <button className="btn btn-primary" onClick={() => openAddModal("tracker")}><Plus size={16} /> Add Tracker Entry</button>}
             {activeTab === "hiring_managers" && <button className="btn btn-primary" onClick={() => openAddModal("contact")} disabled={!selectedTrackerClientId}><Plus size={16} /> Add Hiring Manager</button>}
             {activeTab === "interview_preparation" && (
@@ -5308,7 +5346,7 @@ export default function App() {
 
         {schemaWarning ? (
           <div className="card" style={{ marginBottom: "24px", borderColor: "#F59E0B", backgroundColor: "#FFF8E6" }}>
-            <strong style={{ display: "block", marginBottom: "6px" }}>Live Sync Setup Required</strong>
+            <strong style={{ display: "block", marginBottom: "6px" }}>{/access restricted|permissions do not allow|owner-only/i.test(schemaWarning)?'Access Restricted':/session|sign in|unauthorized|token/i.test(schemaWarning)?'Sign-in Required':'Live Sync Setup Required'}</strong>
             <span style={{ color: "#7C5A10" }}>{schemaWarning}</span>
           </div>
         ) : null}
@@ -5901,12 +5939,12 @@ export default function App() {
                         </span>
                       </td>
                       <td>{story.display_order ?? 0}</td>
-                      <td><RowActionsMenu>
+                      <td>{successStoriesReadOnly?<span style={{color:"var(--text-muted)",fontSize:11}}>View only</span>:<RowActionsMenu>
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button className="btn btn-secondary" style={{ padding: "6px" }} onClick={() => openEditModal("success_story", story)} title="Edit Story"><Edit size={14} /></button>
                           <button className="btn btn-danger" style={{ padding: "6px" }} onClick={() => handleDelete("success_stories", story.id)} title="Delete Story"><Trash2 size={14} /></button>
                         </div>
-                      </RowActionsMenu></td>
+                      </RowActionsMenu>}</td>
                     </tr>
                   ))}
                   {filteredSuccessStories.length === 0 && (

@@ -1,3 +1,4 @@
+import { officePrincipal } from "../superAdmin/permissions";
 import fs from "fs/promises";
 import path from "path";
 import express, { Router, Response } from "express";
@@ -517,7 +518,9 @@ router.get("/admin/questionnaires", authMiddleware, async (req: AuthenticatedReq
   if (!ensureAdmin(req, res)) return;
   try {
     if (usesDatabaseDocuments()) {
-      const rows = await readStoredQuestionnaires();
+      const scoped=officePrincipal()?await supabase.from('candidate_questionnaires').select('*'):null;
+      if(scoped?.error)throw scoped.error;
+      const rows = scoped?scoped.data||[]:await readStoredQuestionnaires();
       const questionnaires = await Promise.all(rows.map(async item => ({ ...item,
         resume_url: await createDownloadUrl(item.resume_path || "", req),
         visa_url: await createDownloadUrl(item.visa_path || "", req),

@@ -1,0 +1,12 @@
+.office-management-login .auth-form-panel h1 { color:#f5f7f0; font-size:31px; line-height:1.2; letter-spacing:-1px; margin:0 0 10px; font-weight:750; }
+.office-management-login form { text-align:left; }
+.office-management-login label { display:block; font-size:11px; color:#c3cdb9; font-weight:500; margin-bottom:19px; }
+.office-management-login input { display:block; box-sizing:border-box; width:100%; min-height:48px; margin-top:8px; border:1px solid #303a27; border-radius:9px; padding:12px 14px; background:#1a2115; color:#edf5e3; font:inherit; font-size:12px; line-height:22px; }
+.office-management-login input:focus { outline:2px solid #9bd330; outline-offset:2px; }
+.office-management-login .auth-password-field input { padding-right:48px; }
+.office-management-login button[type=submit] { width:100%; min-height:48px; margin-top:5px; border:1px solid #c5ff00; border-radius:9px; background:#c5ff00; color:#142000; font-size:13px; font-weight:700; cursor:pointer; }
+.office-management-login .sa-secondary { display:block; width:100%; margin-top:13px; min-height:40px; border:1px solid #36442c; border-radius:9px; background:transparent; color:#adbe9b; font-size:11px; cursor:pointer; }
+.office-management-login .auth-form-panel > a { display:block; margin-top:18px; color:#adbe9b; font-size:11px; }
+.office-management-login .sa-error { margin:12px 0; background:#371d1d; color:#ffb5b5; }
+.office-management-login .sa-notice { margin:12px 0; background:#24331b; color:#c3e5a6; }
+.office-management-login input:-webkit-autofill { -webkit-text-fill-color:#edf5e3; -webkit-box-shadow:0 0 0 1000px #1a2115 inset; }

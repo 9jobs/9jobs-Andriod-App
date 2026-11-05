@@ -22,7 +22,7 @@ export async function POST(request) {
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
   const hostAdmin = readHostAdmin(token);
 
-  if (!token || hostAdmin?.role !== 'admin') {
+  if (!token || hostAdmin?.role !== 'admin' || hostAdmin?.management_kind === 'office') {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 

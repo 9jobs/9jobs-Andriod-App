@@ -36,6 +36,8 @@ export function createApp() {
     lazyRouter(() => import("./routes/stripeWebhook")));
 
   app.use(express.json({ limit: "10mb" }));
+  app.use("/api/super-admin", lazyRouter(() => import("./superAdmin/routes")));
+  app.use("/api/office-admin", lazyRouter(() => import("./superAdmin/officeSession")));
   app.use("/api", lazyRouter(() => import("./routes/sheetSync")));
   app.use("/api", lazyRouter(() => import("./routes/database")));
 

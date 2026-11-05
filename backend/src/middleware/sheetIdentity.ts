@@ -1,3 +1,4 @@
+import { enabled, resolveAccess } from "../superAdmin/store";
 import { createPublicKey } from "node:crypto";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
@@ -36,6 +37,7 @@ export async function verifyClerkSession(token: string): Promise<Principal> {
   const session=await response.json() as any;
   if(session.id!==value.sid || session.user_id!==value.sub || session.status!=="active" || !Number.isFinite(session.expire_at) || session.expire_at<=Date.now())throw new Error("Inactive session");
   const admins = (process.env.SHEET_ADMIN_USER_IDS || "").split(",").filter(Boolean);
+  if(enabled()) { const managed=await resolveAccess(value.sub,issuer);if(managed)return {userId:value.sub,role:'admin'}; }
   return { userId:value.sub,role:admins.includes(value.sub) ? "admin" : "client" };
 }
 

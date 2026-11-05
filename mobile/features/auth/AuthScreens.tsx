@@ -27,6 +27,8 @@ import {
 } from "@/features/auth/validation";
 import { previewMobileUser } from "@/lib/data/preview-user";
 
+import { ForgotPasswordForm } from "./ForgotPasswordForm";
+
 const signUpSteps = ["Personal Info", "Career Goals", "Preferences"];
 
 function normalizeEmailValue(value: string) {
@@ -716,6 +718,7 @@ function ClerkSignInScreen() {
   const { signIn } = useSignIn();
   const { startSSOFlow } = useSSO();
   const [email, setEmail] = useState("");
+  const [forgotPassword, setForgotPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
   const [awaitingVerification, setAwaitingVerification] = useState(false);
@@ -940,6 +943,12 @@ function ClerkSignInScreen() {
     }
   }
 
+  if (forgotPassword) {
+    return <AuthScaffold title="Reset password" subtitle="Recover your account using your registered email." showBack>
+      <ForgotPasswordForm initialEmail={email} onBack={() => { setForgotPassword(false); setPassword(""); setError(null); setAwaitingVerification(false); setVerificationCode(""); }} />
+    </AuthScaffold>;
+  }
+
   return (
     <AuthScaffold
       title={awaitingVerification ? "Verify sign in" : "Sign in"}
@@ -1017,6 +1026,9 @@ function ClerkSignInScreen() {
             textContentType="password"
             error={password.length > 0 ? fieldErrors.password : undefined}
           />
+          <Pressable accessibilityRole="button" disabled={pending} onPress={() => { setError(null); setForgotPassword(true); }} style={{ alignSelf: "flex-end", paddingVertical: spacing.sm }}>
+            <Text style={styles.switchLink}>Forgot password?</Text>
+          </Pressable>
           {renderError(error)}
           <PrimaryButton
             label={pending ? "Signing in..." : "Sign in"}

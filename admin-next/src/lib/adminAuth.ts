@@ -63,7 +63,8 @@ export async function requestAdminPasswordToken(email: string, password: string,
 export async function requestClerkAdminToken(userId:string,getToken:()=>Promise<string|null>,backendUrl:string,fetcher:typeof fetch=fetch):Promise<string>{
   const sessionToken=await getToken();
   if(!sessionToken)throw new Error("Your session is unavailable. Please sign in again.");
-  const response=await fetcher(`${backendUrl}/api/auth/token`,{
+  const officeMode=typeof window!=="undefined" && localStorage.getItem('9jobs_office_mode')==='true';
+  const response=await fetcher(`${backendUrl}${officeMode?'/api/office-admin/session':'/api/auth/token'}`,{
     method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${sessionToken}`},
     body:JSON.stringify({role:"admin"}),signal:AbortSignal.timeout(30000),
   });

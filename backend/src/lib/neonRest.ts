@@ -1,3 +1,4 @@
+import { officePrincipal, requestAccess, resourceAction, resourceOwners, allowedUsers } from "../superAdmin/permissions";
 import { createDatabasePool } from "./database";
 
 // Transitional PostgREST request adapter. Queries execute on the server using
@@ -81,6 +82,17 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
     if (!tables.has(table)) return fail(400, "INVALID_TABLE", "Unsupported database resource");
     const method = request.method.toUpperCase();
     if (!["GET", "HEAD", "POST", "PATCH", "DELETE"].includes(method)) return fail(405, "METHOD", "Unsupported method");
+    principal ||= requestAccess.getStore();
+    const office = officePrincipal(principal);
+    const sideEffect=office?.operation==='applications.update' && ['saved_jobs','follow_ups','activity_logs'].includes(table) && !['GET','HEAD'].includes(method);
+    const action = office ? sideEffect?'applications.update':resourceAction(table,method) : null;
+    if(office && table==='profiles' && method==='DELETE')return fail(403,'FORBIDDEN','Account deletion requires owner management');
+    if(office && !action && !(["GET","HEAD"].includes(method) && ["job_categories","services","pricing_plans"].includes(table))) return fail(403,"FORBIDDEN","Owner-only resource");
+    let scopedUsers = office && action ? await allowedUsers(action,principal) : null;
+    // Existing record/application mutations append activity rows as part of the
+    // same capability. They do not require an unrelated add-record grant.
+    if(office && table==='activity_logs' && method==='POST')scopedUsers=[...new Set((await Promise.all(['applications.update','client.records.add','client.records.edit'].map(action=>allowedUsers(action as import('../superAdmin/store').Action,principal)))).flatMap(ids=>ids||[]))];
+    if(office && action && !['GET','HEAD'].includes(method) && !scopedUsers?.length)return fail(403,'FORBIDDEN','No permission for this action');
     const admin = !principal || principal.role === "admin" || principal.role === "staff";
     const owner = owners[table];
     if (!admin && !catalog.has(table) && !owner) return fail(403, "FORBIDDEN", "Access denied");
@@ -117,6 +129,12 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
       conditions.push(key === "or" || key === "and" ? group(expression, key) : filter(key, expression));
     }
     if (!admin && owner) conditions.push(`t.${ident(owner)}=${bind(principal!.userId)}`);
+    if(office && scopedUsers && method!=="POST"){
+      const owned=resourceOwners[table];
+      if(owned)conditions.push(`t.${ident(owned)}=any(${bind(scopedUsers)}::text[])`);
+      else if(table==='jobs')conditions.push(`exists(select 1 from public.applications sa where sa.job_id=t.id and sa.user_id=any(${bind(scopedUsers)}::text[]))`);
+      else return fail(403,"FORBIDDEN","No client ownership mapping");
+    }
     const where = conditions.length ? " where " + conditions.join(" and ") : "";
     const prefer = request.headers.get("prefer") || "";
     const selection = url.searchParams.get("select") || "*";
@@ -145,6 +163,23 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
       const body = await request.json();
       const records = Array.isArray(body) ? body : [body];
       if (!records.length || records.length > 1000 || records.some(row => !row || typeof row !== "object" || Array.isArray(row))) throw new Error("Invalid records");
+      if(office){
+        const owned=resourceOwners[table];
+        const protectedFields=['role','account_status','subscription_plan','subscription_status','assigned_consultant_id','email','created_by_admin_id'];
+        for(const row of records){
+          if(protectedFields.some(key=>key in row)){
+            if(table!=='profiles')return fail(403,'FORBIDDEN','Protected account field');
+            const original=(await db().query('select * from public.profiles where id=$1 and id=any($2::text[])',[row.id,scopedUsers])).rows[0];
+            if(!original || protectedFields.some(key=>key in row && JSON.stringify(row[key])!==JSON.stringify(original[key])))return fail(403,'FORBIDDEN','Protected account field');
+          }
+          if(owned && (method==='POST'||owned in row) && !scopedUsers?.includes(String(row[owned])))return fail(403,'FORBIDDEN','Client ownership required');
+          if(row.application_id && table!=='applications'){
+            const application=(await db().query('select user_id from public.applications where id=$1',[row.application_id])).rows[0];
+            if(!application||!scopedUsers?.includes(application.user_id)||row[owned]&&String(row[owned])!==application.user_id)return fail(403,'FORBIDDEN','Application ownership mismatch');
+          }
+          if(table!=='profiles' && 'client_id' in row && !scopedUsers?.includes(String(row.client_id)))return fail(403,'FORBIDDEN','Client mismatch');
+        }
+      }
       if (!admin) {
         for (const row of records) {
           if (Object.keys(row).some(key => !clientWrites[table].has(key))) return fail(403, "FORBIDDEN", "Protected database field");
@@ -167,6 +202,7 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
           const onConflict = split(url.searchParams.get("on_conflict") || "id");
           const updates = keys.filter(key => !onConflict.includes(key)).map(key => `${ident(key)}=excluded.${ident(key)}`);
           conflict = ` on conflict (${onConflict.map(ident).join(",")}) ` + (prefer.includes("ignore-duplicates") || !updates.length ? "do nothing" : `do update set ${updates.join(",")}`);
+          if(office && resourceOwners[table] && updates.length && !prefer.includes('ignore-duplicates')) conflict += ` where ${ident(table)}.${ident(resourceOwners[table])}=any(${bind(scopedUsers)}::text[])`;
           // An upsert may only update a record already owned by the caller.
           if (!admin && owner && updates.length && !prefer.includes("ignore-duplicates")) conflict += ` where ${ident(table)}.${ident(owner)}=${bind(principal!.userId)}`;
         }
@@ -174,6 +210,8 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
       }
       count = rows.length;
     }
+    const ownedDelete=method==='DELETE'&&owner&&scopedUsers?.includes(String(url.searchParams.get(owner)||'').replace(/^eq\./,''));
+    if(office && (method==='PATCH'||method==='DELETE'&&!ownedDelete) && !rows.length)return fail(403,'FORBIDDEN','Target record is not assigned');
     if (count !== null) headers["Content-Range"] = rows.length ? `0-${rows.length - 1}/${count}` : `*/${count}`;
     if (method === "HEAD") return new Response(null, { status: 200, headers });
     if (!["GET", "HEAD"].includes(method) && !prefer.includes("return=representation")) return new Response(null, { status: method === "POST" ? 201 : 204, headers });
@@ -187,3 +225,5 @@ export async function handleNeonRest(request: Request, principal?: DatabasePrinc
     return fail(400, error.code || "QUERY_ERROR", error.message || "Database query failed");
   }
 }
+
+export async function closeNeonRestPool(){await pool?.end();pool=undefined;}

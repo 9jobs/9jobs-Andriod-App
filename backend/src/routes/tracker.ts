@@ -1,3 +1,4 @@
+import { officePrincipal } from "../superAdmin/permissions";
 import express, { Router, Response } from "express";
 import { Pool } from "pg";
 import { createDatabasePool, isNeonDatabase } from "../lib/database";
@@ -2169,7 +2170,7 @@ router.get("/admin/dashboard", authMiddleware, async (req: AuthenticatedRequest,
       runOptionalSnapshotListQuery("jobs", async () => supabase.from("jobs").select("id")),
       runOptionalSnapshotListQuery("applications", async () => supabase.from("applications").select("id")),
       runOptionalSnapshotListQuery("messages", async () => supabase.from("messages").select("id")),
-      runOptionalSnapshotListQuery("user_subscriptions", async () =>
+      officePrincipal() ? Promise.resolve({data:[],error:null}) : runOptionalSnapshotListQuery("user_subscriptions", async () =>
         supabase.from("user_subscriptions").select("user_id, status").eq("status", "active"),
       ),
     ]);
@@ -2865,7 +2866,7 @@ router.get("/admin/personal-info", authMiddleware, async (req: AuthenticatedRequ
       });
     }
 
-    const localProfiles = await getLocalProfiles();
+    const localProfiles = officePrincipal() ? [] : await getLocalProfiles();
     const mergedProfiles = new Map<string, any>();
 
     for (const profile of supabaseProfiles) {
@@ -2910,7 +2911,7 @@ router.post("/admin/personal-info", authMiddleware, async (req: AuthenticatedReq
       if (error) throw error;
     }
 
-    const savedProfile = await upsertLocalProfile(normalizedProfile);
+    const savedProfile = officePrincipal() ? normalizedProfile : await upsertLocalProfile(normalizedProfile);
     return res.json({
       success: true,
       profile: savedProfile,
@@ -2992,7 +2993,7 @@ router.post("/mobile/profile", authMiddleware, async (req: AuthenticatedRequest,
       if (error) throw error;
     }
 
-    const savedProfile = await upsertLocalProfile(normalizedProfile);
+    const savedProfile = officePrincipal() ? normalizedProfile : await upsertLocalProfile(normalizedProfile);
     return res.json({
       success: true,
       profile: savedProfile,

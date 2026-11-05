@@ -1,5 +1,7 @@
+import { allowedUsers, requestAccess, authorizeOfficeRequest } from "../superAdmin/permissions";
+import { managementDb, enabled, resolveAccess } from "../superAdmin/store";
 import { Router } from "express";
-import { sheetIdentity, SheetRequest } from "../middleware/sheetIdentity";
+import { sheetIdentity, SheetRequest, verifySheetToken } from "../middleware/sheetIdentity";
 import { readSheetJobs, sheetDb, sheetEnabled, sheetVersion, SHEET_ID } from "../services/sheetStore";
 import { lookupVerifiedAccount, persistVerifiedAccount } from "../services/verifiedAccount";
 import { approveClientEmails,reviewClientEmails } from "../services/clientEmailAssociations";
@@ -7,6 +9,17 @@ import { requestLocalSheetRefresh } from "../services/localSyncFreshness";
 import {readSheetActivity} from "../services/sheetApplications";
 export function createSheetRouter(database: typeof sheetDb = sheetDb) {
 const router = Router();
+router.use(async(req:SheetRequest,res,next)=>{
+ if(!enabled()||!['/admin/sheet-sync','/admin/client-accounts','/admin/client-email-associations'].some(path=>req.path.startsWith(path)))return next();
+ const raw=req.headers.authorization?.match(/^Bearer (\S+)$/)?.[1];if(!raw)return next();
+ try{const principal=await verifySheetToken(raw);const access=await resolveAccess(principal.userId,process.env.CLERK_ISSUER||'');
+ const employee=(await managementDb().query('select 1 from admin_management.office_admins where clerk_user_id=$1',[principal.userId])).rowCount;
+ if(employee&&!access)return res.status(403).json({error:'Office Admin access revoked'});
+ if(access?.kind!=='office')return next();
+ const actor={userId:access.userId,role:'admin',management_kind:'office' as const};await authorizeOfficeRequest(req,actor);req.sheetPrincipal={userId:actor.userId,role:'admin'};
+ return requestAccess.run(actor,()=>next());
+ }catch{return res.status(403).json({error:'Managed access verification failed'});}
+});
 router.use((req,res,next)=>sheetEnabled() ? next() : next("router"));
 router.use("/mobile/sheet-records",sheetIdentity,async(req:SheetRequest,res,next)=>{
   try {if(req.sheetPrincipal!.role==="client")await persistVerifiedAccount(await lookupVerifiedAccount(req.sheetPrincipal!.userId),database());next();}
@@ -48,6 +61,7 @@ router.get("/admin/client-accounts",sheetIdentity,async(req:SheetRequest,res)=>{
  if(req.sheetPrincipal?.role!=="admin")return res.status(403).json({error:"Administrator access required"});
  try {
   res.setHeader("Cache-Control","private, no-store");
+  const scope=await allowedUsers('client.view');
   const result=await database().query(`select d.user_id,d.full_name,d.email,d.email_verified,d.registration_status,d.registered_at,v.last_authenticated_at,
    case when d.email_verified then d.email else null end as verified_email,
    a.client_id,case when a.user_id is null then 'pending' when a.revoked_at is not null then 'revoked' else 'linked' end as mapping_status,
@@ -61,7 +75,7 @@ router.get("/admin/client-accounts",sheetIdentity,async(req:SheetRequest,res)=>{
     from sheet_sync.clients c join sheet_sync.head h on h.source_id=c.source_spreadsheet_id
     join sheet_sync.client_record_owners o on o.snapshot_id=h.snapshot_id and o.client_id=c.client_id
     join sheet_sync.records r on r.id=o.record_id where c.client_id=a.client_id and a.revoked_at is null
-   ) activity on true order by d.registered_at desc limit 1000`);
+   ) activity on true where ($1::text[] is null or d.user_id=any($1::text[])) order by d.registered_at desc limit 1000`,[scope]);
   return res.json({users:result.rows});
  }catch{return res.status(503).json({error:"Verified account listing unavailable"});}
 });

@@ -1,3 +1,4 @@
+import { officePrincipal } from "../superAdmin/permissions";
 import {requiresPostgresLegacyStore,legacyTransactionActive,readPostgresLegacyState,writePostgresLegacyState,withPostgresLegacyStore} from "./postgresLegacyStore";
 import fs from "fs";
 import path from "path";
@@ -217,6 +218,7 @@ let lastLocalDbSyncAttemptAt = 0;
 let lastLocalDbSyncSucceededAt = 0;
 
 function readDb(): LocalDbSchema {
+  if(officePrincipal())return {messages:[],conversations:[],recruiter_contacts:[],interview_prep_sessions:[],interview_prep_responses:[],success_stories:[],profiles:[],candidate_questionnaires:[]};
   if(requiresPostgresLegacyStore()) return readPostgresLegacyState();
   try {
     ensureLocalDbFile();
@@ -280,6 +282,7 @@ function readDb(): LocalDbSchema {
 }
 
 function writeDb(data: LocalDbSchema) {
+  if(officePrincipal())throw new Error('Managed writes cannot use legacy fallback storage');
   if(requiresPostgresLegacyStore()){writePostgresLegacyState(data);return;}
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");

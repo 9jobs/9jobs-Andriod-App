@@ -1,5 +1,6 @@
 import { Router } from "express";
 import jwt from "jsonwebtoken";
+import { enabled, managementDb } from "../superAdmin/store";
 import { timingSafeEqual } from "node:crypto";
 import { verifyClerkSession } from "../middleware/sheetIdentity";
 import { lookupVerifiedAccount, persistVerifiedAccount } from "../services/verifiedAccount";
@@ -16,6 +17,7 @@ export function createAuthRouter(database = sheetDb) {
    let user:{userId:string;role:string;email:string;fullName:string};
    if (session) {
     const principal=await verifyClerkSession(session);
+    if(enabled() && (await managementDb().query("select 1 from admin_management.office_admins where clerk_user_id=$1",[principal.userId])).rowCount)return res.status(403).json({error:"Use the separate Office Admin login."});
     const account=await lookupVerifiedAccount(principal.userId);
     if ((req.body?.role === "admin" || principal.role === "admin") && (principal.role !== "admin" || account.email !== "9jobsapplicationservice@gmail.com")) return res.status(403).json({error:"Only the approved 9Jobs admin email can access this panel."});
     await persistVerifiedAccount(account,database(),principal.role);

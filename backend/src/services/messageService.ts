@@ -1,3 +1,4 @@
+import { allowedUsers, requireClient } from "../superAdmin/permissions";
 import { createDatabasePool, isNeonDatabase } from "../lib/database";
 import { mutateNeonMessage } from "./neonChat";
 import { supabase, hasNewSchema } from "../lib/supabase";
@@ -106,6 +107,7 @@ async function getPostgresChatSchema(): Promise<PostgresChatSchema> {
 }
 
 async function getPostgresConversations() {
+  const scope=await allowedUsers('messages.view');
   if (!hasUsableDatabaseUrl()) {
     return [];
   }
@@ -161,8 +163,9 @@ async function getPostgresConversations() {
         where row_num = 1
           and ranked_messages.conversation_id is not null
           and coalesce(profiles.role, 'client') <> 'admin'
+          and ($1::text[] is null or ranked_messages.conversation_id=any($1::text[]))
         order by ranked_messages.created_at desc nulls last
-      `);
+      `, [scope]);
       return result.rows;
     }
 
@@ -180,8 +183,9 @@ async function getPostgresConversations() {
         assigned_admin_id,
         created_at
       from conversations
+      where ($1::text[] is null or client_id=any($1::text[]))
       order by coalesce(last_message_at, created_at) desc nulls last
-    `);
+    `, [scope]);
     return result.rows;
   } finally {
     await pool.end();
@@ -189,6 +193,7 @@ async function getPostgresConversations() {
 }
 
 async function getPostgresMessages(conversationId: string) {
+  await requireClient(conversationId,'messages.view');
   if (!hasUsableDatabaseUrl()) {
     return [];
   }
@@ -256,6 +261,7 @@ async function getPostgresMessages(conversationId: string) {
 }
 
 async function getPostgresConversation(conversationId: string) {
+  await requireClient(conversationId,'messages.view');
   if (!hasUsableDatabaseUrl()) {
     return null;
   }
